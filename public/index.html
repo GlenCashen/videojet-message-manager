@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Videojet Multi-Coder Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
   <main class="shell">
     <header class="app-header">
@@ -14,7 +16,16 @@
         <h1>Multi-coder dashboard</h1>
         <p class="muted">Monitor and configure up to three coders from one operator screen.</p>
       </div>
-      <div id="fleetBadge" class="badge neutral" aria-live="polite">Loading</div>
+      <div class="header-badges">
+        <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
+          <span class="live-indicator-light" aria-hidden="true"></span>
+          <span>Connecting to server</span>
+        </div>
+
+        <div id="fleetBadge" class="badge neutral" aria-live="polite">
+          Loading
+        </div>
+      </div>
     </header>
 
     <section class="panel dashboard-panel" aria-labelledby="dashboardTitle">
@@ -187,7 +198,9 @@
             </tr>
           </thead>
           <tbody id="logBody">
-            <tr><td colspan="7" class="muted">No commands yet.</td></tr>
+            <tr>
+              <td colspan="7" class="muted">No commands yet.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -195,4 +208,5 @@
   </main>
   <script type="module" src="/app.js"></script>
 </body>
+
 </html>

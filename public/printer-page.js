@@ -26,10 +26,14 @@ const printerId = params.get('id');
 const STALE_AFTER_MS = 45000;
 let printer = null;
 let latestStatus = null;
+let lastServerEventAt = Date.now();
+let serverConnected = false;
 
 function setBusy(busy) {
-  elements.checkButton.disabled = busy || !printer?.enabled;
-  elements.setButton.disabled = busy || !printer?.enabled;
+  const disabled = busy || !printer?.enabled || !serverConnected;
+
+  elements.checkButton.disabled = disabled;
+  elements.setButton.disabled = disabled;
 }
 
 function applyPrinterConfig(value) {
@@ -50,26 +54,82 @@ function applyPrinterStatus(value) {
   if (id !== printerId) return;
 
   latestStatus = value;
-  elements.connection.textContent = value.ok === false || value.online === false ? 'Offline / error' : 'Online';
-  if (value.busy) elements.connection.textContent = value.currentOperation ? `Busy: ${value.currentOperation}` : 'Busy';
-  if (value.stale && value.online) elements.connection.textContent = `${elements.connection.textContent} / stale`;
+
+  const isBackgroundPoll = value.currentOperation === 'poll';
+  const visibleBusy = Boolean(value.busy && !isBackgroundPoll);
+
+  if (value.ok === false || value.online === false) {
+    elements.connection.textContent = 'Offline / error';
+  } else {
+    elements.connection.textContent = 'Online';
+  }
+
+  if (visibleBusy) {
+    elements.connection.textContent = value.currentOperation
+      ? `Busy: ${value.currentOperation}`
+      : 'Busy';
+  }
+
+  if (value.stale && value.online) {
+    elements.connection.textContent += ' / stale';
+  }
+
   elements.selectedMessage.textContent = value.selectedMessage || '-';
   elements.printerStatus.textContent = value.rawStatus || value.status || '-';
-  elements.checkedAt.textContent = formatDate(value.lastSuccessfulAt || value.checkedAt);
-  if (value.ok === false) setNotice(elements.message, value.error || 'Printer request failed.', 'error');
-  else setNotice(elements.message, 'Status updated.', 'success');
+  elements.checkedAt.textContent = formatDate(
+    value.lastSuccessfulAt || value.checkedAt || value.lastAttemptAt
+  );
+
+  setBusy(visibleBusy);
+
+  if (value.ok === false) {
+    setNotice(
+      elements.message,
+      value.error || 'Printer request failed.',
+      'error'
+    );
+  } else if (visibleBusy) {
+    setNotice(elements.message, 'Printer operation in progress...');
+  } else if (serverConnected) {
+    setNotice(elements.message);
+  }
+
   updateStaleIndicator();
 }
 
+
 function updateStaleIndicator() {
-  if (!latestStatus?.checkedAt || !printer?.enabled) return;
-  const checkedAt = new Date(latestStatus.checkedAt).valueOf();
+  if (!serverConnected) return;
+  if (!printer?.enabled) return;
+
+  const timestamp =
+    latestStatus?.lastSuccessfulAt ||
+    latestStatus?.checkedAt ||
+    latestStatus?.lastAttemptAt;
+
+  if (!timestamp) return;
+
+  const checkedAt = new Date(timestamp).valueOf();
   if (!Number.isFinite(checkedAt)) return;
-  const stale = Date.now() - checkedAt > STALE_AFTER_MS;
+
+  const stale =
+    Boolean(latestStatus?.stale) ||
+    Date.now() - checkedAt > STALE_AFTER_MS;
+
   if (!stale) return;
-  elements.connection.textContent = `${elements.connection.textContent.replace(' / stale', '')} / stale`;
-  setNotice(elements.message, 'Status data is getting old. Waiting for the live stream or next poll.', 'error');
+
+  const baseText = elements.connection.textContent
+    .replace(' / stale', '');
+
+  elements.connection.textContent = `${baseText} / stale`;
+
+  setNotice(
+    elements.message,
+    'Printer status is stale. Waiting for a fresh server update.',
+    'error'
+  );
 }
+
 
 async function loadPrinter() {
   if (!printerId) {
@@ -82,7 +142,7 @@ async function loadPrinter() {
     applyPrinterConfig(await apiJson(`/api/printers/${encodeURIComponent(printerId)}`));
     const cached = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/status`);
     applyPrinterStatus(cached);
-    await checkPrinter();
+
   } catch (error) {
     setNotice(elements.message, normalizeError(error), 'error');
     setBusy(true);
@@ -90,7 +150,7 @@ async function loadPrinter() {
 }
 
 async function checkPrinter() {
-  if (!printer || !printer.enabled) return;
+  if (!printer || !printer.enabled || !serverConnected) return;
   setBusy(true);
   setNotice(elements.message, 'Checking coder...');
   try {
@@ -111,7 +171,7 @@ async function checkPrinter() {
 
 async function setPrinter(event) {
   event.preventDefault();
-  if (!printer || !printer.enabled) return;
+  if (!printer || !printer.enabled || !serverConnected) return;
   setBusy(true);
   setNotice(elements.message, 'Queued message request...');
   try {
@@ -140,22 +200,106 @@ async function setPrinter(event) {
   }
 }
 
+function markServerConnected() {
+  lastServerEventAt = Date.now();
+  serverConnected = true;
+
+  document.body.classList.remove('server-disconnected');
+  document.body.classList.add('server-connected');
+
+  const badge = document.getElementById('serverConnectionBadge');
+
+  if (badge) {
+    badge.className = 'live-indicator connected';
+
+    const label = badge.querySelector('span:last-child');
+    if (label) label.textContent = 'Live data connected';
+  }
+
+  const visibleBusy =
+    Boolean(latestStatus?.busy) &&
+    latestStatus?.currentOperation !== 'poll';
+
+  setBusy(visibleBusy);
+}
+
+function markServerDisconnected() {
+  serverConnected = false;
+
+  document.body.classList.remove('server-connected');
+  document.body.classList.add('server-disconnected');
+
+  const badge = document.getElementById('serverConnectionBadge');
+
+  if (badge) {
+    badge.className = 'live-indicator disconnected';
+
+    const label = badge.querySelector('span:last-child');
+    if (label) label.textContent = 'Live data lost';
+  }
+
+  setBusy(true);
+  setNotice(
+    elements.message,
+    'Server disconnected. Showing the last known printer status.',
+    'error'
+  );
+}
+
 elements.checkButton.addEventListener('click', checkPrinter);
 elements.form.addEventListener('submit', setPrinter);
+
 subscribeToPrinterEvents({
-  onPrinterStatus: applyPrinterStatus,
+  onConnected: markServerConnected,
+  onHeartbeat: markServerConnected,
+  onDisconnected: markServerDisconnected,
+
+  onPrinterStatus: (value) => {
+    markServerConnected();
+    applyPrinterStatus(value);
+  },
+
   onPrinterConfig: (value) => {
-    if (value.id === printerId) applyPrinterConfig(value);
+    markServerConnected();
+
+    if (value.id === printerId) {
+      applyPrinterConfig(value);
+    }
   },
+
   onStatusSnapshot: (statuses) => {
-    const match = statuses.find((value) => value.printerId === printerId);
-    if (match) applyPrinterStatus(match);
+    markServerConnected();
+
+    const match = statuses.find(
+      (value) => value.printerId === printerId
+    );
+
+    if (match) {
+      applyPrinterStatus(match);
+    }
   },
+
   onFleetSnapshot: (printers) => {
-    const match = printers.find((value) => value.id === printerId);
-    if (match) applyPrinterConfig(match);
+    markServerConnected();
+
+    const match = printers.find(
+      (value) => value.id === printerId
+    );
+
+    if (match) {
+      applyPrinterConfig(match);
+    }
   }
 });
 
+
+
 loadPrinter();
+setInterval(() => {
+  const age = Date.now() - lastServerEventAt;
+
+  if (age > 45000) {
+    markServerDisconnected();
+  }
+}, 5000);
 setInterval(updateStaleIndicator, 10000);

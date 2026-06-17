@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Videojet Coder Operator</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
+
 <body>
   <main class="shell operator-shell">
     <header class="app-header">
@@ -14,7 +16,14 @@
         <h1 id="printerTitle">Coder</h1>
         <p id="printerSubtitle" class="muted">Loading coder...</p>
       </div>
-      <a class="secondary button-link" href="/">Dashboard</a>
+      <div class="header-badges">
+        <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
+          <span class="live-indicator-light" aria-hidden="true"></span>
+          <span>Connecting to server</span>
+        </div>
+
+        <a class="secondary button-link" href="/">Dashboard</a>
+      </div>
     </header>
 
     <section class="panel operator-panel" aria-labelledby="statusTitle">
@@ -64,4 +73,5 @@
   </main>
   <script type="module" src="/printer-page.js"></script>
 </body>
+
 </html>

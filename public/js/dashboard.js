@@ -4,8 +4,8 @@ import { elements } from './elements.js';
 import { state } from './state.js';
 
 let dashboardCallbacks = {
-  loadLogs: async () => {},
-  startEdit: () => {}
+  loadLogs: async () => { },
+  startEdit: () => { }
 };
 const STALE_AFTER_MS = 45000;
 
@@ -75,11 +75,21 @@ function applyCheckError(id, error) {
 
 function statusLabel(coder) {
   const stale = isStale(coder);
-  if (coder.busy || coder.checking) return coder.currentOperation ? `Busy: ${coder.currentOperation}` : 'Busy';
+  const visibleBusy =
+    Boolean(coder.busy) &&
+    coder.currentOperation !== 'poll';
+
+  if (visibleBusy || coder.checking) {
+    return coder.currentOperation
+      ? `Busy: ${coder.currentOperation}`
+      : 'Busy';
+  }
+
   if (!coder.config.enabled) return 'Disabled';
   if (coder.state === 'online') return stale ? 'Online / stale' : 'Online';
   if (coder.state === 'offline') return stale ? 'Offline / stale' : 'Offline';
   if (stale) return 'Data stale';
+
   return 'Not checked';
 }
 
@@ -118,14 +128,24 @@ function faultText(decodedStatus) {
 
 function createCoderCard(coder) {
   const printer = coder.config;
+
+  const visibleBusy =
+    Boolean(coder.busy) &&
+    coder.currentOperation !== 'poll';
+
   const checkButton = el('button', {
     className: 'secondary',
     type: 'button',
     'data-action': 'check',
     'data-id': printer.id
   }, 'Check');
-  checkButton.disabled = !printer.enabled || coder.busy || coder.checking || state.checkingAll;
 
+  checkButton.disabled =
+    !printer.enabled ||
+    visibleBusy ||
+    coder.checking ||
+    state.checkingAll;
+    
   const editButton = el('button', {
     className: 'ghost bordered',
     type: 'button',
@@ -140,6 +160,8 @@ function createCoderCard(coder) {
   const message = coder.lastError
     ? el('p', { className: 'card-error', text: coder.lastError })
     : null;
+
+
 
   return el('article', { className: cardClass(coder), dataset: { id: printer.id } }, [
     el('div', { className: 'card-top' }, [

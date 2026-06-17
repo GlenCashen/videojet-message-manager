@@ -389,3 +389,73 @@ th { color: #667085; font-size: .75rem; text-transform: uppercase; letter-spacin
   }
   .detail strong { text-align: left; }
 }
+
+.header-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.live-indicator-light {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.live-indicator.connecting {
+  color: #475467;
+  background: #e7ecf3;
+}
+
+.live-indicator.connecting .live-indicator-light {
+  background: #98a2b3;
+}
+
+.live-indicator.connected {
+  color: #087a3e;
+  background: #d9fbe5;
+}
+
+.live-indicator.connected .live-indicator-light {
+  background: #14a45d;
+  box-shadow: 0 0 8px rgba(20, 164, 93, 0.65);
+}
+
+.live-indicator.disconnected {
+  color: #b42318;
+  background: #fee4e2;
+}
+
+.live-indicator.disconnected .live-indicator-light {
+  background: #d92d20;
+  box-shadow: 0 0 8px rgba(217, 45, 32, 0.65);
+}
+
+body.server-disconnected .coder-card {
+  border-color: #d92d20;
+  opacity: 0.82;
+}
+
+body.server-disconnected .coder-card::before {
+  content: "Server disconnected — showing last known status";
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #b42318;
+  background: #fee4e2;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
