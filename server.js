@@ -2,6 +2,7 @@ import express from 'express';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readPrinters, updatePrinter } from './printer-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,6 +107,28 @@ function printerConfig(body = {}) {
   if (!net.isIP(ip)) throw new Error('Invalid printer IP address.');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid printer TCP port.');
   return { ip, port };
+}
+
+async function checkPrinterConnection(printer) {
+  const startedAt = Date.now();
+  const message = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'Q' });
+  await delay(BETWEEN_COMMAND_DELAY_MS);
+  const status = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'E' });
+
+  return {
+    id: printer.id,
+    name: printer.name,
+    location: printer.location,
+    host: printer.host,
+    port: printer.port,
+    mode: printer.mode,
+    enabled: printer.enabled,
+    online: true,
+    selectedMessage: message.value,
+    status: status.value,
+    checkedAt: new Date().toISOString(),
+    elapsedMs: Date.now() - startedAt
+  };
 }
 
 const emulator = {
@@ -218,6 +241,83 @@ app.get('/api/config', (_req, res) => {
 
 app.get('/api/logs', (_req, res) => res.json(commandLog));
 app.get('/api/emulator', (_req, res) => res.json(emulatorSnapshot()));
+
+app.get('/api/printers', async (_req, res) => {
+  try {
+    res.json(await readPrinters());
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.put('/api/printers/:id', async (req, res) => {
+  try {
+    const printers = await updatePrinter(req.params.id, req.body || {});
+    const printer = printers.find((item) => item.id === req.params.id);
+    res.json({ ok: true, printer });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/printers/:id/check', async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const printers = await readPrinters();
+    const printer = printers.find((item) => item.id === req.params.id);
+
+    if (!printer) {
+      return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    }
+    if (!printer.enabled) {
+      return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
+    }
+
+    const result = await checkPrinterConnection(printer);
+    addLog({ action: 'printer-check', printerId: printer.id, ok: true, ...result });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    addLog({
+      action: 'printer-check',
+      printerId: req.params.id,
+      ok: false,
+      error: error.message,
+      elapsedMs: Date.now() - startedAt
+    });
+    res.status(502).json({ ok: false, printerId: req.params.id, online: false, error: error.message });
+  }
+});
+
+app.post('/api/printers/check-all', async (_req, res) => {
+  const printers = (await readPrinters()).filter((printer) => printer.enabled);
+  const results = [];
+
+  for (const printer of printers) {
+    try {
+      const result = await checkPrinterConnection(printer);
+      results.push({ ok: true, ...result });
+      addLog({ action: 'printer-check', printerId: printer.id, ok: true, ...result });
+    } catch (error) {
+      const result = {
+        ok: false,
+        id: printer.id,
+        name: printer.name,
+        location: printer.location,
+        host: printer.host,
+        port: printer.port,
+        mode: printer.mode,
+        enabled: printer.enabled,
+        online: false,
+        error: error.message,
+        checkedAt: new Date().toISOString()
+      };
+      results.push(result);
+      addLog({ action: 'printer-check', printerId: printer.id, ...result });
+    }
+  }
+
+  res.json({ ok: results.every((result) => result.ok), results });
+});
 
 app.post('/api/emulator', (req, res) => {
   const body = req.body || {};
