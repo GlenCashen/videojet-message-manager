@@ -51,6 +51,7 @@ subscribeToPrinterEvents({
   }
 });
 function markServerConnected() {
+  const wasConnected = state.serverConnected;
   state.lastServerEventAt = Date.now();
   state.serverConnected = true;
 
@@ -58,10 +59,11 @@ function markServerConnected() {
   document.body.classList.add('server-connected');
 
   setLiveBadge(document.getElementById('serverConnectionBadge'), true);
-  renderDashboard();
+  if (!wasConnected) renderDashboard();
 }
 
 function markServerDisconnected() {
+  if (!state.serverConnected) return;
   state.serverConnected = false;
 
   document.body.classList.remove('server-connected');

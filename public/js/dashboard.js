@@ -90,33 +90,106 @@ function cardClass(coder) {
   return `coder-card status-${statusTone(coder)}${checkingClass}`;
 }
 
-function detail(label, value) {
+function keyedDetail(key, label, value) {
   return el('div', { className: 'detail' }, [
     el('span', { text: label }),
-    el('strong', { text: value || '-' })
+    el('strong', { text: value || '-', dataset: { field: key } })
   ]);
 }
 
-function metric(label, value) {
+function metric(key, label, value) {
   return el('div', { className: 'status-metric' }, [
     el('span', { text: label }),
-    el('strong', { text: value || '-' })
+    el('strong', { text: value || '-', dataset: { field: key } })
   ]);
+}
+
+function cardValues(coder) {
+  const printer = coder.config;
+  const visibleBusy = isVisibleBusy(coder);
+  const timestamp = statusTimestamp(coder);
+
+  return {
+    href: `/printer.html?id=${encodeURIComponent(printer.id)}`,
+    statusText: coder.checking ? 'Checking' : statusLabel(coder),
+    name: printer.name,
+    location: printer.location || 'No location set',
+    selectedMessage: coder.selectedMessage,
+    faultSummary: faultSummary(coder.decodedStatus),
+    lastSuccessAge: formatAge(coder.lastSuccessfulAt),
+    dataSource: state.serverConnected ? 'Live data stream' : 'Last known status',
+    host: `${printer.host}:${printer.port}`,
+    mode: printer.mode === 'emulator' ? 'Emulator' : 'Real printer',
+    enabled: printer.enabled ? 'Enabled' : 'Disabled',
+    connectionState: coder.state || 'not-checked',
+    alarm: alarmSummary(coder.decodedStatus),
+    rawStatus: coder.rawStatus || coder.status,
+    lastSuccessDate: formatDate(coder.lastSuccessfulAt),
+    lastAttemptDate: formatDate(timestamp),
+    failures: String(coder.consecutiveFailures || 0),
+    revision: String(coder.revision || 0),
+    commandDisabled:
+      !printer.enabled ||
+      !state.serverConnected ||
+      visibleBusy ||
+      coder.checking ||
+      state.checkingAll
+  };
+}
+
+function setField(card, field, value) {
+  const target = card.querySelector(`[data-field="${field}"]`);
+  if (target) target.textContent = value || '-';
+}
+
+function updateCardError(card, coder) {
+  const existing = card.querySelector('.card-error');
+  if (!coder.lastError) {
+    existing?.remove();
+    return;
+  }
+
+  if (existing) {
+    existing.textContent = coder.lastError;
+    return;
+  }
+
+  const diagnostics = card.querySelector('.diagnostics');
+  const message = el('p', { className: 'card-error', text: coder.lastError });
+  card.insertBefore(message, diagnostics);
+}
+
+function updateCoderCard(card, coder) {
+  const values = cardValues(coder);
+  const printer = coder.config;
+
+  card.className = cardClass(coder);
+  card.setAttribute('aria-label', `Open ${printer.name}`);
+  card.dataset.id = printer.id;
+  card.dataset.href = values.href;
+
+  for (const [field, value] of Object.entries(values)) {
+    if (field !== 'href' && field !== 'commandDisabled') setField(card, field, value);
+  }
+
+  const checkButton = card.querySelector('button[data-action="check"]');
+  if (checkButton) {
+    checkButton.dataset.id = printer.id;
+    checkButton.disabled = values.commandDisabled;
+  }
+
+  const editButton = card.querySelector('button[data-action="edit"]');
+  if (editButton) editButton.dataset.id = printer.id;
+
+  const openLink = card.querySelector('.card-open-link');
+  if (openLink) openLink.href = values.href;
+
+  updateCardError(card, coder);
 }
 
 function createCoderCard(coder) {
   const printer = coder.config;
-  const visibleBusy = isVisibleBusy(coder);
-  const commandDisabled =
-    !printer.enabled ||
-    !state.serverConnected ||
-    visibleBusy ||
-    coder.checking ||
-    state.checkingAll;
-  const href = `/printer.html?id=${encodeURIComponent(printer.id)}`;
-  const timestamp = statusTimestamp(coder);
-  const liveText = state.serverConnected ? 'Live data stream' : 'Last known status';
-  const statusText = coder.checking ? 'Checking' : statusLabel(coder);
+  const values = cardValues(coder);
 
   const checkButton = el('button', {
     className: 'secondary',
@@ -124,11 +197,11 @@ function createCoderCard(coder) {
     'data-action': 'check',
     'data-id': printer.id
   }, 'Check');
-  checkButton.disabled = commandDisabled;
+  checkButton.disabled = values.commandDisabled;
 
   const openLink = el('a', {
     className: 'card-open-link',
-    href
+    href: values.href
   }, 'Open coder');
 
   const editButton = el('button', {
@@ -150,56 +223,78 @@ function createCoderCard(coder) {
     dataset: {
       id: printer.id,
       action: 'open',
-      href
+      href: values.href
     }
   }, [
     el('div', { className: 'card-top' }, [
       el('div', {}, [
-        el('h3', { text: printer.name }),
-        el('p', { className: 'muted', text: printer.location || 'No location set' })
+        el('h3', { text: printer.name, dataset: { field: 'name' } }),
+        el('p', { className: 'muted', text: values.location, dataset: { field: 'location' } })
       ]),
       el('div', { className: 'status-cluster' }, [
         el('span', { className: 'status-light', 'aria-hidden': 'true' }),
-        el('span', { className: 'status-word', text: statusText })
+        el('span', { className: 'status-word', text: values.statusText, dataset: { field: 'statusText' } })
       ])
     ]),
     el('div', { className: 'operator-metrics' }, [
-      metric('Selected message', coder.selectedMessage),
-      metric('Fault summary', faultSummary(coder.decodedStatus)),
-      metric('Last successful update', formatAge(coder.lastSuccessfulAt)),
-      metric('Data source', liveText)
+      metric('selectedMessage', 'Selected message', values.selectedMessage),
+      metric('faultSummary', 'Fault summary', values.faultSummary),
+      metric('lastSuccessAge', 'Last successful update', values.lastSuccessAge),
+      metric('dataSource', 'Data source', values.dataSource)
     ]),
     message,
     el('details', { className: 'diagnostics' }, [
       el('summary', {}, 'Diagnostics'),
       el('div', { className: 'coder-meta' }, [
-        detail('Host', `${printer.host}:${printer.port}`),
-        detail('Mode', printer.mode === 'emulator' ? 'Emulator' : 'Real printer'),
-        detail('Enabled', printer.enabled ? 'Enabled' : 'Disabled'),
-        detail('Connection state', coder.state || 'not-checked'),
-        detail('Alarm', alarmSummary(coder.decodedStatus)),
-        detail('Raw status', coder.rawStatus || coder.status),
-        detail('Last success', formatDate(coder.lastSuccessfulAt)),
-        detail('Last attempt', formatDate(timestamp)),
-        detail('Failures', String(coder.consecutiveFailures || 0)),
-        detail('Revision', String(coder.revision || 0))
+        keyedDetail('host', 'Host', values.host),
+        keyedDetail('mode', 'Mode', values.mode),
+        keyedDetail('enabled', 'Enabled', values.enabled),
+        keyedDetail('connectionState', 'Connection state', values.connectionState),
+        keyedDetail('alarm', 'Alarm', values.alarm),
+        keyedDetail('rawStatus', 'Raw status', values.rawStatus),
+        keyedDetail('lastSuccessDate', 'Last success', values.lastSuccessDate),
+        keyedDetail('lastAttemptDate', 'Last attempt', values.lastAttemptDate),
+        keyedDetail('failures', 'Failures', values.failures),
+        keyedDetail('revision', 'Revision', values.revision)
       ])
     ]),
     el('div', { className: 'card-actions' }, [checkButton, openLink, editButton])
   ]);
 }
 
-function renderDashboard() {
-  clear(elements.coderGrid);
+function hasMatchingCards() {
+  const cards = [...elements.coderGrid.querySelectorAll('.coder-card[data-id]')];
+  return cards.length === state.order.length &&
+    state.order.every((id, index) => cards[index]?.dataset.id === id);
+}
 
+function renderCoderCards() {
   if (!state.order.length) {
-    elements.coderGrid.appendChild(el('article', { className: 'coder-card empty' }, [
-      el('h3', { text: 'No coders configured' }),
-      el('p', { className: 'muted', text: 'Add up to three coders in data/printers.json.' })
-    ]));
-  } else {
-    for (const id of state.order) elements.coderGrid.appendChild(createCoderCard(state.coders[id]));
+    if (!elements.coderGrid.querySelector('.empty')) {
+      clear(elements.coderGrid);
+      elements.coderGrid.appendChild(el('article', { className: 'coder-card empty' }, [
+        el('h3', { text: 'No coders configured' }),
+        el('p', { className: 'muted', text: 'Add up to three coders in data/printers.json.' })
+      ]));
+    }
+    return;
   }
+
+  if (!hasMatchingCards()) {
+    clear(elements.coderGrid);
+    for (const id of state.order) elements.coderGrid.appendChild(createCoderCard(state.coders[id]));
+    return;
+  }
+
+  for (const id of state.order) {
+    const card = [...elements.coderGrid.querySelectorAll('.coder-card[data-id]')]
+      .find((node) => node.dataset.id === id);
+    if (card) updateCoderCard(card, state.coders[id]);
+  }
+}
+
+function renderDashboard() {
+  renderCoderCards();
 
   const coders = state.order.map((id) => state.coders[id]);
   const enabled = coders.filter((coder) => coder.config.enabled);
@@ -216,7 +311,7 @@ function renderDashboard() {
 
   if (elements.fleetSummary) {
     elements.fleetSummary.textContent =
-      `${enabled.length} enabled · ${online} healthy · ${stale} warning · ${offline} offline · ${unknown} not checked`;
+      `${enabled.length} enabled | ${online} healthy | ${stale} warning | ${offline} offline | ${unknown} not checked`;
   }
 
   elements.checkAllButton.disabled = state.checkingAll || enabled.length === 0 || !state.serverConnected;
