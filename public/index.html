@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videojet 1620 Control</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">Videojet 1620 · WSI Simple Protocol</p>
+        <h1>Printer setup and verification</h1>
+        <p class="muted">Use a real printer or the built-in local WSI emulator.</p>
+      </div>
+      <div id="connectionBadge" class="badge neutral">Not checked</div>
+    </header>
+
+    <section class="card mode-row">
+      <label class="mode-toggle"><input id="useEmulator" type="checkbox"> Use local printer emulator</label>
+      <span id="modeHelp" class="muted">Real printer mode</span>
+    </section>
+
+    <section class="card grid">
+      <label>Printer IP<input id="ip" value="192.168.100.2" autocomplete="off"></label>
+      <label>TCP port<input id="port" type="number" value="3100" min="1" max="65535"></label>
+      <label>Stored message
+        <select id="messageName"><option>9 MONTH</option><option>12 MONTH</option></select>
+      </label>
+      <label>Text user field<input id="fieldName" value="TEST" maxlength="30" autocomplete="off"></label>
+      <label class="wide">Batch / field value<input id="fieldValue" value="TEST123" maxlength="50" autocomplete="off"></label>
+      <div class="actions wide">
+        <button id="checkButton" class="secondary">Check printer</button>
+        <button id="setButton" class="primary">Set and verify</button>
+      </div>
+    </section>
+
+    <section id="emulatorPanel" class="card hidden">
+      <div class="section-heading">
+        <div><h2>Emulator state</h2><p class="muted">Simulates a Videojet WSI listener on 127.0.0.1:3100.</p></div>
+        <button id="resetEmulator" class="ghost">Reset emulator</button>
+      </div>
+      <div class="grid compact-grid">
+        <label>Simulated selected message
+          <select id="emulatorMessage"><option>9 MONTH</option><option>12 MONTH</option></select>
+        </label>
+        <label>Simulated status<input id="emulatorStatus" value="0000002" maxlength="7"></label>
+        <label>Response delay (ms)<input id="emulatorDelay" type="number" value="40" min="0" max="10000"></label>
+        <label class="checkbox-line"><input id="emulatorEnabled" type="checkbox" checked> Emulator online</label>
+        <label class="checkbox-line"><input id="failNextCommand" type="checkbox"> Fail next WSI command</label>
+        <div class="actions"><button id="saveEmulator" class="secondary">Apply emulator state</button></div>
+      </div>
+      <pre id="emulatorFields" class="state-box">{}</pre>
+    </section>
+
+    <section class="status-grid">
+      <article class="card status-card"><span>Expected message</span><strong id="expectedMessage">—</strong></article>
+      <article class="card status-card"><span>Selected message</span><strong id="selectedMessage">—</strong></article>
+      <article class="card status-card"><span>Printer status</span><strong id="printerStatus">—</strong></article>
+      <article class="card status-card"><span>Last result</span><strong id="lastResult">—</strong></article>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <div><h2>Command log</h2><p class="muted">The field value is logged because Simple WSI cannot read it back.</p></div>
+        <button id="refreshLogs" class="ghost">Refresh</button>
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Time</th><th>Action</th><th>Message</th><th>Field value</th><th>Status</th><th>Result</th></tr></thead><tbody id="logBody"><tr><td colspan="6" class="muted">No commands yet.</td></tr></tbody></table></div>
+    </section>
+
+    <p id="errorBox" class="error hidden"></p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
