@@ -109,15 +109,19 @@ class StatusCache {
     const current = this.ensure(printerId);
     const before = { ...current };
     const decodedStatus = decodeStatus(rawStatus);
+    const timestamp = nowIso();
+
     current.online = true;
     current.stale = false;
     current.selectedMessage = selectedMessage;
     current.rawStatus = decodedStatus.valid ? decodedStatus.raw : rawStatus;
     current.decodedStatus = decodedStatus;
-    current.lastSuccessfulAt = nowIso();
+    current.lastAttemptAt = timestamp;
+    current.lastSuccessfulAt = timestamp;
     current.responseTimeMs = responseTimeMs;
     current.consecutiveFailures = 0;
     current.lastError = decodedStatus.valid ? null : decodedStatus.error;
+
     this.commit(printerId, before, current);
     return this.get(printerId);
   }
@@ -125,6 +129,7 @@ class StatusCache {
   applyFailure(printerId, error) {
     const current = this.ensure(printerId);
     const before = { ...current };
+    current.lastAttemptAt = nowIso();
     current.consecutiveFailures += 1;
     current.lastError = error.message || String(error);
     if (current.consecutiveFailures >= this.offlineAfterFailures) current.online = false;
