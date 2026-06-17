@@ -45,10 +45,16 @@
         </div>
         <div class="operator-metrics">
           <div class="status-metric"><span>Selected message</span><strong id="operatorSelectedMessage">-</strong></div>
+          <div class="status-metric"><span>Printer status</span><strong id="operatorAlarmStatus">-</strong></div>
           <div class="status-metric"><span>Active faults</span><strong id="operatorFaults">-</strong></div>
           <div class="status-metric"><span>Last successful update</span><strong id="operatorCheckedAt">No update yet</strong></div>
           <div class="status-metric"><span>Data source</span><strong id="operatorDataSource">Last known status</strong></div>
         </div>
+        <section class="expected-output-panel wide" aria-labelledby="storedExpectedTitle">
+          <h3 id="storedExpectedTitle">Expected printed message</h3>
+          <pre id="operatorExpectedOutput">No expected output recorded</pre>
+          <p id="operatorExpectedSource" class="muted">Set a message to record expected output.</p>
+        </section>
         <details class="diagnostics wide">
           <summary>Diagnostics</summary>
           <div class="operator-diagnostics">

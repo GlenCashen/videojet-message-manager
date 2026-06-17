@@ -11,7 +11,9 @@ import {
   loadMessages,
   renderPreview,
   validateMessageFields,
-  validateMessages
+  validateMessages,
+  getMessageForPrinter,
+  messagesForPrinter
 } from '../server/message-store.js';
 import { StatusCache } from '../server/status-cache.js';
 
@@ -94,8 +96,38 @@ test('rejects duplicate IDs', () => {
   assert.throws(() => validateMessages([definitions[0], { ...definitions[1], id: '9-month' }]), /Duplicate message id/);
 });
 
-test('rejects duplicate printer names', () => {
-  assert.throws(() => validateMessages([definitions[0], { ...definitions[1], printerMessageName: '9 MONTH' }]), /Duplicate printer message name/);
+test('rejects duplicate printer assignment', () => {
+  assert.throws(() => validateMessages([{
+    ...definitions[0],
+    printerAssignments: [
+      { printerId: 'coder-1', printerMessageName: '9 MONTH', enabled: true },
+      { printerId: 'coder-1', printerMessageName: '9 MONTH', enabled: true }
+    ]
+  }]), /Duplicate assignment/);
+});
+
+test('rejects unknown printer assignment when printers are supplied', () => {
+  assert.throws(() => validateMessages([{
+    ...definitions[0],
+    printerAssignments: [
+      { printerId: 'missing', printerMessageName: '9 MONTH', enabled: true }
+    ]
+  }], { printers: [{ id: 'coder-1' }] }), /unknown printer/);
+});
+
+test('filters and resolves printer-specific assignments', () => {
+  const assigned = validateMessages([{
+    ...definitions[0],
+    printerAssignments: [
+      { printerId: 'coder-1', printerMessageName: 'CAN 9M', enabled: true },
+      { printerId: 'coder-2', printerMessageName: 'BBD 9M', enabled: false }
+    ]
+  }], { printers: [{ id: 'coder-1' }, { id: 'coder-2' }] });
+
+  assert.equal(messagesForPrinter(assigned, 'coder-1').length, 1);
+  assert.equal(messagesForPrinter(assigned, 'coder-2').length, 0);
+  assert.equal(getMessageForPrinter(assigned, '9-month', 'coder-1').printerMessageName, 'CAN 9M');
+  assert.throws(() => getMessageForPrinter(assigned, '9-month', 'coder-2'), /not assigned/);
 });
 
 test('rejects unknown message ID', () => {
@@ -106,6 +138,20 @@ test('validates required and unknown fields', () => {
   const message = getMessageById(definitions, '9-month');
   assert.throws(() => validateMessageFields(message, { brew: 'BR1246' }), /Batch code is required/);
   assert.throws(() => validateMessageFields(message, { brew: 'BR1246', batch: 'B260617A', extra: 'nope' }), /Unknown field extra/);
+});
+
+test('normalizes uppercase by default and preserves transform none', () => {
+  const message = {
+    ...getMessageById(definitions, '9-month'),
+    fields: [
+      { key: 'brew', label: 'Brew code', printerFieldName: 'BREW', required: true, maxLength: 30 },
+      { key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: true, maxLength: 30, transform: 'none' }
+    ]
+  };
+  assert.deepEqual(validateMessageFields(message, { brew: 'br1246', batch: 'b260617a' }), {
+    brew: 'BR1246',
+    batch: 'b260617a'
+  });
 });
 
 test('renders 9-month preview', () => {
@@ -140,6 +186,8 @@ test('sends multi-field WSI commands in order', async () => {
   const result = await executeMessageUpdate(args);
   assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'M12 MONTH', 'Q', 'E']);
   assert.equal(result.ok, true);
+  assert.deepEqual(result.expectedOutput.fields, { brew: 'BR1246', batch: 'B260617A' });
+  assert.equal(result.expectedOutput.printerMessageName, '12 MONTH');
   assert.deepEqual(result.fieldResults, [
     { key: 'brew', printerFieldName: 'BREW', acknowledged: true },
     { key: 'batch', printerFieldName: 'BATCH', acknowledged: true }

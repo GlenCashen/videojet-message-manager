@@ -44,8 +44,7 @@ function faultSummary(decodedStatus) {
   const faults = decodedStatus.faults || [];
   if (faults.length) return faults.map((fault) => fault.label).join(', ');
 
-  const alarm = decodedStatus.alarm?.label;
-  return alarm && alarm !== 'No alarm' ? alarm : 'No active faults';
+  return 'No active faults';
 }
 
 function alarmSummary(decodedStatus) {

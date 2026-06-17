@@ -2,6 +2,7 @@ import { applyFleetSnapshot, applyPrinterConfig, applyPrinterEvent, applyStatusS
 import { setupEditor, startEdit } from './js/editor.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { applyLogEntry, loadLogs, renderLogs, setupLogs } from './js/logs.js';
+import { loadMessageConfig, setupMessageConfig } from './js/message-config.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
 import { state } from './js/state.js';
 import { setLiveBadge } from './js/status-ui.js';
@@ -9,6 +10,7 @@ import { setLiveBadge } from './js/status-ui.js';
 setupDashboard({ loadLogs, startEdit });
 setupEditor({ loadPrinters });
 setupLogs();
+setupMessageConfig();
 setupSinglePrinterTools({ loadLogs });
 subscribeToPrinterEvents({
   onConnected: markServerConnected,
@@ -79,4 +81,4 @@ setInterval(() => {
     markServerDisconnected();
   }
 }, 5000);
-Promise.all([loadConfig(), loadPrinters().then(loadStatuses), loadLogs()]);
+Promise.all([loadConfig(), loadPrinters().then(loadStatuses), loadLogs(), loadMessageConfig()]);

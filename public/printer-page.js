@@ -2,6 +2,7 @@ import { apiJson, postJson } from './js/api.js';
 import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import {
+  alarmSummary,
   faultSummary,
   formatAge,
   isStale,
@@ -20,9 +21,12 @@ const elements = {
   statusPanel: $('operatorStatus'),
   connection: $('operatorConnection'),
   selectedMessage: $('operatorSelectedMessage'),
+  alarmStatus: $('operatorAlarmStatus'),
   faults: $('operatorFaults'),
   dataSource: $('operatorDataSource'),
   liveNote: $('operatorLiveNote'),
+  expectedOutput: $('operatorExpectedOutput'),
+  expectedSource: $('operatorExpectedSource'),
   printerStatus: $('operatorPrinterStatus'),
   checkedAt: $('operatorCheckedAt'),
   host: $('operatorHost'),
@@ -126,6 +130,12 @@ function renderMessageFields() {
       dataset: { fieldKey: field.key }
     });
     input.addEventListener('input', () => {
+      if ((field.transform || 'uppercase') === 'uppercase') {
+        const start = input.selectionStart;
+        const end = input.selectionEnd;
+        input.value = input.value.toUpperCase();
+        input.setSelectionRange(start, end);
+      }
       hideReview();
       schedulePreview();
     });
@@ -176,6 +186,7 @@ async function refreshPreviewNow() {
 
   try {
     const preview = await postJson(`/api/messages/${encodeURIComponent(definition.id)}/preview`, {
+      printerId,
       fields: validation.fields
     });
     if (requestId !== previewRequestId) return latestPreview;
@@ -215,20 +226,39 @@ function updateOperatorShell() {
   if (latestStatus) {
     elements.connection.textContent = statusLabel(latestStatus);
     elements.selectedMessage.textContent = latestStatus.selectedMessage || '-';
+    elements.alarmStatus.textContent = alarmSummary(latestStatus.decodedStatus);
     elements.faults.textContent = faultSummary(latestStatus.decodedStatus);
     elements.printerStatus.textContent = latestStatus.rawStatus || latestStatus.status || '-';
     elements.checkedAt.textContent = formatAge(latestStatus.lastSuccessfulAt);
+    renderExpectedOutput(latestStatus.expectedOutput);
 
     if (isStale(latestStatus) && serverConnected) {
-      setNotice(elements.message, 'Printer status is stale. Waiting for a fresh server update.', 'error');
+      const errorDetail = latestStatus.lastError ? ` Latest WSI error: ${latestStatus.lastError}` : '';
+      setNotice(elements.message, `Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error');
     }
   } else if (printer && !printer.enabled) {
     elements.connection.textContent = 'Disabled';
+    elements.alarmStatus.textContent = '-';
     elements.faults.textContent = 'Coder is disabled';
     elements.checkedAt.textContent = 'No update yet';
+    renderExpectedOutput(null);
   }
 
   setBusy(visibleBusy || manualBusy);
+}
+
+function renderExpectedOutput(expectedOutput) {
+  if (!elements.expectedOutput || !elements.expectedSource) return;
+  if (!expectedOutput?.rendered) {
+    elements.expectedOutput.textContent = 'No expected output recorded';
+    elements.expectedSource.textContent = 'Set a message to record expected output.';
+    return;
+  }
+
+  elements.expectedOutput.textContent = expectedOutput.rendered;
+  elements.expectedSource.textContent = expectedOutput.source === 'last-known'
+    ? 'Last expected output'
+    : 'Physical print check: Required';
 }
 
 function applyPrinterConfig(value) {
@@ -257,6 +287,7 @@ function applyPrinterStatus(value) {
     selectedMessage: value.selectedMessage || latestStatus?.selectedMessage || '-',
     rawStatus: value.rawStatus || value.status || latestStatus?.rawStatus || latestStatus?.status || null,
     decodedStatus: value.decodedStatus || latestStatus?.decodedStatus || null,
+    expectedOutput: value.expectedOutput || latestStatus?.expectedOutput || null,
     lastSuccessfulAt: value.lastSuccessfulAt || latestStatus?.lastSuccessfulAt || null,
     busy: visibleBusy,
     currentOperation: visibleBusy ? value.currentOperation || null : null
@@ -370,6 +401,7 @@ function showUpdateResult(result) {
       selectedMessage: result.status.selectedMessage || result.selectedMessage,
       rawStatus: result.status.rawStatus,
       decodedStatus: result.status.decodedStatus,
+      expectedOutput: result.status.expectedOutput,
       lastSuccessfulAt: result.status.lastSuccessfulAt,
       consecutiveFailures: result.status.consecutiveFailures,
       lastError: result.status.lastError

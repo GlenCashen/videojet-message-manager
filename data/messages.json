@@ -2,16 +2,23 @@
   {
     "id": "9-month",
     "displayName": "9 Month",
-    "printerMessageName": "9 MONTH",
     "enabled": true,
     "fields": [
-      
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
+      },
       {
         "key": "batch",
         "label": "Batch code",
         "printerFieldName": "BATCH",
         "required": true,
-        "maxLength": 30
+        "maxLength": 30,
+        "transform": "uppercase"
       }
     ],
     "dateRule": {
@@ -21,12 +28,28 @@
     "previewLines": [
       "{{brew}} {{batch}}",
       "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
+      {
+        "printerId": "coder-1",
+        "printerMessageName": "9 MONTH",
+        "enabled": true
+      },
+      {
+        "printerId": "coder-2",
+        "printerMessageName": "9 MONTH",
+        "enabled": true
+      },
+      {
+        "printerId": "coder-3",
+        "printerMessageName": "9 MONTH",
+        "enabled": true
+      }
     ]
   },
   {
     "id": "12-month",
     "displayName": "12 Month",
-    "printerMessageName": "12 MONTH",
     "enabled": true,
     "fields": [
       {
@@ -34,14 +57,16 @@
         "label": "Brew code",
         "printerFieldName": "BREW",
         "required": true,
-        "maxLength": 30
+        "maxLength": 30,
+        "transform": "uppercase"
       },
       {
         "key": "batch",
         "label": "Batch code",
         "printerFieldName": "BATCH",
         "required": true,
-        "maxLength": 30
+        "maxLength": 30,
+        "transform": "uppercase"
       }
     ],
     "dateRule": {
@@ -51,12 +76,28 @@
     "previewLines": [
       "{{brew}} {{batch}}",
       "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
+      {
+        "printerId": "coder-1",
+        "printerMessageName": "12 MONTH",
+        "enabled": true
+      },
+      {
+        "printerId": "coder-2",
+        "printerMessageName": "12 MONTH",
+        "enabled": true
+      },
+      {
+        "printerId": "coder-3",
+        "printerMessageName": "12 MONTH",
+        "enabled": true
+      }
     ]
   },
   {
     "id": "test",
-    "displayName": "test",
-    "printerMessageName": "TEST",
+    "displayName": "Test",
     "enabled": true,
     "fields": [
       {
@@ -64,14 +105,16 @@
         "label": "Brew code",
         "printerFieldName": "TBREW",
         "required": true,
-        "maxLength": 30
+        "maxLength": 30,
+        "transform": "uppercase"
       },
       {
         "key": "batch",
         "label": "Batch code",
         "printerFieldName": "TEST",
         "required": true,
-        "maxLength": 30
+        "maxLength": 30,
+        "transform": "uppercase"
       }
     ],
     "dateRule": {
@@ -81,6 +124,13 @@
     "previewLines": [
       "{{brew}} {{batch}}",
       "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
+      {
+        "printerId": "coder-1",
+        "printerMessageName": "TEST",
+        "enabled": true
+      }
     ]
   }
 ]

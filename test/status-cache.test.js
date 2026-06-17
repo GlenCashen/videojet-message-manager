@@ -39,10 +39,12 @@ test('offline threshold waits for configured failures', () => {
 
 test('a successful poll automatically recovers an offline printer', () => {
   const events = [];
+  const transitions = [];
   const cache = new StatusCache({
     staleAfterMs: 1000,
     offlineAfterFailures: 3,
-    onChange: (event, status) => events.push({ event, status })
+    onChange: (event, status) => events.push({ event, status }),
+    onTransition: (transition, status) => transitions.push({ transition, status })
   });
 
   cache.syncPrinters([{ id: 'coder-1' }]);
@@ -72,6 +74,45 @@ test('a successful poll automatically recovers an offline printer', () => {
   assert.ok(recovered.lastAttemptAt);
   assert.ok(recovered.lastSuccessfulAt);
   assert.ok(events.some(({ event, status }) => event === 'printer-status' && status.online === true && status.selectedMessage === '12 MONTH'));
+  assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].transition, 'offline -> online');
+
+  cache.applySuccess('coder-1', {
+    selectedMessage: '12 MONTH',
+    rawStatus: '0000002',
+    responseTimeMs: 10
+  });
+  assert.equal(transitions.length, 1);
+});
+
+test('expected output is included in status and preserved by polls', () => {
+  const cache = new StatusCache({ staleAfterMs: 1000, offlineAfterFailures: 3 });
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  const expectedOutput = {
+    messageId: '12-month',
+    displayName: '12 Month',
+    printerMessageName: '12 MONTH',
+    fields: { brew: 'BR1246' },
+    lines: ['BR1246'],
+    rendered: 'BR1246',
+    generatedAt: '2026-06-17T04:32:08.000Z',
+    source: 'last-applied'
+  };
+
+  cache.applySuccess('coder-1', {
+    selectedMessage: '12 MONTH',
+    rawStatus: '0000002',
+    responseTimeMs: 10,
+    expectedOutput
+  });
+  assert.deepEqual(cache.get('coder-1').expectedOutput, expectedOutput);
+
+  cache.applySuccess('coder-1', {
+    selectedMessage: '12 MONTH',
+    rawStatus: '0000002',
+    responseTimeMs: 10
+  });
+  assert.deepEqual(cache.get('coder-1').expectedOutput, expectedOutput);
 });
 
 test('stale calculation uses last successful timestamp', async () => {

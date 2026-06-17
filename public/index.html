@@ -84,6 +84,48 @@
       <p id="editorMessage" class="notice hidden" aria-live="polite"></p>
     </section>
 
+    <section class="panel message-config-panel" aria-labelledby="messageConfigTitle">
+      <details>
+        <summary>
+          <span>
+            <strong id="messageConfigTitle">Message configuration</strong>
+            <span class="muted">Edit logical messages and assign stored names to coders</span>
+          </span>
+          <button id="refreshMessagesButton" class="ghost" type="button">Refresh</button>
+        </summary>
+        <p id="messageConfigMessage" class="notice hidden" aria-live="polite"></p>
+        <div class="message-config-layout">
+          <div id="messageList" class="message-list" aria-label="Messages"></div>
+          <form id="messageForm" class="message-form hidden">
+            <input id="messageConfigId" type="hidden">
+            <label for="messageDisplayName">Display name
+              <input id="messageDisplayName" maxlength="80" required autocomplete="off">
+            </label>
+            <label class="checkbox-line" for="messageEnabled">
+              <input id="messageEnabled" type="checkbox">
+              Message enabled
+            </label>
+            <label for="messageDateMonths">Best-before offset months
+              <input id="messageDateMonths" type="number" min="1" max="120" required>
+            </label>
+            <label for="messageFieldsJson">Fields JSON
+              <textarea id="messageFieldsJson" rows="8" spellcheck="false"></textarea>
+            </label>
+            <label for="messagePreviewLines">Preview lines
+              <textarea id="messagePreviewLines" rows="4" spellcheck="false"></textarea>
+            </label>
+            <section class="wide" aria-labelledby="assignmentsTitle">
+              <h3 id="assignmentsTitle">Assigned printers</h3>
+              <div id="messageAssignments" class="assignment-list"></div>
+            </section>
+            <div class="actions wide">
+              <button id="saveMessageButton" class="primary" type="submit">Save message</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
+
     <section class="panel dev-panel" aria-labelledby="devTitle">
       <details>
         <summary>

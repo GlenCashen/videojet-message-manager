@@ -28,7 +28,7 @@ body {
   background: var(--bg);
   color: var(--text);
 }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 
 .shell {
   width: calc(100% - 32px);
@@ -245,6 +245,22 @@ h3 { margin: 0; font-size: 1.15rem; }
   min-width: 0;
 }
 
+.status-metric pre,
+.expected-output-panel pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: 850 .92rem/1.35 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.expected-print {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+}
+
 .coder-meta,
 .operator-diagnostics {
   display: grid;
@@ -274,7 +290,8 @@ h3 { margin: 0; font-size: 1.15rem; }
 
 .diagnostics summary,
 .dev-panel summary,
-.log-panel summary {
+.log-panel summary,
+.message-config-panel summary {
   cursor: pointer;
   color: var(--text);
   font-weight: 850;
@@ -349,7 +366,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -360,6 +378,7 @@ select {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible {
@@ -407,11 +426,14 @@ summary:focus-visible {
 
 .dev-panel summary::-webkit-details-marker,
 .log-panel summary::-webkit-details-marker,
+.message-config-panel summary::-webkit-details-marker,
 .diagnostics summary::-webkit-details-marker { display: none; }
 .dev-panel summary span,
-.log-panel summary span { display: grid; gap: 3px; }
+.log-panel summary span,
+.message-config-panel summary span { display: grid; gap: 3px; }
 .dev-panel details[open] summary,
-.log-panel details[open] summary { margin-bottom: 16px; }
+.log-panel details[open] summary,
+.message-config-panel details[open] summary { margin-bottom: 16px; }
 
 .mode-row {
   display: flex;
@@ -468,6 +490,60 @@ summary:focus-visible {
 }
 
 .review-panel h3 { margin-bottom: 14px; }
+
+.message-config-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, .35fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.message-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.message-list-item {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.message-list-item.active {
+  border-color: var(--accent);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.message-list-item span {
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.message-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.assignment-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.assignment-row {
+  display: grid;
+  grid-template-columns: minmax(160px, .35fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
 
 .review-content {
   display: grid;
@@ -625,6 +701,9 @@ body.server-disconnected .dashboard-panel {
   }
   .grid,
   .status-grid,
+  .message-config-layout,
+  .message-form,
+  .assignment-row,
   .message-fields,
   .operator-status { grid-template-columns: 1fr; }
   .wide { grid-column: auto; }

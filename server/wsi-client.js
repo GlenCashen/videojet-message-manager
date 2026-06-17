@@ -70,13 +70,21 @@ class WsiClient {
           finish(null, decodeResponse(data));
         }
       });
-      socket.on('timeout', () => finish(new Error(`Printer did not respond within ${timeoutMs} ms.`)));
+      socket.on('timeout', () => {
+        const error = new Error(`Printer did not respond to ${command[0] || 'command'} at ${ip}:${port} within ${timeoutMs} ms.`);
+        error.code = 'WSI_TIMEOUT';
+        finish(error);
+      });
       socket.on('error', (error) => finish(error));
       socket.on('close', () => {
         if (!settled) {
           const data = Buffer.concat(chunks);
           if (data.length) finish(null, decodeResponse(data));
-          else finish(new Error('Printer closed the connection without replying.'));
+          else {
+            const error = new Error(`Printer closed the connection to ${ip}:${port} without replying to ${command[0] || 'command'}.`);
+            error.code = 'WSI_PROTOCOL_ERROR';
+            finish(error);
+          }
         }
       });
       socket.connect(port, ip);

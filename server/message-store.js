@@ -38,23 +38,49 @@ function assertString(value, label) {
   }
 }
 
-function validateDefinition(definition, index) {
+function normalizeTransform(transform) {
+  if (transform === undefined || transform === null || transform === '') return 'uppercase';
+  if (transform === 'uppercase' || transform === 'none') return transform;
+  throw new Error(`Unsupported field transform ${transform}.`);
+}
+
+function validateAssignment(messageId, assignment, index, printerIds) {
+  assertObject(assignment, `Message ${messageId} assignment ${index}`);
+  assertString(assignment.printerId, `Message ${messageId} assignment printerId`);
+  assertString(assignment.printerMessageName, `Message ${messageId} assignment printerMessageName`);
+  if (typeof assignment.enabled !== 'boolean') {
+    throw new Error(`Message ${messageId} assignment enabled must be boolean.`);
+  }
+  if (!PRINTABLE_ASCII_PATTERN.test(assignment.printerMessageName) || assignment.printerMessageName.length > 30) {
+    throw new Error(`Message ${messageId} assignment printerMessageName must be printable ASCII up to 30 characters.`);
+  }
+  if (printerIds && !printerIds.has(assignment.printerId)) {
+    throw new Error(`Message ${messageId} is assigned to unknown printer ${assignment.printerId}.`);
+  }
+}
+
+function validateDefinition(definition, index, printerIds) {
   assertObject(definition, `Message at index ${index}`);
   assertString(definition.id, `Message ${index} id`);
   assertString(definition.displayName, `Message ${definition.id} displayName`);
-  assertString(definition.printerMessageName, `Message ${definition.id} printerMessageName`);
 
   if (!MESSAGE_ID_PATTERN.test(definition.id)) {
     throw new Error(`Message id ${definition.id} is invalid.`);
   }
-  if (!PRINTABLE_ASCII_PATTERN.test(definition.printerMessageName) || definition.printerMessageName.length > 30) {
-    throw new Error(`Message ${definition.id} printerMessageName must be printable ASCII up to 30 characters.`);
-  }
   if (typeof definition.enabled !== 'boolean') {
     throw new Error(`Message ${definition.id} enabled must be boolean.`);
   }
-  if (!Array.isArray(definition.fields) || !definition.fields.length) {
-    throw new Error(`Message ${definition.id} must define at least one field.`);
+  if (!Array.isArray(definition.fields)) {
+    throw new Error(`Message ${definition.id} fields must be an array.`);
+  }
+
+  if (!Array.isArray(definition.printerAssignments)) {
+    if (!definition.printerMessageName) {
+      throw new Error(`Message ${definition.id} must define printerAssignments.`);
+    }
+    definition.printerAssignments = [
+      { printerId: '*', printerMessageName: definition.printerMessageName, enabled: true }
+    ];
   }
 
   const fieldKeys = new Set();
@@ -77,8 +103,18 @@ function validateDefinition(definition, index) {
     if (!Number.isInteger(field.maxLength) || field.maxLength < 1 || field.maxLength > 50) {
       throw new Error(`Field ${field.key} maxLength must be 1-50.`);
     }
+    field.transform = normalizeTransform(field.transform);
     fieldKeys.add(field.key);
     printerFieldNames.add(field.printerFieldName);
+  }
+
+  const assignmentPrinterIds = new Set();
+  for (const [assignmentIndex, assignment] of definition.printerAssignments.entries()) {
+    validateAssignment(definition.id, assignment, assignmentIndex, printerIds);
+    if (assignmentPrinterIds.has(assignment.printerId)) {
+      throw new Error(`Duplicate assignment for printer ${assignment.printerId} in message ${definition.id}.`);
+    }
+    assignmentPrinterIds.add(assignment.printerId);
   }
 
   assertObject(definition.dateRule, `Message ${definition.id} dateRule`);
@@ -94,31 +130,69 @@ function validateDefinition(definition, index) {
   for (const line of definition.previewLines) assertString(line, `Message ${definition.id} preview line`);
 }
 
-function validateMessages(messages) {
+function validateMessages(messages, options = {}) {
   if (!Array.isArray(messages)) throw new Error('messages.json must contain an array.');
 
   const ids = new Set();
-  const printerNames = new Set();
+  const printerIds = options.printers ? new Set(options.printers.map((printer) => printer.id)) : null;
   for (const [index, definition] of messages.entries()) {
-    validateDefinition(definition, index);
+    validateDefinition(definition, index, printerIds);
     if (ids.has(definition.id)) throw new Error(`Duplicate message id ${definition.id}.`);
-    if (printerNames.has(definition.printerMessageName)) {
-      throw new Error(`Duplicate printer message name ${definition.printerMessageName}.`);
-    }
     ids.add(definition.id);
-    printerNames.add(definition.printerMessageName);
   }
 
   return clone(messages);
 }
 
-async function loadMessages(filePath = DEFAULT_MESSAGES_PATH) {
+async function loadMessages(filePath = DEFAULT_MESSAGES_PATH, options = {}) {
   const raw = await fs.readFile(filePath, 'utf8');
-  return validateMessages(JSON.parse(raw));
+  return validateMessages(JSON.parse(raw), options);
+}
+
+async function saveMessages(messages, filePath = DEFAULT_MESSAGES_PATH, options = {}) {
+  const validated = validateMessages(messages, options);
+  const dir = path.dirname(filePath);
+  const tempPath = path.join(dir, `.messages-${process.pid}-${Date.now()}.tmp`);
+  await fs.writeFile(tempPath, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');
+  await fs.rename(tempPath, filePath);
+  return validated;
 }
 
 function enabledMessages(messages) {
   return clone(messages.filter((message) => message.enabled));
+}
+
+function messageForAssignment(message, assignment) {
+  return {
+    ...clone(message),
+    printerMessageName: assignment.printerMessageName,
+    assignment: clone(assignment)
+  };
+}
+
+function messagesForPrinter(messages, printerId) {
+  return messages
+    .filter((message) => message.enabled)
+    .map((message) => {
+      const assignment = (message.printerAssignments || []).find((item) =>
+        item.enabled && (item.printerId === printerId || item.printerId === '*')
+      );
+      return assignment ? messageForAssignment(message, assignment) : null;
+    })
+    .filter(Boolean);
+}
+
+function getMessageForPrinter(messages, id, printerId) {
+  const message = getMessageById(messages, id);
+  const assignment = (message.printerAssignments || []).find((item) =>
+    item.enabled && (item.printerId === printerId || item.printerId === '*')
+  );
+  if (!assignment) {
+    const error = new Error(`Message ${id} is not assigned to printer ${printerId}.`);
+    error.statusCode = 403;
+    throw error;
+  }
+  return messageForAssignment(message, assignment);
 }
 
 function getMessageById(messages, id) {
@@ -142,9 +216,11 @@ function validateMessageFields(message, fields = {}) {
       throw new Error(`${field.label} is required.`);
     }
     if (typeof value !== 'string') throw new Error(`${field.label} must be a string.`);
-    if (value.length > field.maxLength) throw new Error(`${field.label} must be ${field.maxLength} characters or fewer.`);
-    if (!PRINTABLE_ASCII_PATTERN.test(value)) throw new Error(`${field.label} must contain printable ASCII characters only.`);
-    normalized[field.key] = value.trim();
+    const trimmed = value.trim();
+    const transformed = normalizeTransform(field.transform) === 'uppercase' ? trimmed.toUpperCase() : trimmed;
+    if (transformed.length > field.maxLength) throw new Error(`${field.label} must be ${field.maxLength} characters or fewer.`);
+    if (!PRINTABLE_ASCII_PATTERN.test(transformed)) throw new Error(`${field.label} must contain printable ASCII characters only.`);
+    normalized[field.key] = transformed;
   }
 
   return normalized;
@@ -214,6 +290,7 @@ function renderPreview(message, fields, options = {}) {
 
   return {
     messageId: message.id,
+    displayName: message.displayName,
     printerMessageName: message.printerMessageName,
     fields: normalized,
     bestBeforeDate: tokens.bestBeforeDate,
@@ -231,6 +308,7 @@ function statusResult(cached) {
     selectedMessage: cached.selectedMessage,
     rawStatus: cached.rawStatus,
     decodedStatus: cached.decodedStatus,
+    expectedOutput: cached.expectedOutput,
     lastSuccessfulAt: cached.lastSuccessfulAt,
     consecutiveFailures: cached.consecutiveFailures,
     lastError: cached.lastError
@@ -250,6 +328,12 @@ function failureResult(base, fieldResults, messageSelection, extra = {}) {
     messageSelectionAttempted: messageSelection !== 'Not attempted',
     ...extra
   };
+}
+
+function transportFailureCode(error) {
+  if (error?.code === 'WSI_TIMEOUT') return 'WSI_TIMEOUT';
+  if (error?.code === 'WSI_PROTOCOL_ERROR') return 'WSI_PROTOCOL_ERROR';
+  return 'WSI_CONNECTION_ERROR';
 }
 
 async function refreshStateAfterRejection({
@@ -317,7 +401,17 @@ async function executeMessageUpdate({
 }) {
   const startedAt = now();
   const normalized = validateMessageFields(message, fields);
-  const expectedOutput = renderPreview(message, normalized, { productionDate });
+  const preview = renderPreview(message, normalized, { productionDate });
+  const expectedOutput = {
+    messageId: message.id,
+    displayName: message.displayName,
+    printerMessageName: message.printerMessageName,
+    fields: normalized,
+    lines: preview.lines,
+    rendered: preview.rendered,
+    generatedAt: new Date(startedAt).toISOString(),
+    source: 'last-applied'
+  };
   const fieldResults = [];
   const base = {
     id: printer.id,
@@ -333,7 +427,7 @@ async function executeMessageUpdate({
     enabled: printer.enabled,
     requestedMessage: message.printerMessageName,
     expectedMessage: message.printerMessageName,
-    expectedOutput: { lines: expectedOutput.lines, rendered: expectedOutput.rendered }
+    expectedOutput
   };
 
   for (const field of message.fields) {
@@ -387,19 +481,32 @@ async function executeMessageUpdate({
         acknowledged: false,
         error: error.message
       });
+      const code = transportFailureCode(error);
       throw new MessageUpdateError('Message update failed', failureResult(base, fieldResults, 'Not attempted', {
-        code: 'WSI_CONNECTION_ERROR',
+        code,
         communicationSucceeded: false,
         printerOnline: null,
         error: error.message,
         failedField: field.key,
         failedStep: 'field-update'
-      }), { code: 'WSI_CONNECTION_ERROR', communicationSucceeded: false });
+      }), { code, communicationSucceeded: false });
     }
     await delay();
   }
 
-  const select = await sendCommand({ printerId: printer.id, ...target, command: `M${message.printerMessageName}` });
+  let select;
+  try {
+    select = await sendCommand({ printerId: printer.id, ...target, command: `M${message.printerMessageName}` });
+  } catch (error) {
+    const code = transportFailureCode(error);
+    throw new MessageUpdateError('Message selection failed', failureResult(base, fieldResults, 'Failed', {
+      code,
+      communicationSucceeded: false,
+      printerOnline: null,
+      error: error.message,
+      failedStep: 'message-selection'
+    }), { code, communicationSucceeded: false });
+  }
   if (select.kind !== 'ack') {
     if (select.kind === 'nack') {
       await refreshStateAfterRejection({
@@ -428,14 +535,28 @@ async function executeMessageUpdate({
   }
   await delay();
 
-  const selected = await sendCommand({ printerId: printer.id, ...target, command: 'Q' });
-  await delay();
-  const status = await sendCommand({ printerId: printer.id, ...target, command: 'E' });
+  let selected;
+  let status;
+  try {
+    selected = await sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    await delay();
+    status = await sendCommand({ printerId: printer.id, ...target, command: 'E' });
+  } catch (error) {
+    const code = transportFailureCode(error);
+    throw new MessageUpdateError('Message verification failed', failureResult(base, fieldResults, 'Acknowledged', {
+      code,
+      communicationSucceeded: false,
+      printerOnline: null,
+      error: error.message,
+      failedStep: 'verification'
+    }), { code, communicationSucceeded: false });
+  }
   const elapsedMs = now() - startedAt;
   const cached = applySuccess({
     selectedMessage: selected.value,
     rawStatus: status.value,
-    responseTimeMs: elapsedMs
+    responseTimeMs: elapsedMs,
+    expectedOutput
   });
   const messageMatches = selected.value === message.printerMessageName;
 
@@ -444,6 +565,9 @@ async function executeMessageUpdate({
     ...base,
     online: true,
     ok: messageMatches,
+    code: messageMatches ? undefined : 'MESSAGE_MISMATCH',
+    communicationSucceeded: true,
+    printerOnline: true,
     messageMatches,
     selectedMessage: selected.value,
     fieldResults,
@@ -461,9 +585,12 @@ export {
   addCalendarMonthsClamped,
   enabledMessages,
   executeMessageUpdate,
+  getMessageForPrinter,
   getMessageById,
   loadMessages,
+  messagesForPrinter,
   renderPreview,
+  saveMessages,
   validateMessageFields,
   validateMessages
 };

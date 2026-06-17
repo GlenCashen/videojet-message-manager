@@ -16,6 +16,7 @@ function initialStatus(printerId) {
     selectedMessage: null,
     rawStatus: null,
     decodedStatus: null,
+    expectedOutput: null,
     lastAttemptAt: null,
     lastSuccessfulAt: null,
     responseTimeMs: null,
@@ -25,7 +26,11 @@ function initialStatus(printerId) {
 }
 
 function publicStatus(status) {
-  return { ...status, decodedStatus: status.decodedStatus ? { ...status.decodedStatus } : null };
+  return {
+    ...status,
+    decodedStatus: status.decodedStatus ? { ...status.decodedStatus } : null,
+    expectedOutput: status.expectedOutput ? JSON.parse(JSON.stringify(status.expectedOutput)) : null
+  };
 }
 
 function materialFields(status) {
@@ -37,6 +42,7 @@ function materialFields(status) {
     currentOperationId: status.currentOperationId,
     selectedMessage: status.selectedMessage,
     rawStatus: status.rawStatus,
+    expectedOutput: status.expectedOutput,
     lastError: status.lastError,
     consecutiveFailures: status.consecutiveFailures
   };
@@ -47,10 +53,11 @@ function isMaterialChange(before, after) {
 }
 
 class StatusCache {
-  constructor({ staleAfterMs = 15000, offlineAfterFailures = 3, onChange = () => {} } = {}) {
+  constructor({ staleAfterMs = 15000, offlineAfterFailures = 3, onChange = () => {}, onTransition = () => {} } = {}) {
     this.staleAfterMs = staleAfterMs;
     this.offlineAfterFailures = offlineAfterFailures;
     this.onChange = onChange;
+    this.onTransition = onTransition;
     this.records = new Map();
   }
 
@@ -105,7 +112,15 @@ class StatusCache {
     return this.get(printerId);
   }
 
-  applySuccess(printerId, { selectedMessage, rawStatus, responseTimeMs }) {
+  restoreExpectedOutput(printerId, expectedOutput) {
+    const current = this.ensure(printerId);
+    const before = { ...current };
+    current.expectedOutput = expectedOutput ? JSON.parse(JSON.stringify(expectedOutput)) : null;
+    this.commit(printerId, before, current, { broadcast: false });
+    return this.get(printerId);
+  }
+
+  applySuccess(printerId, { selectedMessage, rawStatus, responseTimeMs, expectedOutput }) {
     const current = this.ensure(printerId);
     const before = { ...current };
     const decodedStatus = decodeStatus(rawStatus);
@@ -116,6 +131,7 @@ class StatusCache {
     current.selectedMessage = selectedMessage;
     current.rawStatus = decodedStatus.valid ? decodedStatus.raw : rawStatus;
     current.decodedStatus = decodedStatus;
+    if (expectedOutput) current.expectedOutput = JSON.parse(JSON.stringify(expectedOutput));
     current.lastAttemptAt = timestamp;
     current.lastSuccessfulAt = timestamp;
     current.responseTimeMs = responseTimeMs;
@@ -154,6 +170,9 @@ class StatusCache {
   commit(printerId, before, current, { force = false, event = 'printer-status', broadcast = true } = {}) {
     const changed = force || isMaterialChange(before, current);
     if (changed) current.revision += 1;
+    if (!before.online && current.online && before.consecutiveFailures >= this.offlineAfterFailures) {
+      this.onTransition('offline -> online', publicStatus(current));
+    }
     if (broadcast && changed) this.onChange(event, this.get(printerId));
   }
 }

@@ -8,12 +8,21 @@ import {
   MessageUpdateError,
   enabledMessages,
   executeMessageUpdate,
+  getMessageForPrinter,
   getMessageById,
   loadMessages,
+  messagesForPrinter,
   renderPreview,
+  saveMessages,
   validateMessageFields
 } from './server/message-store.js';
 import { Monitor } from './server/monitor.js';
+import {
+  loadPrinterState,
+  persistedRecordFromExpected,
+  restoredExpectedOutput,
+  savePrinterState
+} from './server/printer-state-store.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
 
@@ -46,6 +55,7 @@ const coderQueue = new CoderQueue();
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const stateChangingOperations = new Set();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let persistedPrinterState = await loadPrinterState();
 
 function addLog(entry) {
   const logEntry = { time: new Date().toISOString(), ...entry };
@@ -72,8 +82,30 @@ function sendEvent(client, type, payload) {
 const statusCache = new StatusCache({
   staleAfterMs: STALE_AFTER_MS,
   offlineAfterFailures: OFFLINE_AFTER_FAILURES,
-  onChange: (event, status) => broadcast(event, status)
+  onChange: (event, status) => broadcast(event, status),
+  onTransition: (transition, status) => {
+    addLog({ action: 'printer-state-transition', printerId: status.printerId, transition, ok: true });
+  }
 });
+
+function syncStatusPrinters(printers) {
+  statusCache.syncPrinters(printers);
+  for (const printer of printers) {
+    const record = persistedPrinterState[printer.id];
+    if (record && !statusCache.get(printer.id).expectedOutput) {
+      statusCache.restoreExpectedOutput(printer.id, restoredExpectedOutput(record));
+    }
+  }
+}
+
+async function persistExpectedOutput(printerId, expectedOutput) {
+  if (!expectedOutput) return;
+  persistedPrinterState = {
+    ...persistedPrinterState,
+    [printerId]: persistedRecordFromExpected(expectedOutput)
+  };
+  await savePrinterState(persistedPrinterState);
+}
 
 function validateAscii(value, label, maxLength) {
   if (typeof value !== 'string' || value.length < 1 || value.length > maxLength) {
@@ -256,11 +288,12 @@ async function setPrinterMessage(printer, body) {
   let message;
   let fields;
   try {
-    const messages = await loadMessages();
-    message = getMessageById(messages, body.messageId);
+    const printers = await readPrinters();
+    const messages = await loadMessages(undefined, { printers });
+    message = getMessageForPrinter(messages, body.messageId, printer.id);
     fields = validateMessageFields(message, body.fields || {});
   } catch (error) {
-    error.statusCode = 400;
+    error.statusCode = error.statusCode || 400;
     throw error;
   }
   const target = printerTarget(printer);
@@ -393,7 +426,8 @@ app.get('/api/emulator', (_req, res) => res.json(emulatorSnapshot()));
 
 app.get('/api/messages', async (_req, res) => {
   try {
-    res.json(enabledMessages(await loadMessages()));
+    const printers = await readPrinters();
+    res.json(enabledMessages(await loadMessages(undefined, { printers })));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -401,7 +435,8 @@ app.get('/api/messages', async (_req, res) => {
 
 app.get('/api/messages/:id', async (req, res) => {
   try {
-    const message = getMessageById(await loadMessages(), req.params.id);
+    const printers = await readPrinters();
+    const message = getMessageById(await loadMessages(undefined, { printers }), req.params.id);
     if (!message.enabled) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
     res.json(message);
   } catch (error) {
@@ -409,9 +444,34 @@ app.get('/api/messages/:id', async (req, res) => {
   }
 });
 
+app.put('/api/messages/:id', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    const messages = await loadMessages(undefined, { printers });
+    const index = messages.findIndex((message) => message.id === req.params.id);
+    if (index < 0) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
+
+    const updated = {
+      ...messages[index],
+      ...req.body,
+      id: messages[index].id
+    };
+    messages[index] = updated;
+    const saved = await saveMessages(messages, undefined, { printers });
+    broadcast('messages-updated', { messages: saved });
+    res.json({ ok: true, message: saved[index] });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
 app.post('/api/messages/:id/preview', async (req, res) => {
   try {
-    const message = getMessageById(await loadMessages(), req.params.id);
+    const printers = await readPrinters();
+    const messages = await loadMessages(undefined, { printers });
+    const message = req.body?.printerId
+      ? getMessageForPrinter(messages, req.params.id, req.body.printerId)
+      : getMessageById(messages, req.params.id);
     if (!message.enabled) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
     res.json(renderPreview(message, req.body?.fields || {}, { productionDate: req.body?.productionDate }));
   } catch (error) {
@@ -443,7 +503,7 @@ app.get('/api/events', async (req, res) => {
   sendEvent(res, 'emulator-snapshot', emulatorSnapshot());
   try {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     sendEvent(res, 'status-snapshot', statusCache.all());
     sendEvent(res, 'fleet-snapshot', printers);
   } catch (error) {
@@ -454,7 +514,7 @@ app.get('/api/events', async (req, res) => {
 app.get('/api/printers', async (_req, res) => {
   try {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     res.json(printers);
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -463,7 +523,7 @@ app.get('/api/printers', async (_req, res) => {
 
 app.get('/api/printers/status', async (_req, res) => {
   try {
-    statusCache.syncPrinters(await readPrinters());
+    syncStatusPrinters(await readPrinters());
     res.json(statusCache.all());
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -475,7 +535,7 @@ app.get('/api/printers/:printerId/messages', async (req, res) => {
     const printers = await readPrinters();
     const printer = printers.find((item) => item.id === req.params.printerId);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.printerId} was not found.` });
-    res.json(enabledMessages(await loadMessages()));
+    res.json(messagesForPrinter(await loadMessages(undefined, { printers }), printer.id));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -484,7 +544,7 @@ app.get('/api/printers/:printerId/messages', async (req, res) => {
 app.get('/api/printers/:id', async (req, res) => {
   try {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
     res.json(printer);
@@ -496,7 +556,7 @@ app.get('/api/printers/:id', async (req, res) => {
 app.get('/api/printers/:id/status', async (req, res) => {
   try {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
     res.json(statusCache.get(req.params.id));
@@ -508,7 +568,7 @@ app.get('/api/printers/:id/status', async (req, res) => {
 app.put('/api/printers/:id', async (req, res) => {
   try {
     const printers = await updatePrinter(req.params.id, req.body || {});
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     broadcast('printer-config', printer);
     broadcast('status-snapshot', statusCache.all());
@@ -536,10 +596,11 @@ app.post('/api/printers/:id/check', async (req, res) => {
     broadcast('printer-status', { ok: true, ...result });
     res.json({ ok: true, ...result });
   } catch (error) {
+    const cached = statusCache.get(req.params.id);
     const result = {
       ok: false,
       printerId: req.params.id,
-      online: false,
+      ...cached,
       error: error.message,
       checkedAt: new Date().toISOString(),
       elapsedMs: Date.now() - startedAt
@@ -551,7 +612,7 @@ app.post('/api/printers/:id/check', async (req, res) => {
       error: error.message,
       elapsedMs: Date.now() - startedAt
     });
-    broadcast('printer-status', result);
+    broadcast('printer-status', cached);
     res.status(502).json(result);
   }
 });
@@ -559,7 +620,7 @@ app.post('/api/printers/:id/check', async (req, res) => {
 app.post('/api/printers/:id/set', async (req, res) => {
   try {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
 
     if (!printer) {
@@ -590,6 +651,7 @@ app.post('/api/printers/:id/set', async (req, res) => {
     stateChangingOperations.add(printer.id);
     addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageId || req.body?.messageName });
     const result = await setPrinterMessage(printer, req.body || {});
+    if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
     addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
     broadcast('printer-status', result);
     res.status(result.messageMatches ? 200 : 409).json(result);
@@ -604,15 +666,16 @@ app.post('/api/printers/:id/set', async (req, res) => {
       return res.status(400).json({ ok: false, error: error.message });
     }
 
+    const cached = statusCache.get(req.params.id);
     const result = {
       ok: false,
       printerId: req.params.id,
-      online: false,
+      ...cached,
       error: error.message,
       checkedAt: new Date().toISOString()
     };
     addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message });
-    broadcast('printer-status', result);
+    broadcast('printer-status', cached);
     res.status(502).json(result);
   } finally {
     stateChangingOperations.delete(req.params.id);
@@ -630,6 +693,7 @@ app.post('/api/printers/check-all', async (_req, res) => {
       addLog({ action: 'printer-check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
       broadcast('printer-status', { ok: true, ...result });
     } catch (error) {
+      const cached = statusCache.get(printer.id);
       const result = {
         ok: false,
         id: printer.id,
@@ -640,13 +704,13 @@ app.post('/api/printers/check-all', async (_req, res) => {
         port: printer.port,
         mode: printer.mode,
         enabled: printer.enabled,
-        online: false,
+        ...cached,
         error: error.message,
         checkedAt: new Date().toISOString()
       };
       results.push(result);
       addLog({ action: 'printer-check', printerId: printer.id, ...result });
-      broadcast('printer-status', result);
+      broadcast('printer-status', cached);
     }
   }
 
@@ -692,7 +756,7 @@ app.post('/api/check', async (req, res) => {
   try {
     if (req.body?.printerId) {
       const printers = await readPrinters();
-      statusCache.syncPrinters(printers);
+      syncStatusPrinters(printers);
       const printer = printers.find((item) => item.id === req.body.printerId);
       if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
       const result = await refreshPrinterStatus(printer, 'check');
@@ -723,7 +787,7 @@ app.post('/api/set', async (req, res) => {
   try {
     if (req.body?.printerId) {
       const printers = await readPrinters();
-      statusCache.syncPrinters(printers);
+      syncStatusPrinters(printers);
       const printer = printers.find((item) => item.id === req.body.printerId);
       if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
       if (!printer.enabled) return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
@@ -748,6 +812,7 @@ app.post('/api/set', async (req, res) => {
       stateChangingOperations.add(printer.id);
       try {
         const result = await setPrinterMessage(printer, req.body || {});
+        if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
         addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, ...result });
         return res.status(result.messageMatches ? 200 : 409).json(result);
       } catch (error) {
@@ -813,15 +878,11 @@ app.post('/api/set', async (req, res) => {
 const monitor = new Monitor({
   readPrinters: async () => {
     const printers = await readPrinters();
-    statusCache.syncPrinters(printers);
+    syncStatusPrinters(printers);
     return printers;
   },
   pollPrinter: async (printer) => {
-    try {
-      await refreshPrinterStatus(printer, 'poll');
-    } catch (_error) {
-      // The cache and SSE stream are updated by runCoderOperation failure handling.
-    }
+    await refreshPrinterStatus(printer, 'poll');
   },
   pollIntervalMs: POLL_INTERVAL_MS,
   betweenCoderDelayMs: BETWEEN_CODER_DELAY_MS,

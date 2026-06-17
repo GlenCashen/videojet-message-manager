@@ -35,6 +35,7 @@ function setCoderFromConfig(printer) {
     status: current.status || '-',
     rawStatus: current.rawStatus || null,
     decodedStatus: current.decodedStatus || null,
+    expectedOutput: current.expectedOutput || null,
     lastSuccessfulAt: current.lastSuccessfulAt || null,
     consecutiveFailures: current.consecutiveFailures || 0,
     revision: current.revision || 0,
@@ -61,6 +62,7 @@ function applyCheckResult(result) {
     status: result.rawStatus || result.status || current.status || '-',
     rawStatus: result.rawStatus || result.status || current.rawStatus || null,
     decodedStatus: result.decodedStatus || current.decodedStatus || null,
+    expectedOutput: result.expectedOutput || current.expectedOutput || null,
     lastSuccessfulAt: result.lastSuccessfulAt || result.checkedAt || current.lastSuccessfulAt,
     consecutiveFailures: result.consecutiveFailures ?? current.consecutiveFailures ?? 0,
     revision: result.revision ?? current.revision ?? 0,
@@ -104,6 +106,11 @@ function metric(key, label, value) {
   ]);
 }
 
+function expectedOutputText(expectedOutput) {
+  if (!expectedOutput?.rendered) return 'No expected output recorded';
+  return expectedOutput.rendered;
+}
+
 function cardValues(coder) {
   const printer = coder.config;
   const visibleBusy = isVisibleBusy(coder);
@@ -115,6 +122,8 @@ function cardValues(coder) {
     name: printer.name,
     location: printer.location || 'No location set',
     selectedMessage: coder.selectedMessage,
+    expectedOutput: expectedOutputText(coder.expectedOutput),
+    expectedOutputLabel: coder.expectedOutput?.source === 'last-known' ? 'Last expected output' : 'Expected print',
     faultSummary: faultSummary(coder.decodedStatus),
     lastSuccessAge: formatAge(coder.lastSuccessfulAt),
     dataSource: state.serverConnected ? 'Live data stream' : 'Last known status',
@@ -238,7 +247,11 @@ function createCoderCard(coder) {
     ]),
     el('div', { className: 'operator-metrics' }, [
       metric('selectedMessage', 'Selected message', values.selectedMessage),
-      metric('faultSummary', 'Fault summary', values.faultSummary),
+      el('div', { className: 'status-metric expected-print' }, [
+        el('span', { text: values.expectedOutputLabel, dataset: { field: 'expectedOutputLabel' } }),
+        el('pre', { text: values.expectedOutput, dataset: { field: 'expectedOutput' } })
+      ]),
+      metric('faultSummary', 'Active faults', values.faultSummary),
       metric('lastSuccessAge', 'Last successful update', values.lastSuccessAge),
       metric('dataSource', 'Data source', values.dataSource)
     ]),
