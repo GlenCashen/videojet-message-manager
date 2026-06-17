@@ -47,7 +47,10 @@ async function loadLogs() {
 }
 
 function setupLogs() {
-  elements.refreshLogs.addEventListener('click', loadLogs);
+  elements.refreshLogs.addEventListener('click', (event) => {
+    event.stopPropagation();
+    loadLogs();
+  });
 }
 
 export { applyLogEntry, loadLogs, renderLogs, setupLogs };

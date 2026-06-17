@@ -520,6 +520,7 @@ app.post('/api/printers/check-all', async (_req, res) => {
       const result = {
         ok: false,
         id: printer.id,
+        printerId: printer.id,
         name: printer.name,
         location: printer.location,
         host: printer.host,

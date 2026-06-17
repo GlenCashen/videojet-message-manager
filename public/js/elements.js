@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 
 const elements = {
   fleetBadge: $('fleetBadge'),
+  fleetSummary: $('fleetSummary'),
   checkAllButton: $('checkAllButton'),
   dashboardMessage: $('dashboardMessage'),
   coderGrid: $('coderGrid'),

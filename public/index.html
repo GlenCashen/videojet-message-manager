@@ -13,13 +13,13 @@
     <header class="app-header">
       <div>
         <p class="eyebrow">Videojet 1620 WSI Simple Protocol</p>
-        <h1>Multi-coder dashboard</h1>
-        <p class="muted">Monitor and configure up to three coders from one operator screen.</p>
+        <h1>Videojet Message Manager</h1>
+        <p id="fleetSummary" class="muted">Loading coder summary...</p>
       </div>
       <div class="header-badges">
         <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
           <span class="live-indicator-light" aria-hidden="true"></span>
-          <span>Connecting to server</span>
+          <span>CONNECTING</span>
         </div>
 
         <div id="fleetBadge" class="badge neutral" aria-live="polite">
@@ -32,9 +32,9 @@
       <div class="section-heading">
         <div>
           <h2 id="dashboardTitle">Coder overview</h2>
-          <p id="dashboardHelp" class="muted">Current message, printer status, and connection health.</p>
+          <p id="dashboardHelp" class="muted">Live status, selected messages, and active printer faults.</p>
         </div>
-        <button id="checkAllButton" class="primary" type="button">Check all enabled coders</button>
+        <button id="checkAllButton" class="secondary" type="button">Refresh now</button>
       </div>
       <p id="dashboardMessage" class="notice hidden" aria-live="polite"></p>
       <div id="coderGrid" class="coder-grid" aria-live="polite">
@@ -176,34 +176,36 @@
       </details>
     </section>
 
-    <section class="panel" aria-labelledby="logTitle">
-      <div class="section-heading">
-        <div>
-          <h2 id="logTitle">Command log</h2>
-          <p class="muted">Recent WSI commands and dashboard checks.</p>
+    <section class="panel log-panel" aria-labelledby="logTitle">
+      <details>
+        <summary>
+          <span>
+            <strong id="logTitle">Command log</strong>
+            <span class="muted">Recent WSI commands and dashboard checks</span>
+          </span>
+          <button id="refreshLogs" class="ghost" type="button">Refresh</button>
+        </summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Coder</th>
+                <th>Message</th>
+                <th>Field value</th>
+                <th>Status</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="logBody">
+              <tr>
+                <td colspan="7" class="muted">No commands yet.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <button id="refreshLogs" class="ghost" type="button">Refresh</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Action</th>
-              <th>Coder</th>
-              <th>Message</th>
-              <th>Field value</th>
-              <th>Status</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody id="logBody">
-            <tr>
-              <td colspan="7" class="muted">No commands yet.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      </details>
     </section>
   </main>
   <script type="module" src="/app.js"></script>

@@ -1,11 +1,10 @@
-import { applyFleetSnapshot, applyPrinterConfig, applyPrinterEvent, applyStatusSnapshot, loadPrinters, loadStatuses, setupDashboard } from './js/dashboard.js';
+import { applyFleetSnapshot, applyPrinterConfig, applyPrinterEvent, applyStatusSnapshot, loadPrinters, loadStatuses, renderDashboard, setupDashboard } from './js/dashboard.js';
 import { setupEditor, startEdit } from './js/editor.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { applyLogEntry, loadLogs, renderLogs, setupLogs } from './js/logs.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
-
-let lastServerEventAt = Date.now();
-let serverConnected = false;
+import { state } from './js/state.js';
+import { setLiveBadge } from './js/status-ui.js';
 
 setupDashboard({ loadLogs, startEdit });
 setupEditor({ loadPrinters });
@@ -52,33 +51,27 @@ subscribeToPrinterEvents({
   }
 });
 function markServerConnected() {
-  lastServerEventAt = Date.now();
-  serverConnected = true;
+  state.lastServerEventAt = Date.now();
+  state.serverConnected = true;
 
   document.body.classList.remove('server-disconnected');
   document.body.classList.add('server-connected');
 
-  const badge = document.getElementById('serverConnectionBadge');
-  if (badge) {
-    badge.className = 'live-indicator connected';
-    badge.querySelector('span:last-child').textContent = 'Live data connected';
-  }
+  setLiveBadge(document.getElementById('serverConnectionBadge'), true);
+  renderDashboard();
 }
 
 function markServerDisconnected() {
-  serverConnected = false;
+  state.serverConnected = false;
 
   document.body.classList.remove('server-connected');
   document.body.classList.add('server-disconnected');
 
-  const badge = document.getElementById('serverConnectionBadge');
-  if (badge) {
-    badge.className = 'live-indicator disconnected';
-    badge.querySelector('span:last-child').textContent = 'Live data lost';
-  }
+  setLiveBadge(document.getElementById('serverConnectionBadge'), false);
+  renderDashboard();
 }
 setInterval(() => {
-  const age = Date.now() - lastServerEventAt;
+  const age = Date.now() - state.lastServerEventAt;
 
   if (age > 45000) {
     markServerDisconnected();
