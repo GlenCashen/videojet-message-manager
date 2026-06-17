@@ -2,9 +2,11 @@ import { apiJson, postJson } from './js/api.js';
 import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import {
+  activeFaults,
   alarmSummary,
   faultSummary,
   formatAge,
+  formatDuration,
   isStale,
   isVisibleBusy,
   setLiveBadge,
@@ -27,6 +29,8 @@ const elements = {
   liveNote: $('operatorLiveNote'),
   expectedOutput: $('operatorExpectedOutput'),
   expectedSource: $('operatorExpectedSource'),
+  activeFaultPanel: $('activeFaultPanel'),
+  faultHistoryList: $('faultHistoryList'),
   printerStatus: $('operatorPrinterStatus'),
   checkedAt: $('operatorCheckedAt'),
   host: $('operatorHost'),
@@ -50,6 +54,7 @@ let printer = null;
 let latestStatus = null;
 let messages = [];
 let latestPreview = null;
+let faultState = { activeFaults: [], history: [] };
 let lastServerEventAt = Date.now();
 let serverConnected = false;
 let manualBusy = false;
@@ -261,6 +266,71 @@ function renderExpectedOutput(expectedOutput) {
     : 'Physical print check: Required';
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? '-' : date.toLocaleString();
+}
+
+function activeFaultRecord(fault) {
+  const stored = faultState.activeFaults.find((item) => item.faultCode === fault.code);
+  return {
+    ...fault,
+    faultCode: fault.code,
+    faultLabel: fault.label,
+    activatedAt: stored?.activatedAt || stored?.occurredAt || null
+  };
+}
+
+function renderActiveFaults() {
+  clear(elements.activeFaultPanel);
+  const faults = activeFaults(latestStatus?.decodedStatus).map(activeFaultRecord);
+  if (!faults.length) {
+    elements.activeFaultPanel.appendChild(el('p', { className: 'muted', text: 'No active printer faults' }));
+    return;
+  }
+
+  const now = Date.now();
+  for (const fault of faults) {
+    const activatedAtMs = fault.activatedAt ? new Date(fault.activatedAt).valueOf() : NaN;
+    const durationMs = Number.isFinite(activatedAtMs) ? now - activatedAtMs : null;
+    elements.activeFaultPanel.appendChild(el('article', { className: 'fault-item' }, [
+      el('h3', { text: fault.faultLabel || fault.label }),
+      el('div', { className: 'coder-meta' }, [
+        el('div', { className: 'detail' }, [el('span', { text: 'Code' }), el('strong', { text: fault.faultCode || fault.code })]),
+        el('div', { className: 'detail' }, [el('span', { text: 'Fault byte' }), el('strong', { text: String(fault.byte || '-') })]),
+        el('div', { className: 'detail' }, [el('span', { text: 'Bit value' }), el('strong', { text: String(fault.bit || '-') })]),
+        el('div', { className: 'detail' }, [el('span', { text: 'First observed' }), el('strong', { text: formatDateTime(fault.activatedAt) })]),
+        el('div', { className: 'detail' }, [el('span', { text: 'Duration' }), el('strong', { text: formatDuration(durationMs) })])
+      ])
+    ]));
+  }
+}
+
+function renderFaultHistory() {
+  clear(elements.faultHistoryList);
+  if (!faultState.history.length) {
+    elements.faultHistoryList.appendChild(el('p', { className: 'muted', text: 'No fault history recorded.' }));
+    return;
+  }
+
+  for (const event of faultState.history.slice(0, 50)) {
+    const label = `${formatDateTime(event.occurredAt)}  ${event.faultLabel} ${event.event}`;
+    const duration = event.durationMs !== undefined && event.durationMs !== null
+      ? `  Duration ${formatDuration(event.durationMs)}`
+      : '';
+    elements.faultHistoryList.appendChild(el('article', { className: 'fault-history-item' }, [
+      el('strong', { text: `${label}${duration}` }),
+      el('span', { className: 'muted', text: event.faultCode })
+    ]));
+  }
+}
+
+function renderFaultPanels() {
+  renderActiveFaults();
+  renderFaultHistory();
+}
+
 function applyPrinterConfig(value) {
   printer = value;
   elements.title.textContent = printer.name;
@@ -273,6 +343,7 @@ function applyPrinterConfig(value) {
   }
 
   updateOperatorShell();
+  renderFaultPanels();
 }
 
 function applyPrinterStatus(value) {
@@ -322,10 +393,43 @@ async function loadPrinter() {
     await loadMessages();
     const cached = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/status`);
     applyPrinterStatus(cached);
+    await loadFaultHistory();
   } catch (error) {
     setNotice(elements.message, normalizeError(error), 'error');
     setBusy(true);
   }
+}
+
+async function loadFaultHistory() {
+  if (!printerId) return;
+  const data = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/faults?limit=50`);
+  faultState = {
+    activeFaults: Array.isArray(data.activeFaults) ? data.activeFaults : [],
+    history: Array.isArray(data.history) ? data.history : []
+  };
+  renderFaultPanels();
+}
+
+function applyFaultEvent(event) {
+  if (!event || event.printerId !== printerId) return;
+  faultState.history = [event, ...faultState.history.filter((item) => item.id !== event.id)].slice(0, 50);
+  if (event.event === 'activated') {
+    faultState.activeFaults = [
+      {
+        printerId: event.printerId,
+        faultCode: event.faultCode,
+        faultLabel: event.faultLabel,
+        byte: event.byte,
+        bit: event.bit,
+        activatedAt: event.occurredAt,
+        rawStatus: event.rawStatus
+      },
+      ...faultState.activeFaults.filter((item) => item.faultCode !== event.faultCode)
+    ];
+  } else if (event.event === 'cleared') {
+    faultState.activeFaults = faultState.activeFaults.filter((item) => item.faultCode !== event.faultCode);
+  }
+  renderFaultPanels();
 }
 
 async function checkPrinter() {
@@ -530,6 +634,16 @@ subscribeToPrinterEvents({
 
     const match = statuses.find((value) => value.printerId === printerId || value.id === printerId);
     if (match) applyPrinterStatus(match);
+  },
+
+  onFaultActivated: (value) => {
+    markServerConnected();
+    applyFaultEvent(value);
+  },
+
+  onFaultCleared: (value) => {
+    markServerConnected();
+    applyFaultEvent(value);
   },
 
   onFleetSnapshot: (printers) => {

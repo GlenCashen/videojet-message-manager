@@ -23,6 +23,7 @@ import {
   restoredExpectedOutput,
   savePrinterState
 } from './server/printer-state-store.js';
+import { createFaultHistoryStore } from './server/fault-history-store.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
 
@@ -44,6 +45,9 @@ const OFFLINE_AFTER_FAILURES = Number(process.env.OFFLINE_AFTER_FAILURES || 3);
 const SSE_HEARTBEAT_MS = Number(process.env.SSE_HEARTBEAT_MS || 20000);
 const ENABLE_UNSAFE_DEVELOPMENT_TOOLS = process.env.ENABLE_UNSAFE_DEVELOPMENT_TOOLS === 'true';
 const ENABLE_TEST_ENDPOINTS = process.env.NODE_ENV === 'test' || process.env.ENABLE_TEST_ENDPOINTS === 'true';
+const FAULT_HISTORY_LIMIT = Number(process.env.FAULT_HISTORY_LIMIT || 1000);
+const FAULT_HISTORY_PATH = process.env.FAULT_HISTORY_PATH || undefined;
+const FAULT_HISTORY_API_MAX_LIMIT = 500;
 
 app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -56,6 +60,7 @@ const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const stateChangingOperations = new Set();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let persistedPrinterState = await loadPrinterState();
+const faultHistory = await createFaultHistoryStore({ filePath: FAULT_HISTORY_PATH, limit: FAULT_HISTORY_LIMIT });
 
 function addLog(entry) {
   const logEntry = { time: new Date().toISOString(), ...entry };
@@ -85,8 +90,22 @@ const statusCache = new StatusCache({
   onChange: (event, status) => broadcast(event, status),
   onTransition: (transition, status) => {
     addLog({ action: 'printer-state-transition', printerId: status.printerId, transition, ok: true });
+  },
+  onStatusSuccess: (status) => {
+    recordFaultTransitions(status);
   }
 });
+
+async function recordFaultTransitions(status) {
+  try {
+    const events = await faultHistory.recordStatus(status);
+    for (const event of events) {
+      broadcast(event.event === 'activated' ? 'fault-activated' : 'fault-cleared', event);
+    }
+  } catch (error) {
+    addLog({ action: 'fault-history-error', printerId: status.printerId, ok: false, error: error.message });
+  }
+}
 
 function syncStatusPrinters(printers) {
   statusCache.syncPrinters(printers);
@@ -138,6 +157,37 @@ function printerTarget(printer) {
     return { ip: EMULATOR_HOST, port: EMULATOR_PORT };
   }
   return { ip: printer.host, port: printer.port };
+}
+
+function parseFaultQuery(query = {}) {
+  const limit = query.limit === undefined ? 100 : Number(query.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > FAULT_HISTORY_API_MAX_LIMIT) {
+    const error = new Error(`limit must be an integer from 1-${FAULT_HISTORY_API_MAX_LIMIT}.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const activeOnly = query.active === 'true';
+  if (query.active !== undefined && query.active !== 'true' && query.active !== 'false') {
+    const error = new Error('active must be true or false.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  for (const key of ['from', 'to']) {
+    if (query[key] !== undefined && Number.isNaN(new Date(query[key]).valueOf())) {
+      const error = new Error(`${key} must be an ISO timestamp.`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  return {
+    limit,
+    activeOnly,
+    from: query.from || null,
+    to: query.to || null
+  };
 }
 
 function operationId(prefix, printerId) {
@@ -527,6 +577,26 @@ app.get('/api/printers/status', async (_req, res) => {
     res.json(statusCache.all());
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/faults', (req, res) => {
+  try {
+    res.json(faultHistory.query(parseFaultQuery(req.query)));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printers/:printerId/faults', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    if (!printers.some((printer) => printer.id === req.params.printerId)) {
+      return res.status(404).json({ ok: false, error: `Printer ${req.params.printerId} was not found.` });
+    }
+    res.json(faultHistory.query({ printerId: req.params.printerId, ...parseFaultQuery(req.query) }));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
   }
 });
 

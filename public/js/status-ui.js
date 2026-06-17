@@ -38,18 +38,48 @@ function formatAge(value) {
   return `Updated ${days}d ago`;
 }
 
+function activeFaults(decodedStatus) {
+  if (!decodedStatus?.valid) return [];
+  return decodedStatus.activeFaults || decodedStatus.faults || [];
+}
+
 function faultSummary(decodedStatus) {
   if (!decodedStatus?.valid) return decodedStatus?.error || 'Status not decoded';
 
-  const faults = decodedStatus.faults || [];
+  const faults = activeFaults(decodedStatus);
   if (faults.length) return faults.map((fault) => fault.label).join(', ');
 
   return 'No active faults';
 }
 
+function faultCountLabel(decodedStatus) {
+  const count = activeFaults(decodedStatus).length;
+  return count ? String(count) : 'None';
+}
+
+function compactFaultLines(decodedStatus, max = 3) {
+  const faults = activeFaults(decodedStatus);
+  if (!faults.length) return [];
+  const visible = faults.slice(0, max).map((fault) => fault.label);
+  if (faults.length > max) visible.push(`+${faults.length - max} more`);
+  return visible;
+}
+
 function alarmSummary(decodedStatus) {
   if (!decodedStatus?.valid) return 'Unknown';
   return decodedStatus.alarm?.label || 'No alarm';
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '-';
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  const hours = Math.floor(minutes / 60);
+  const min = minutes % 60;
+  return `${hours}h ${min}m`;
 }
 
 function statusTone(coderOrStatus) {
@@ -96,8 +126,12 @@ function setLiveBadge(badge, connected) {
 
 export {
   STALE_AFTER_MS,
+  activeFaults,
   alarmSummary,
+  compactFaultLines,
+  faultCountLabel,
   faultSummary,
+  formatDuration,
   formatAge,
   isStale,
   isVisibleBusy,

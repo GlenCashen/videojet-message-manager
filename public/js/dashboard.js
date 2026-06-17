@@ -4,6 +4,8 @@ import { elements } from './elements.js';
 import { state } from './state.js';
 import {
   alarmSummary,
+  compactFaultLines,
+  faultCountLabel,
   faultSummary,
   formatAge,
   isStale,
@@ -111,6 +113,14 @@ function expectedOutputText(expectedOutput) {
   return expectedOutput.rendered;
 }
 
+function faultHeading(coder) {
+  return coder.state === 'offline' ? 'Last known active faults' : 'Active faults';
+}
+
+function alarmHeading(coder) {
+  return coder.state === 'offline' ? 'Last known printer status' : 'Printer status';
+}
+
 function cardValues(coder) {
   const printer = coder.config;
   const visibleBusy = isVisibleBusy(coder);
@@ -124,7 +134,11 @@ function cardValues(coder) {
     selectedMessage: coder.selectedMessage,
     expectedOutput: expectedOutputText(coder.expectedOutput),
     expectedOutputLabel: coder.expectedOutput?.source === 'last-known' ? 'Last expected output' : 'Expected print',
+    faultHeading: faultHeading(coder),
+    alarmHeading: alarmHeading(coder),
     faultSummary: faultSummary(coder.decodedStatus),
+    faultCount: faultCountLabel(coder.decodedStatus),
+    faultLines: compactFaultLines(coder.decodedStatus),
     lastSuccessAge: formatAge(coder.lastSuccessfulAt),
     dataSource: state.serverConnected ? 'Live data stream' : 'Last known status',
     host: `${printer.host}:${printer.port}`,
@@ -144,6 +158,14 @@ function cardValues(coder) {
       coder.checking ||
       state.checkingAll
   };
+}
+
+function updateFaultList(card, coder) {
+  const list = card.querySelector('[data-field="faultList"]');
+  if (!list) return;
+  clear(list);
+  const lines = compactFaultLines(coder.decodedStatus);
+  for (const line of lines) list.appendChild(el('li', { text: line }));
 }
 
 function setField(card, field, value) {
@@ -178,8 +200,9 @@ function updateCoderCard(card, coder) {
   card.dataset.href = values.href;
 
   for (const [field, value] of Object.entries(values)) {
-    if (field !== 'href' && field !== 'commandDisabled') setField(card, field, value);
+    if (!['href', 'commandDisabled', 'faultLines'].includes(field)) setField(card, field, value);
   }
+  updateFaultList(card, coder);
 
   const checkButton = card.querySelector('button[data-action="check"]');
   if (checkButton) {
@@ -247,11 +270,17 @@ function createCoderCard(coder) {
     ]),
     el('div', { className: 'operator-metrics' }, [
       metric('selectedMessage', 'Selected message', values.selectedMessage),
+      metric('alarm', values.alarmHeading, values.alarm),
       el('div', { className: 'status-metric expected-print' }, [
         el('span', { text: values.expectedOutputLabel, dataset: { field: 'expectedOutputLabel' } }),
         el('pre', { text: values.expectedOutput, dataset: { field: 'expectedOutput' } })
       ]),
-      metric('faultSummary', 'Active faults', values.faultSummary),
+      el('div', { className: 'status-metric' }, [
+        el('span', { text: values.faultHeading, dataset: { field: 'faultHeading' } }),
+        el('strong', { text: values.faultCount, dataset: { field: 'faultCount' } }),
+        el('ul', { className: 'fault-list', dataset: { field: 'faultList' } },
+          values.faultLines.map((line) => el('li', { text: line })))
+      ]),
       metric('lastSuccessAge', 'Last successful update', values.lastSuccessAge),
       metric('dataSource', 'Data source', values.dataSource)
     ]),

@@ -39,7 +39,7 @@
         <div class="operator-state">
           <span id="operatorStatusLight" class="status-light large" aria-hidden="true"></span>
           <div>
-            <p class="muted">Printer state</p>
+            <p class="muted">Printer communication</p>
             <strong id="operatorConnection">Not checked</strong>
           </div>
         </div>
@@ -64,6 +64,24 @@
           </div>
         </details>
       </div>
+    </section>
+
+    <section class="panel operator-panel" aria-labelledby="faultTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="faultTitle">Active faults</h2>
+          <p class="muted">Current fault bits reported by the printer.</p>
+        </div>
+      </div>
+      <div id="activeFaultPanel" class="fault-panel">
+        <p class="muted">No active printer faults</p>
+      </div>
+      <details class="fault-history-section">
+        <summary>Fault history</summary>
+        <div id="faultHistoryList" class="fault-history-list">
+          <p class="muted">No fault history recorded.</p>
+        </div>
+      </details>
     </section>
 
     <section class="panel operator-panel" aria-labelledby="sendTitle">

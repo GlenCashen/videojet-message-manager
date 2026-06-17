@@ -1,89 +1,124 @@
 const FAULT_MAP = [
   [
-    ['1', 'CHARGE_ERROR', 'Charge error'],
-    ['2', 'EHT_TRIP', 'EHT trip'],
-    ['4', 'GUTTER_FAULT', 'Gutter fault'],
-    ['8', 'INK_CORE_EMPTY', 'Ink core empty']
+    [1, 'CHARGE_ERROR', 'Charge error'],
+    [2, 'EHT_TRIP', 'EHT trip'],
+    [4, 'GUTTER_FAULT', 'Gutter fault'],
+    [8, 'INK_CORE_EMPTY', 'Ink core empty']
   ],
   [
-    ['1', 'PUMP_FAULT', 'Pump fault'],
-    ['2', 'CABINET_TOO_HOT', 'Cabinet too hot'],
-    ['4', 'INK_CORE_SERVICE_OVERDUE', 'Ink core service overdue'],
-    ['8', 'UNABLE_TO_CONTROL_VISCOSITY', 'Unable to control viscosity']
+    [1, 'PUMP_FAULT', 'Pump fault'],
+    [2, 'CABINET_TOO_HOT', 'Cabinet too hot'],
+    [4, 'INK_CORE_SERVICE_OVERDUE', 'Ink core service overdue'],
+    [8, 'VISCOSITY_CONTROL_FAILED', 'Unable to control viscosity']
   ],
   [
-    ['1', 'BAD_NOZZLE', 'Bad nozzle'],
-    ['2', 'MODULATION_DRIVER_OVER_TEMPERATURE', 'Modulation driver chip over temperature'],
-    ['4', 'FATAL_NO_PHASE_RESPONSE', 'Fatal error: no phase response from firmware'],
-    ['8', 'PHASING_THRESHOLD_MINIMUM', 'Phasing threshold at minimum - no good phasing']
+    [1, 'BAD_NOZZLE', 'Bad nozzle'],
+    [2, 'MOD_DRIVER_OVER_TEMPERATURE', 'Mod driver chip over temperature'],
+    [4, 'NO_PHASE_RESPONSE', 'Fatal error: no phase response from firmware'],
+    [8, 'PHASING_THRESHOLD_MINIMUM', 'Phasing threshold at minimum - no good phasing']
   ],
   [
-    ['1', 'PHASING_THRESHOLD_MAXIMUM', 'Phasing threshold at maximum - no good phasing'],
-    ['2', 'AUTOMATIC_MODULATION_FAILED', 'Automatic modulation failed to obtain good phasing'],
-    ['4', 'INITIAL_PHASING_TRIM_FAILED', 'Initial phasing trim failed'],
-    ['8', 'MODULATION_READBACK_FAILED', 'Modulation readback failed']
+    [1, 'PHASING_THRESHOLD_MAXIMUM', 'Phasing threshold at maximum - no good phasing'],
+    [2, 'AUTO_MODULATION_FAILED', 'Auto modulation failed to obtain good phasing'],
+    [4, 'INITIAL_PHASING_TRIM_FAILED', 'Initial phasing trim failed'],
+    [8, 'MODULATION_READBACK_FAILED', 'Modulation readback failed']
   ],
   [
-    ['1', 'RASTER_MEMORY_OVERFLOW', 'Raster memory overflow'],
-    ['2', 'VALVE_ERROR', 'Valve error - contact service'],
-    ['4', 'INK_CORE_NOT_FILLING', 'Ink core not filling'],
-    ['8', 'INSUFFICIENT_INK_TO_FILL_CORE', 'Insufficient ink to fill core']
+    [1, 'RASTER_MEMORY_OVERFLOW', 'Raster memory overflow'],
+    [2, 'VALVE_ERROR', 'Valve error - contact service'],
+    [4, 'CORE_NOT_FILLING', 'Core not filling'],
+    [8, 'INSUFFICIENT_INK_TO_FILL_CORE', 'Insufficient ink to fill core']
   ],
   [
-    ['1', 'DATE_TIME_NOT_SET', 'Date/time not set'],
-    ['2', 'NEW_INK_CORE_DIFFERENT_REFERENCE', 'New ink core has a different ink reference'],
-    ['4', 'EHT_CALIBRATION_REQUIRED', 'EHT calibration required'],
-    ['8', 'RESERVED_FAULT', 'Not assigned / reserved']
+    [1, 'DATE_TIME_NOT_SET', 'Date/time not set'],
+    [2, 'INK_REFERENCE_MISMATCH', 'New ink core has a different ink reference'],
+    [4, 'EHT_CALIBRATION_REQUIRED', 'EHT calibration required'],
+    [8, 'RESERVED_FAULT_BIT', 'Unassigned/reserved']
   ]
 ];
 
-function decodeNibble(value, position) {
-  const numeric = Number.parseInt(value, 16);
-  return FAULT_MAP[position - 1]
-    .filter(([bit]) => numeric & Number.parseInt(bit, 16))
-    .map(([bit, code, label]) => ({ position, bit: Number.parseInt(bit, 16), code, label }));
+function invalidStatus(raw) {
+  return {
+    valid: false,
+    raw,
+    error: 'Invalid WSI status response',
+    activeFaults: [],
+    faults: [],
+    alarm: null,
+    hasFaults: false
+  };
 }
 
-function alarmLabel(alarm) {
-  const labels = [];
-  if (alarm.green) labels.push('Green');
-  if (alarm.amber) labels.push('Amber');
-  if (alarm.red) labels.push('Red');
-  if (alarm.reserved) labels.push('Reserved');
-  return labels.length ? labels.join(' + ') : 'None';
+function decodeNibble(value, byte) {
+  const numeric = Number.parseInt(value, 16);
+  return FAULT_MAP[byte - 1]
+    .filter(([bit]) => numeric & bit)
+    .map(([bit, code, label]) => ({
+      code,
+      label,
+      byte,
+      bit,
+      severity: 'fault'
+    }));
+}
+
+function primaryAlarm(alarm) {
+  if (alarm.red) return 'red';
+  if (alarm.amber) return 'amber';
+  if (alarm.green) return 'green';
+  if (alarm.alarmActive) return 'alarm';
+  return 'none';
+}
+
+function alarmLabel(primary) {
+  switch (primary) {
+    case 'red': return 'Red';
+    case 'amber': return 'Amber';
+    case 'green': return 'Green';
+    case 'alarm': return 'Alarm active';
+    default: return 'None';
+  }
 }
 
 function decodeStatus(input) {
   const raw = String(input || '').trim().toUpperCase();
-  if (!/^[0-9A-F]{7}$/.test(raw)) {
-    return {
-      raw,
-      valid: false,
-      error: 'WSI status must be exactly seven hexadecimal characters.'
-    };
-  }
+  if (!/^[0-9A-F]{7}$/.test(raw)) return invalidStatus(raw);
 
   const faultMask = raw.slice(0, 6);
   const alarmMask = raw.slice(6);
-  const faults = [...faultMask].flatMap((nibble, index) => decodeNibble(nibble, index + 1));
-  const alarmValue = Number.parseInt(alarmMask, 16);
-  const alarm = {
-    value: alarmValue,
-    green: Boolean(alarmValue & 1),
-    amber: Boolean(alarmValue & 2),
-    red: Boolean(alarmValue & 4),
-    reserved: Boolean(alarmValue & 8)
+  const activeFaults = [...faultMask].flatMap((nibble, index) => decodeNibble(nibble, index + 1));
+  const mask = Number.parseInt(alarmMask, 16);
+  const alarmBase = {
+    mask,
+    green: Boolean(mask & 1),
+    amber: Boolean(mask & 2),
+    red: Boolean(mask & 4),
+    alarmActive: Boolean(mask & 8)
   };
+  const primary = primaryAlarm(alarmBase);
+  const alarm = { ...alarmBase, primary, label: alarmLabel(primary) };
 
   return {
-    raw,
     valid: true,
+    raw,
     faultMask,
     alarmMask,
-    faults,
-    alarm: { ...alarm, label: alarmLabel(alarm) },
-    hasFaults: faults.length > 0
+    activeFaults,
+    faults: activeFaults,
+    alarm,
+    hasFaults: activeFaults.length > 0
   };
 }
 
-export { decodeStatus };
+function assertValidStatus(input) {
+  const decoded = decodeStatus(input);
+  if (!decoded.valid) {
+    const error = new Error(decoded.error);
+    error.code = 'WSI_PROTOCOL_ERROR';
+    error.rawStatus = decoded.raw;
+    throw error;
+  }
+  return decoded;
+}
+
+export { FAULT_MAP, assertValidStatus, decodeStatus };

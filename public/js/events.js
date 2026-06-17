@@ -51,6 +51,16 @@ function subscribeToPrinterEvents(handlers = {}) {
     handlers.onPrinterConfig?.(message.payload);
   });
 
+  source.addEventListener('fault-activated', (event) => {
+    const message = JSON.parse(event.data);
+    handlers.onFaultActivated?.(message.payload);
+  });
+
+  source.addEventListener('fault-cleared', (event) => {
+    const message = JSON.parse(event.data);
+    handlers.onFaultCleared?.(message.payload);
+  });
+
   source.addEventListener('fleet-snapshot', (event) => {
     const message = JSON.parse(event.data);
     handlers.onFleetSnapshot?.(message.payload);

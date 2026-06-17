@@ -1,4 +1,4 @@
-import { decodeStatus } from './wsi-status.js';
+import { assertValidStatus } from './wsi-status.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -53,11 +53,18 @@ function isMaterialChange(before, after) {
 }
 
 class StatusCache {
-  constructor({ staleAfterMs = 15000, offlineAfterFailures = 3, onChange = () => {}, onTransition = () => {} } = {}) {
+  constructor({
+    staleAfterMs = 15000,
+    offlineAfterFailures = 3,
+    onChange = () => {},
+    onTransition = () => {},
+    onStatusSuccess = () => {}
+  } = {}) {
     this.staleAfterMs = staleAfterMs;
     this.offlineAfterFailures = offlineAfterFailures;
     this.onChange = onChange;
     this.onTransition = onTransition;
+    this.onStatusSuccess = onStatusSuccess;
     this.records = new Map();
   }
 
@@ -123,7 +130,7 @@ class StatusCache {
   applySuccess(printerId, { selectedMessage, rawStatus, responseTimeMs, expectedOutput }) {
     const current = this.ensure(printerId);
     const before = { ...current };
-    const decodedStatus = decodeStatus(rawStatus);
+    const decodedStatus = assertValidStatus(rawStatus);
     const timestamp = nowIso();
 
     current.online = true;
@@ -139,6 +146,7 @@ class StatusCache {
     current.lastError = decodedStatus.valid ? null : decodedStatus.error;
 
     this.commit(printerId, before, current);
+    this.onStatusSuccess(publicStatus(current));
     return this.get(printerId);
   }
 

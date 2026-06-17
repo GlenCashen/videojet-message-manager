@@ -27,6 +27,14 @@ subscribeToPrinterEvents({
     applyPrinterConfig(payload);
   },
 
+  onFaultActivated: () => {
+    markServerConnected();
+  },
+
+  onFaultCleared: () => {
+    markServerConnected();
+  },
+
   onStatusSnapshot: (payload) => {
     markServerConnected();
     applyStatusSnapshot(payload);
