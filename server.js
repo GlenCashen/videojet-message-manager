@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const commandLog = [];
 const MAX_LOG_ENTRIES = 200;
+const printerQueues = new Map();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function addLog(entry) {
@@ -101,6 +102,27 @@ function sendWsiCommand({ ip, port, command, timeoutMs = COMMAND_TIMEOUT_MS }) {
   });
 }
 
+function targetKey({ ip, host, port }) {
+  return `${host || ip}:${port}`;
+}
+
+async function runSequentially(target, task) {
+  const key = targetKey(target);
+  const previous = printerQueues.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const queued = previous.catch(() => {}).then(() => current);
+  printerQueues.set(key, queued);
+
+  await previous.catch(() => {});
+  try {
+    return await task();
+  } finally {
+    release();
+    if (printerQueues.get(key) === queued) printerQueues.delete(key);
+  }
+}
+
 function printerConfig(body = {}) {
   const ip = body.ip || DEFAULT_PRINTER_IP;
   const port = Number(body.port || DEFAULT_PRINTER_PORT);
@@ -110,25 +132,27 @@ function printerConfig(body = {}) {
 }
 
 async function checkPrinterConnection(printer) {
-  const startedAt = Date.now();
-  const message = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'Q' });
-  await delay(BETWEEN_COMMAND_DELAY_MS);
-  const status = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'E' });
+  return runSequentially({ host: printer.host, port: printer.port }, async () => {
+    const startedAt = Date.now();
+    const message = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'Q' });
+    await delay(BETWEEN_COMMAND_DELAY_MS);
+    const status = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'E' });
 
-  return {
-    id: printer.id,
-    name: printer.name,
-    location: printer.location,
-    host: printer.host,
-    port: printer.port,
-    mode: printer.mode,
-    enabled: printer.enabled,
-    online: true,
-    selectedMessage: message.value,
-    status: status.value,
-    checkedAt: new Date().toISOString(),
-    elapsedMs: Date.now() - startedAt
-  };
+    return {
+      id: printer.id,
+      name: printer.name,
+      location: printer.location,
+      host: printer.host,
+      port: printer.port,
+      mode: printer.mode,
+      enabled: printer.enabled,
+      online: true,
+      selectedMessage: message.value,
+      status: status.value,
+      checkedAt: new Date().toISOString(),
+      elapsedMs: Date.now() - startedAt
+    };
+  });
 }
 
 const emulator = {
@@ -353,9 +377,12 @@ app.post('/api/emulator/reset', (_req, res) => {
 app.post('/api/check', async (req, res) => {
   try {
     const { ip, port } = printerConfig(req.body);
-    const message = await sendWsiCommand({ ip, port, command: 'Q' });
-    await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = await sendWsiCommand({ ip, port, command: 'E' });
+    const { message, status } = await runSequentially({ ip, port }, async () => {
+      const message = await sendWsiCommand({ ip, port, command: 'Q' });
+      await delay(BETWEEN_COMMAND_DELAY_MS);
+      const status = await sendWsiCommand({ ip, port, command: 'E' });
+      return { message, status };
+    });
     addLog({ action: 'check', ip, port, ok: true, message: message.value, status: status.value });
     res.json({ ok: true, selectedMessage: message.value, status: status.value, raw: { message, status } });
   } catch (error) {
@@ -373,17 +400,20 @@ app.post('/api/set', async (req, res) => {
     validateAscii(fieldName, 'User field name', 30);
     validateAscii(fieldValue, 'User field value', 50);
 
-    const update = await sendWsiCommand({ ip, port, command: `U${fieldName}\n${fieldValue}` });
-    if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
-    await delay(BETWEEN_COMMAND_DELAY_MS);
+    const { update, select, selected, status } = await runSequentially({ ip, port }, async () => {
+      const update = await sendWsiCommand({ ip, port, command: `U${fieldName}\n${fieldValue}` });
+      if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
+      await delay(BETWEEN_COMMAND_DELAY_MS);
 
-    const select = await sendWsiCommand({ ip, port, command: `M${messageName}` });
-    if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
-    await delay(BETWEEN_COMMAND_DELAY_MS);
+      const select = await sendWsiCommand({ ip, port, command: `M${messageName}` });
+      if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
+      await delay(BETWEEN_COMMAND_DELAY_MS);
 
-    const selected = await sendWsiCommand({ ip, port, command: 'Q' });
-    await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = await sendWsiCommand({ ip, port, command: 'E' });
+      const selected = await sendWsiCommand({ ip, port, command: 'Q' });
+      await delay(BETWEEN_COMMAND_DELAY_MS);
+      const status = await sendWsiCommand({ ip, port, command: 'E' });
+      return { update, select, selected, status };
+    });
     const messageMatches = selected.value === messageName;
 
     const result = {
