@@ -31,7 +31,9 @@ test('preview endpoint does not issue WSI commands', async () => {
       NODE_ENV: 'test',
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
-      EMULATOR_PORT: String(emulatorPort)
+      EMULATOR_PORT: String(emulatorPort),
+      ENABLE_DEV_IDENTITY: 'true',
+      DEV_USER_ROLE: 'engineering'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -80,6 +82,8 @@ test('fault history API records activation and clear from emulator checks', asyn
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
+      ENABLE_DEV_IDENTITY: 'true',
+      DEV_USER_ROLE: 'engineering',
       FAULT_HISTORY_LIMIT: '20',
       FAULT_HISTORY_PATH: faultHistoryPath
     },

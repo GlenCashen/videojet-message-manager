@@ -38,6 +38,24 @@ button, input, select, textarea { font: inherit; }
 
 .operator-shell { max-width: 980px; }
 
+.viewer-shell {
+  width: calc(100% - 32px);
+  max-width: 1500px;
+  margin: 22px auto 64px;
+}
+
+.viewer-page {
+  background: #090d13;
+}
+
+.viewer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
 .app-header {
   display: flex;
   justify-content: space-between;
@@ -95,6 +113,55 @@ h3 { margin: 0; font-size: 1.15rem; }
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.nav-shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 18px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 29, 39, .82);
+}
+
+.top-nav,
+.dev-switcher {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nav-link {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-weight: 850;
+}
+
+.nav-link.active {
+  color: #06111a;
+  background: var(--accent);
+}
+
+.nav-identity {
+  color: var(--muted);
+  font-size: .84rem;
+  font-weight: 750;
+}
+
+.dev-switcher {
+  margin-left: auto;
+}
+
+.dev-switcher select,
+.dev-switcher input {
+  min-width: 120px;
+  padding: 8px 10px;
 }
 
 .badge,
@@ -159,6 +226,109 @@ h3 { margin: 0; font-size: 1.15rem; }
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.viewer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.viewer-card {
+  display: grid;
+  gap: 22px;
+  min-height: 320px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151b25;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  border-top: 8px solid var(--grey);
+}
+
+.viewer-card:focus-visible {
+  outline: 3px solid rgba(69, 199, 255, .45);
+  outline-offset: 3px;
+}
+
+.viewer-card.status-online { border-top-color: var(--green); }
+.viewer-card.status-offline { border-top-color: var(--red); }
+.viewer-card.status-warning { border-top-color: var(--amber); }
+.viewer-card.alarm-green { box-shadow: inset 0 0 0 2px rgba(34, 197, 94, .18), 0 18px 40px rgba(0, 0, 0, .28); }
+.viewer-card.alarm-amber { box-shadow: inset 0 0 0 2px rgba(245, 184, 65, .2), 0 18px 40px rgba(0, 0, 0, .28); }
+.viewer-card.alarm-red { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, .22), 0 18px 40px rgba(0, 0, 0, .28); }
+
+.viewer-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.viewer-card h2 {
+  font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+  line-height: 1.05;
+}
+
+.viewer-comm {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #273241;
+  color: #edf4ff;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.viewer-card.status-online .viewer-comm { background: rgba(34, 197, 94, .16); color: #c8ffdf; }
+.viewer-card.status-offline .viewer-comm { background: rgba(239, 68, 68, .18); color: #ffd0d0; }
+.viewer-card.status-warning .viewer-comm { background: rgba(245, 184, 65, .18); color: #ffd684; }
+
+.viewer-status {
+  display: grid;
+  gap: 6px;
+}
+
+.viewer-status span,
+.viewer-facts span {
+  color: var(--muted-2);
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 850;
+}
+
+.viewer-status strong {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  line-height: 1;
+}
+
+.viewer-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.viewer-facts div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+}
+
+.viewer-facts strong {
+  font-size: 1.25rem;
+}
+
+.viewer-warning {
+  margin: 0;
+  border: 1px solid rgba(245, 184, 65, .45);
+  background: rgba(245, 184, 65, .14);
+  color: #ffe0a1;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .coder-card {
@@ -726,6 +896,7 @@ body.server-disconnected .dashboard-panel {
 
 @media (max-width: 1040px) {
   .coder-grid { grid-template-columns: 1fr; }
+  .viewer-grid { grid-template-columns: 1fr; }
   .coder-card { min-height: auto; }
   .status-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -733,8 +904,10 @@ body.server-disconnected .dashboard-panel {
 @media (max-width: 720px) {
   .shell { width: calc(100% - 24px); margin-top: 18px; }
   .app-header,
+  .viewer-header,
   .section-heading,
   .mode-row,
+  .nav-shell,
   .dev-panel summary,
   .log-panel summary {
     flex-direction: column;
@@ -750,6 +923,11 @@ body.server-disconnected .dashboard-panel {
   .wide { grid-column: auto; }
   .actions,
   .card-actions { justify-content: stretch; flex-wrap: wrap; }
+  .viewer-facts { grid-template-columns: 1fr; }
+  .dev-switcher { margin-left: 0; }
+  .dev-switcher select,
+  .dev-switcher input,
+  .dev-switcher button { width: 100%; }
   .actions button,
   .card-actions button,
   .card-actions a,

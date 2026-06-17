@@ -3,63 +3,84 @@ import { setupEditor, startEdit } from './js/editor.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { applyLogEntry, loadLogs, renderLogs, setupLogs } from './js/logs.js';
 import { loadMessageConfig, setupMessageConfig } from './js/message-config.js';
+import { renderNavigation } from './js/navigation.js';
+import { hasCapability, loadSession } from './js/session.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
 import { state } from './js/state.js';
 import { setLiveBadge } from './js/status-ui.js';
+import { normalizeError, setNotice } from './js/dom.js';
+import { elements } from './js/elements.js';
 
-setupDashboard({ loadLogs, startEdit });
-setupEditor({ loadPrinters });
-setupLogs();
-setupMessageConfig();
-setupSinglePrinterTools({ loadLogs });
-subscribeToPrinterEvents({
-  onConnected: markServerConnected,
-  onHeartbeat: markServerConnected,
-  onDisconnected: markServerDisconnected,
+function canLoadLogs() {
+  return hasCapability('viewAudit') || hasCapability('accessDiagnostics');
+}
 
-  onPrinterStatus: (payload) => {
-    markServerConnected();
-    applyPrinterEvent(payload);
-  },
+function applyCapabilityLayout() {
+  elements.editorPanel.classList.toggle('hidden', true);
+  elements.messageConfigPanel?.classList.toggle('hidden', !hasCapability('editMessages'));
+  elements.devPanel?.classList.toggle('hidden', !hasCapability('accessDiagnostics'));
+  elements.logPanel?.classList.toggle('hidden', !canLoadLogs());
+}
 
-  onPrinterConfig: (payload) => {
-    markServerConnected();
-    applyPrinterConfig(payload);
-  },
+function safeLoadLogs() {
+  return canLoadLogs() ? loadLogs() : Promise.resolve();
+}
 
-  onFaultActivated: () => {
-    markServerConnected();
-  },
+function safeStartEdit(id) {
+  if (hasCapability('configurePrinters')) startEdit(id);
+}
 
-  onFaultCleared: () => {
-    markServerConnected();
-  },
+function setupEventStream() {
+  subscribeToPrinterEvents({
+    onConnected: markServerConnected,
+    onHeartbeat: markServerConnected,
+    onDisconnected: markServerDisconnected,
 
-  onStatusSnapshot: (payload) => {
-    markServerConnected();
-    applyStatusSnapshot(payload);
-  },
+    onPrinterStatus: (payload) => {
+      markServerConnected();
+      applyPrinterEvent(payload);
+    },
 
-  onFleetSnapshot: (payload) => {
-    markServerConnected();
-    applyFleetSnapshot(payload);
-  },
+    onPrinterConfig: (payload) => {
+      markServerConnected();
+      applyPrinterConfig(payload);
+    },
 
-  onLogsSnapshot: (payload) => {
-    markServerConnected();
-    renderLogs(payload);
-  },
+    onFaultActivated: () => {
+      markServerConnected();
+    },
 
-  onLogEntry: (payload) => {
-    markServerConnected();
-    applyLogEntry(payload);
-  },
+    onFaultCleared: () => {
+      markServerConnected();
+    },
 
-  onEmulatorSnapshot: (payload) => {
-    markServerConnected();
-    applyEmulatorState(payload);
-  }
-});
+    onStatusSnapshot: (payload) => {
+      markServerConnected();
+      applyStatusSnapshot(payload);
+    },
+
+    onFleetSnapshot: (payload) => {
+      markServerConnected();
+      applyFleetSnapshot(payload);
+    },
+
+    onLogsSnapshot: (payload) => {
+      markServerConnected();
+      if (canLoadLogs()) renderLogs(payload);
+    },
+
+    onLogEntry: (payload) => {
+      markServerConnected();
+      if (canLoadLogs()) applyLogEntry(payload);
+    },
+
+    onEmulatorSnapshot: (payload) => {
+      markServerConnected();
+      if (hasCapability('accessDiagnostics')) applyEmulatorState(payload);
+    }
+  });
+}
+
 function markServerConnected() {
   const wasConnected = state.serverConnected;
   state.lastServerEventAt = Date.now();
@@ -89,4 +110,34 @@ setInterval(() => {
     markServerDisconnected();
   }
 }, 5000);
-Promise.all([loadConfig(), loadPrinters().then(loadStatuses), loadLogs(), loadMessageConfig()]);
+
+async function start() {
+  try {
+    await loadSession();
+    renderNavigation(elements.topNavigation, { active: '/editor' });
+
+    if (!hasCapability('viewEditor')) {
+      setNotice(elements.dashboardMessage, 'You do not have permission to view the editor.', 'error');
+      return;
+    }
+
+    applyCapabilityLayout();
+    setupDashboard({ loadLogs: safeLoadLogs, startEdit: safeStartEdit });
+    if (hasCapability('configurePrinters')) setupEditor({ loadPrinters });
+    if (canLoadLogs()) setupLogs();
+    if (hasCapability('editMessages')) setupMessageConfig();
+    if (hasCapability('accessDiagnostics')) setupSinglePrinterTools({ loadLogs: safeLoadLogs });
+    setupEventStream();
+
+    await Promise.all([
+      hasCapability('accessDiagnostics') ? loadConfig() : Promise.resolve(),
+      loadPrinters().then(loadStatuses),
+      safeLoadLogs(),
+      hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve()
+    ]);
+  } catch (error) {
+    setNotice(elements.dashboardMessage, normalizeError(error), 'error');
+  }
+}
+
+start();

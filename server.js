@@ -24,6 +24,21 @@ import {
   savePrinterState
 } from './server/printer-state-store.js';
 import { createFaultHistoryStore } from './server/fault-history-store.js';
+import {
+  canAccessDiagnostics,
+  canConfigurePrinters,
+  canEditMessages,
+  canOperatePrinter,
+  canViewAudit,
+  canViewDashboard,
+  canViewEditor,
+  canViewFaultHistory,
+  canViewPrinter,
+  developmentUser,
+  getCapabilities,
+  normalizeRole,
+  visiblePrinters
+} from './server/permissions.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
 
@@ -45,11 +60,36 @@ const OFFLINE_AFTER_FAILURES = Number(process.env.OFFLINE_AFTER_FAILURES || 3);
 const SSE_HEARTBEAT_MS = Number(process.env.SSE_HEARTBEAT_MS || 20000);
 const ENABLE_UNSAFE_DEVELOPMENT_TOOLS = process.env.ENABLE_UNSAFE_DEVELOPMENT_TOOLS === 'true';
 const ENABLE_TEST_ENDPOINTS = process.env.NODE_ENV === 'test' || process.env.ENABLE_TEST_ENDPOINTS === 'true';
+const ENABLE_DEV_IDENTITY = process.env.ENABLE_DEV_IDENTITY === 'true';
+const DEV_USER_ROLE = process.env.DEV_USER_ROLE || 'viewer';
+const DEV_USER_PRINTER_IDS = (process.env.DEV_USER_PRINTER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
 const FAULT_HISTORY_LIMIT = Number(process.env.FAULT_HISTORY_LIMIT || 1000);
 const FAULT_HISTORY_PATH = process.env.FAULT_HISTORY_PATH || undefined;
 const FAULT_HISTORY_API_MAX_LIMIT = 500;
 
 app.use(express.json({ limit: '32kb' }));
+app.get('/', (_req, res) => res.redirect('/dashboard'));
+
+app.get('/dashboard', (req, res) => {
+  const user = currentUser(req);
+  if (!canViewDashboard(user)) return res.status(401).send('Authentication is required.');
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+app.get('/editor', (req, res) => {
+  const user = currentUser(req);
+  if (!canViewEditor(user)) return res.status(403).send('You do not have permission to view the editor.');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/printers/:printerId', async (req, res) => {
+  const user = currentUser(req);
+  if (!canViewPrinter(user, req.params.printerId)) return res.status(403).send('You do not have permission to view this printer.');
+  const printers = await readPrinters();
+  if (!printers.some((printer) => printer.id === req.params.printerId)) return res.status(404).send('Printer not found.');
+  res.sendFile(path.join(__dirname, 'public', 'printer.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const commandLog = [];
@@ -69,11 +109,81 @@ function addLog(entry) {
   broadcast('log-entry', logEntry);
 }
 
+function parseCookies(header = '') {
+  return Object.fromEntries(header.split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [key, ...value] = part.split('=');
+      return [decodeURIComponent(key), decodeURIComponent(value.join('='))];
+    }));
+}
+
+function devIdentityFromRequest(req) {
+  if (!ENABLE_DEV_IDENTITY) return null;
+  const cookies = parseCookies(req.headers.cookie || '');
+  const role = normalizeRole(cookies.devRole || DEV_USER_ROLE);
+  if (!role) return null;
+  const printerIds = (cookies.devPrinterIds || DEV_USER_PRINTER_IDS.join(','))
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return developmentUser({ role, printerIds });
+}
+
+function currentUser(req) {
+  return devIdentityFromRequest(req);
+}
+
+function sessionPayload(req) {
+  const user = currentUser(req);
+  return {
+    authenticated: Boolean(user),
+    user,
+    capabilities: getCapabilities(user),
+    devIdentityEnabled: ENABLE_DEV_IDENTITY
+  };
+}
+
+function forbidden(res, message = 'You do not have permission to access this resource.') {
+  return res.status(403).json({ ok: false, code: 'FORBIDDEN', error: message });
+}
+
+function requireUser(req, res) {
+  const user = currentUser(req);
+  if (!user) {
+    res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', error: 'No authenticated user is available.' });
+    return null;
+  }
+  return user;
+}
+
+function canReceiveEvent(user, type, payload) {
+  if (!user) return false;
+  if (['connected', 'heartbeat'].includes(type)) return true;
+  if (['logs-snapshot', 'log-entry'].includes(type)) return canViewAudit(user) || canAccessDiagnostics(user);
+  if (['emulator-snapshot', 'stream-error'].includes(type)) return canAccessDiagnostics(user);
+  if (type === 'messages-updated') return canEditMessages(user);
+
+  const printerId = payload?.printerId || payload?.id;
+  if (printerId) return canViewPrinter(user, printerId);
+  return true;
+}
+
+function filterEventPayload(user, type, payload) {
+  if (!canReceiveEvent(user, type, payload)) return null;
+  if (type === 'status-snapshot') return payload.filter((status) => canViewPrinter(user, status.printerId || status.id));
+  if (type === 'fleet-snapshot') return visiblePrinters(user, payload);
+  return payload;
+}
+
 function broadcast(type, payload) {
-  const data = JSON.stringify({ type, payload });
   for (const client of eventClients) {
+    const filteredPayload = filterEventPayload(client.user, type, payload);
+    if (filteredPayload === null) continue;
+    const data = JSON.stringify({ type, payload: filteredPayload });
     try {
-      client.write(`event: ${type}\ndata: ${data}\n\n`);
+      client.response.write(`event: ${type}\ndata: ${data}\n\n`);
     } catch (_error) {
       eventClients.delete(client);
     }
@@ -471,11 +581,41 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-app.get('/api/logs', (_req, res) => res.json(commandLog));
-app.get('/api/emulator', (_req, res) => res.json(emulatorSnapshot()));
+app.get('/api/session', (req, res) => {
+  res.json(sessionPayload(req));
+});
 
-app.get('/api/messages', async (_req, res) => {
+app.post('/api/dev/session', (req, res) => {
+  if (!ENABLE_DEV_IDENTITY) return forbidden(res, 'Development identity switching is disabled.');
+  const role = normalizeRole(req.body?.role);
+  if (!role) return res.status(400).json({ ok: false, error: 'Unsupported development role.' });
+  const printerIds = Array.isArray(req.body?.printerIds) ? req.body.printerIds.join(',') : String(req.body?.printerIds || '');
+  res.setHeader('Set-Cookie', [
+    `devRole=${encodeURIComponent(role)}; Path=/; SameSite=Lax`,
+    `devPrinterIds=${encodeURIComponent(printerIds)}; Path=/; SameSite=Lax`
+  ]);
+  res.json({ ok: true });
+});
+
+app.get('/api/logs', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canViewAudit(user) && !canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to view logs.');
+  res.json(commandLog);
+});
+
+app.get('/api/emulator', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
+  res.json(emulatorSnapshot());
+});
+
+app.get('/api/messages', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to edit messages.');
     const printers = await readPrinters();
     res.json(enabledMessages(await loadMessages(undefined, { printers })));
   } catch (error) {
@@ -485,6 +625,9 @@ app.get('/api/messages', async (_req, res) => {
 
 app.get('/api/messages/:id', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to edit messages.');
     const printers = await readPrinters();
     const message = getMessageById(await loadMessages(undefined, { printers }), req.params.id);
     if (!message.enabled) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
@@ -496,6 +639,9 @@ app.get('/api/messages/:id', async (req, res) => {
 
 app.put('/api/messages/:id', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to edit messages.');
     const printers = await readPrinters();
     const messages = await loadMessages(undefined, { printers });
     const index = messages.findIndex((message) => message.id === req.params.id);
@@ -517,6 +663,14 @@ app.put('/api/messages/:id', async (req, res) => {
 
 app.post('/api/messages/:id/preview', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (req.body?.printerId && !canViewPrinter(user, req.body.printerId)) {
+      return forbidden(res, 'You do not have permission to view this printer.');
+    }
+    if (!req.body?.printerId && !canEditMessages(user)) {
+      return forbidden(res, 'You do not have permission to preview global messages.');
+    }
     const printers = await readPrinters();
     const messages = await loadMessages(undefined, { printers });
     const message = req.body?.printerId
@@ -529,43 +683,54 @@ app.post('/api/messages/:id/preview', async (req, res) => {
   }
 });
 
-app.get('/api/debug/wsi-counters', (_req, res) => {
+app.get('/api/debug/wsi-counters', (req, res) => {
   if (!ENABLE_TEST_ENDPOINTS) return res.status(404).json({ ok: false, error: 'Not found.' });
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
   res.json(wsiClient.getCounters());
 });
 
-app.post('/api/debug/wsi-counters/reset', (_req, res) => {
+app.post('/api/debug/wsi-counters/reset', (req, res) => {
   if (!ENABLE_TEST_ENDPOINTS) return res.status(404).json({ ok: false, error: 'Not found.' });
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
   wsiClient.resetCounters();
   res.json({ ok: true });
 });
 
 app.get('/api/events', async (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).end();
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive'
   });
-  eventClients.add(res);
-  req.on('close', () => eventClients.delete(res));
+  const client = { response: res, user };
+  eventClients.add(client);
+  req.on('close', () => eventClients.delete(client));
   sendEvent(res, 'connected', { connected: true });
-  sendEvent(res, 'logs-snapshot', commandLog);
-  sendEvent(res, 'emulator-snapshot', emulatorSnapshot());
+  if (canViewAudit(user) || canAccessDiagnostics(user)) sendEvent(res, 'logs-snapshot', commandLog);
+  if (canAccessDiagnostics(user)) sendEvent(res, 'emulator-snapshot', emulatorSnapshot());
   try {
     const printers = await readPrinters();
     syncStatusPrinters(printers);
-    sendEvent(res, 'status-snapshot', statusCache.all());
-    sendEvent(res, 'fleet-snapshot', printers);
+    sendEvent(res, 'status-snapshot', statusCache.all().filter((status) => canViewPrinter(user, status.printerId)));
+    sendEvent(res, 'fleet-snapshot', visiblePrinters(user, printers));
   } catch (error) {
-    sendEvent(res, 'stream-error', { error: error.message });
+    if (canAccessDiagnostics(user)) sendEvent(res, 'stream-error', { error: error.message });
   }
 });
 
 app.get('/api/printers', async (_req, res) => {
   try {
+    const user = requireUser(_req, res);
+    if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
-    res.json(printers);
+    res.json(visiblePrinters(user, printers));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -573,8 +738,12 @@ app.get('/api/printers', async (_req, res) => {
 
 app.get('/api/printers/status', async (_req, res) => {
   try {
-    syncStatusPrinters(await readPrinters());
-    res.json(statusCache.all());
+    const user = requireUser(_req, res);
+    if (!user) return;
+    const printers = await readPrinters();
+    syncStatusPrinters(printers);
+    const visibleIds = new Set(visiblePrinters(user, printers).map((printer) => printer.id));
+    res.json(statusCache.all().filter((status) => visibleIds.has(status.printerId)));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -582,7 +751,14 @@ app.get('/api/printers/status', async (_req, res) => {
 
 app.get('/api/faults', (req, res) => {
   try {
-    res.json(faultHistory.query(parseFaultQuery(req.query)));
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canViewFaultHistory(user)) return forbidden(res, 'You do not have permission to view fault history.');
+    const result = faultHistory.query(parseFaultQuery(req.query));
+    res.json({
+      activeFaults: result.activeFaults.filter((fault) => canViewPrinter(user, fault.printerId)),
+      history: result.history.filter((event) => canViewPrinter(user, event.printerId))
+    });
   } catch (error) {
     res.status(error.statusCode || 400).json({ ok: false, error: error.message });
   }
@@ -590,10 +766,14 @@ app.get('/api/faults', (req, res) => {
 
 app.get('/api/printers/:printerId/faults', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canViewFaultHistory(user)) return forbidden(res, 'You do not have permission to view fault history.');
     const printers = await readPrinters();
     if (!printers.some((printer) => printer.id === req.params.printerId)) {
       return res.status(404).json({ ok: false, error: `Printer ${req.params.printerId} was not found.` });
     }
+    if (!canViewPrinter(user, req.params.printerId)) return forbidden(res, 'You do not have permission to view this printer.');
     res.json(faultHistory.query({ printerId: req.params.printerId, ...parseFaultQuery(req.query) }));
   } catch (error) {
     res.status(error.statusCode || 400).json({ ok: false, error: error.message });
@@ -602,9 +782,13 @@ app.get('/api/printers/:printerId/faults', async (req, res) => {
 
 app.get('/api/printers/:printerId/messages', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     const printers = await readPrinters();
     const printer = printers.find((item) => item.id === req.params.printerId);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.printerId} was not found.` });
+    if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
+    if (!canOperatePrinter(user, printer.id)) return forbidden(res, 'You do not have permission to operate this printer.');
     res.json(messagesForPrinter(await loadMessages(undefined, { printers }), printer.id));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -613,10 +797,13 @@ app.get('/api/printers/:printerId/messages', async (req, res) => {
 
 app.get('/api/printers/:id', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
     res.json(printer);
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -625,10 +812,13 @@ app.get('/api/printers/:id', async (req, res) => {
 
 app.get('/api/printers/:id/status', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
     res.json(statusCache.get(req.params.id));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
@@ -637,6 +827,9 @@ app.get('/api/printers/:id/status', async (req, res) => {
 
 app.put('/api/printers/:id', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
     const printers = await updatePrinter(req.params.id, req.body || {});
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
@@ -651,6 +844,8 @@ app.put('/api/printers/:id', async (req, res) => {
 app.post('/api/printers/:id/check', async (req, res) => {
   const startedAt = Date.now();
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     const printers = await readPrinters();
     const printer = printers.find((item) => item.id === req.params.id);
 
@@ -660,6 +855,7 @@ app.post('/api/printers/:id/check', async (req, res) => {
     if (!printer.enabled) {
       return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
     }
+    if (!canOperatePrinter(user, printer.id)) return forbidden(res, 'You do not have permission to operate this printer.');
 
     const result = await refreshPrinterStatus(printer, 'check');
     addLog({ action: 'printer-check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
@@ -689,6 +885,8 @@ app.post('/api/printers/:id/check', async (req, res) => {
 
 app.post('/api/printers/:id/set', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
@@ -699,6 +897,7 @@ app.post('/api/printers/:id/set', async (req, res) => {
     if (!printer.enabled) {
       return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
     }
+    if (!canOperatePrinter(user, printer.id)) return forbidden(res, 'You do not have permission to operate this printer.');
     if (!statusCache.hasRevision(printer.id, req.body?.expectedRevision)) {
       const latest = statusCache.get(printer.id);
       addLog({ action: 'revision-conflict', printerId: printer.id, ok: false, expectedRevision: req.body?.expectedRevision, currentRevision: latest.revision });
@@ -752,8 +951,10 @@ app.post('/api/printers/:id/set', async (req, res) => {
   }
 });
 
-app.post('/api/printers/check-all', async (_req, res) => {
-  const printers = (await readPrinters()).filter((printer) => printer.enabled);
+app.post('/api/printers/check-all', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  const printers = (await readPrinters()).filter((printer) => printer.enabled && canOperatePrinter(user, printer.id));
   const results = [];
 
   for (const printer of printers) {
@@ -788,6 +989,9 @@ app.post('/api/printers/check-all', async (_req, res) => {
 });
 
 app.post('/api/emulator', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
   const body = req.body || {};
   if (typeof body.selectedMessage === 'string' && emulator.availableMessages.includes(body.selectedMessage)) {
     emulator.selectedMessage = body.selectedMessage;
@@ -810,7 +1014,10 @@ app.post('/api/emulator', (req, res) => {
   res.json(snapshot);
 });
 
-app.post('/api/emulator/reset', (_req, res) => {
+app.post('/api/emulator/reset', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
   emulator.selectedMessage = '9 MONTH';
   emulator.userFields = { TEST: 'TEST123', BREW: 'BR1246', BATCH: 'B260617A' };
   emulator.status = '0000002';
@@ -824,11 +1031,14 @@ app.post('/api/emulator/reset', (_req, res) => {
 
 app.post('/api/check', async (req, res) => {
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     if (req.body?.printerId) {
       const printers = await readPrinters();
       syncStatusPrinters(printers);
       const printer = printers.find((item) => item.id === req.body.printerId);
       if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
+      if (!canOperatePrinter(user, printer.id)) return forbidden(res, 'You do not have permission to operate this printer.');
       const result = await refreshPrinterStatus(printer, 'check');
       addLog({ action: 'check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
       return res.json({ ok: true, ...result });
@@ -836,6 +1046,7 @@ app.post('/api/check', async (req, res) => {
     if (!ENABLE_UNSAFE_DEVELOPMENT_TOOLS) {
       return res.status(403).json({ ok: false, error: 'Arbitrary printer targets are disabled. Use printerId.' });
     }
+    if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
 
     const { ip, port } = printerConfig(req.body);
     const { message, status } = await coderQueue.run(`unsafe:${ip}:${port}`, { operation: 'unsafe-check' }, async () => {
@@ -855,12 +1066,15 @@ app.post('/api/check', async (req, res) => {
 app.post('/api/set', async (req, res) => {
   const startedAt = Date.now();
   try {
+    const user = requireUser(req, res);
+    if (!user) return;
     if (req.body?.printerId) {
       const printers = await readPrinters();
       syncStatusPrinters(printers);
       const printer = printers.find((item) => item.id === req.body.printerId);
       if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
       if (!printer.enabled) return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
+      if (!canOperatePrinter(user, printer.id)) return forbidden(res, 'You do not have permission to operate this printer.');
       if (!statusCache.hasRevision(printer.id, req.body?.expectedRevision)) {
         const latest = statusCache.get(printer.id);
         addLog({ action: 'revision-conflict', printerId: printer.id, ok: false, expectedRevision: req.body?.expectedRevision, currentRevision: latest.revision });
@@ -903,6 +1117,7 @@ app.post('/api/set', async (req, res) => {
     if (!ENABLE_UNSAFE_DEVELOPMENT_TOOLS) {
       return res.status(403).json({ ok: false, error: 'Arbitrary printer targets are disabled. Use printerId.' });
     }
+    if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
 
     const { ip, port } = printerConfig(req.body);
     const { messageName, fieldName, fieldValue } = req.body;

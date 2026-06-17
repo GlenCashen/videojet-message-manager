@@ -1,6 +1,8 @@
 import { apiJson } from './api.js';
 import { clear, el, formatDate, normalizeError, setNotice } from './dom.js';
 import { elements } from './elements.js';
+import { printerHref } from './navigation.js';
+import { canOperatePrinter, hasCapability } from './session.js';
 import { state } from './state.js';
 import {
   alarmSummary,
@@ -127,7 +129,7 @@ function cardValues(coder) {
   const timestamp = statusTimestamp(coder);
 
   return {
-    href: `/printer.html?id=${encodeURIComponent(printer.id)}`,
+    href: printerHref(printer.id),
     statusText: coder.checking ? 'Checking' : statusLabel(coder),
     name: printer.name,
     location: printer.location || 'No location set',
@@ -154,6 +156,7 @@ function cardValues(coder) {
     commandDisabled:
       !printer.enabled ||
       !state.serverConnected ||
+      !canOperatePrinter(printer.id) ||
       visibleBusy ||
       coder.checking ||
       state.checkingAll
@@ -236,12 +239,14 @@ function createCoderCard(coder) {
     href: values.href
   }, 'Open coder');
 
-  const editButton = el('button', {
-    className: 'ghost bordered',
-    type: 'button',
-    'data-action': 'edit',
-    'data-id': printer.id
-  }, 'Edit');
+  const editButton = hasCapability('configurePrinters')
+    ? el('button', {
+      className: 'ghost bordered',
+      type: 'button',
+      'data-action': 'edit',
+      'data-id': printer.id
+    }, 'Edit')
+    : null;
 
   const message = coder.lastError
     ? el('p', { className: 'card-error', text: coder.lastError })
@@ -285,7 +290,7 @@ function createCoderCard(coder) {
       metric('dataSource', 'Data source', values.dataSource)
     ]),
     message,
-    el('details', { className: 'diagnostics' }, [
+    (hasCapability('accessDiagnostics') || hasCapability('configurePrinters')) ? el('details', { className: 'diagnostics' }, [
       el('summary', {}, 'Diagnostics'),
       el('div', { className: 'coder-meta' }, [
         keyedDetail('host', 'Host', values.host),
@@ -299,8 +304,8 @@ function createCoderCard(coder) {
         keyedDetail('failures', 'Failures', values.failures),
         keyedDetail('revision', 'Revision', values.revision)
       ])
-    ]),
-    el('div', { className: 'card-actions' }, [checkButton, openLink, editButton])
+    ]) : null,
+    el('div', { className: 'card-actions' }, [checkButton, openLink, editButton].filter(Boolean))
   ]);
 }
 
@@ -356,7 +361,8 @@ function renderDashboard() {
       `${enabled.length} enabled | ${online} healthy | ${stale} warning | ${offline} offline | ${unknown} not checked`;
   }
 
-  elements.checkAllButton.disabled = state.checkingAll || enabled.length === 0 || !state.serverConnected;
+  const operableEnabled = enabled.filter((coder) => canOperatePrinter(coder.config.id));
+  elements.checkAllButton.disabled = state.checkingAll || operableEnabled.length === 0 || !state.serverConnected;
 }
 
 async function loadPrinters() {
@@ -399,6 +405,7 @@ function applyStatusSnapshot(statuses) {
 async function checkCoder(id) {
   const coder = state.coders[id];
   if (!coder || !state.serverConnected) return;
+  if (!canOperatePrinter(id)) return;
   if (!coder.config.enabled) {
     state.coders[id] = { ...coder, state: 'disabled', lastError: 'Coder is disabled.' };
     renderDashboard();
@@ -427,7 +434,7 @@ async function checkAllCoders() {
   setNotice(elements.dashboardMessage, 'Checking enabled coders...');
   for (const id of state.order) {
     const coder = state.coders[id];
-    if (coder.config.enabled) state.coders[id] = { ...coder, checking: true, lastError: '' };
+    if (coder.config.enabled && canOperatePrinter(id)) state.coders[id] = { ...coder, checking: true, lastError: '' };
   }
   renderDashboard();
 

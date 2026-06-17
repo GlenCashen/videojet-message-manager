@@ -3,10 +3,10 @@
     "id": "coder-1",
     "name": "Can Coder",
     "location": "Packaging line",
-    "host": "192.168.100.2",
+    "host": "192.168.100.166",
     "port": 3100,
     "enabled": true,
-    "mode": "real"
+    "mode": "emulator"
   },
   {
     "id": "coder-2",

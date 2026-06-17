@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videojet Live Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body class="viewer-page">
+  <main class="viewer-shell">
+    <header class="viewer-header">
+      <div>
+        <h1>Live printer dashboard</h1>
+        <p class="muted">Current communication, alarm state, selected messages, and active faults.</p>
+      </div>
+      <div class="header-badges">
+        <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
+          <span class="live-indicator-light" aria-hidden="true"></span>
+          <span>CONNECTING</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="topNavigation" class="nav-shell"></div>
+
+    <p id="dashboardMessage" class="notice hidden" aria-live="polite"></p>
+    <section id="viewerGrid" class="viewer-grid" aria-label="Printer status cards">
+      <article class="viewer-card">
+        <p class="muted">Loading available printers...</p>
+      </article>
+    </section>
+  </main>
+  <script type="module" src="/js/viewer-dashboard.js"></script>
+</body>
+
+</html>

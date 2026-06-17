@@ -1,0 +1,32 @@
+{
+  "coder-1": {
+    "messageId": "9-month",
+    "displayName": "9 Month",
+    "printerMessageName": "9 MONTH",
+    "fields": {
+      "brew": "BREW",
+      "batch": "BATCH"
+    },
+    "lines": [
+      "BREW BATCH",
+      "BBD: 18/03/2027 09:01:05"
+    ],
+    "rendered": "BREW BATCH\nBBD: 18/03/2027 09:01:05",
+    "appliedAt": "2026-06-17T23:01:05.288Z"
+  },
+  "coder-2": {
+    "messageId": "12-month",
+    "displayName": "12 Month",
+    "printerMessageName": "12 MONTH",
+    "fields": {
+      "brew": "BR1246",
+      "batch": "B260617A"
+    },
+    "lines": [
+      "BR1246 B260617A",
+      "BBD: 18/06/2027 09:38:56"
+    ],
+    "rendered": "BR1246 B260617A\nBBD: 18/06/2027 09:38:56",
+    "appliedAt": "2026-06-17T23:38:56.006Z"
+  }
+}

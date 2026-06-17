@@ -25,6 +25,7 @@
         <a class="secondary button-link" href="/">Back to dashboard</a>
       </div>
     </header>
+    <div id="topNavigation" class="nav-shell"></div>
 
     <section class="panel operator-panel" aria-labelledby="statusTitle">
       <div class="section-heading">
@@ -49,6 +50,7 @@
           <div class="status-metric"><span>Active faults</span><strong id="operatorFaults">-</strong></div>
           <div class="status-metric"><span>Last successful update</span><strong id="operatorCheckedAt">No update yet</strong></div>
           <div class="status-metric"><span>Data source</span><strong id="operatorDataSource">Last known status</strong></div>
+          <div class="status-metric"><span>Access</span><strong id="operatorAccessLevel">Loading</strong></div>
         </div>
         <section class="expected-output-panel wide" aria-labelledby="storedExpectedTitle">
           <h3 id="storedExpectedTitle">Expected printed message</h3>
@@ -84,7 +86,7 @@
       </details>
     </section>
 
-    <section class="panel operator-panel" aria-labelledby="sendTitle">
+    <section id="operatorControlsPanel" class="panel operator-panel" aria-labelledby="sendTitle">
       <div class="section-heading">
         <div>
           <h2 id="sendTitle">Set printer message</h2>

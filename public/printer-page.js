@@ -1,6 +1,8 @@
 import { apiJson, postJson } from './js/api.js';
 import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { subscribeToPrinterEvents } from './js/events.js';
+import { printerHref, renderNavigation } from './js/navigation.js';
+import { canOperatePrinter, currentSession, loadSession } from './js/session.js';
 import {
   activeFaults,
   alarmSummary,
@@ -26,7 +28,9 @@ const elements = {
   alarmStatus: $('operatorAlarmStatus'),
   faults: $('operatorFaults'),
   dataSource: $('operatorDataSource'),
+  accessLevel: $('operatorAccessLevel'),
   liveNote: $('operatorLiveNote'),
+  nav: $('topNavigation'),
   expectedOutput: $('operatorExpectedOutput'),
   expectedSource: $('operatorExpectedSource'),
   activeFaultPanel: $('activeFaultPanel'),
@@ -36,6 +40,7 @@ const elements = {
   host: $('operatorHost'),
   mode: $('operatorMode'),
   form: $('operatorSetForm'),
+  controlsPanel: $('operatorControlsPanel'),
   setButton: $('operatorSetButton'),
   messageName: $('operatorMessageName'),
   messageFields: $('messageFields'),
@@ -47,7 +52,9 @@ const elements = {
 };
 
 const params = new URLSearchParams(window.location.search);
-const printerId = params.get('id');
+const printerId = window.location.pathname.startsWith('/printers/')
+  ? decodeURIComponent(window.location.pathname.split('/').pop())
+  : params.get('id');
 const PREVIEW_DEBOUNCE_MS = 250;
 
 let printer = null;
@@ -71,13 +78,30 @@ function dynamicFieldInputs() {
 
 function setBusy(busy) {
   manualBusy = busy;
-  const disabled = busy || !printer?.enabled || !serverConnected;
+  const canOperate = printer ? canOperatePrinter(printer.id) : false;
+  const disabled = busy || !printer?.enabled || !serverConnected || !canOperate;
 
   elements.checkButton.disabled = disabled;
   elements.setButton.disabled = disabled || !messages.length;
   elements.messageName.disabled = disabled || !messages.length;
   elements.confirmSetButton.disabled = disabled;
   for (const input of dynamicFieldInputs()) input.disabled = disabled;
+}
+
+function accessLabel() {
+  if (!printer) return 'Loading';
+  const session = currentSession();
+  if (!canOperatePrinter(printer.id)) return 'View only';
+  if (session?.user?.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role))) return 'Privileged';
+  return 'Operator';
+}
+
+function updateCapabilityView() {
+  const canOperate = printer ? canOperatePrinter(printer.id) : false;
+  elements.accessLevel.textContent = accessLabel();
+  elements.controlsPanel.classList.toggle('hidden', !canOperate);
+  elements.checkButton.textContent = canOperate ? 'Check status' : 'Read only';
+  setBusy(manualBusy);
 }
 
 function currentFieldValues() {
@@ -337,12 +361,16 @@ function applyPrinterConfig(value) {
   elements.subtitle.textContent = printer.location || 'No location set';
   elements.host.textContent = `${printer.host}:${printer.port}`;
   elements.mode.textContent = printer.mode === 'emulator' ? 'Emulator' : 'Real printer';
+  if (window.location.pathname !== printerHref(printer.id) && window.location.pathname.startsWith('/printers/')) {
+    window.history.replaceState(null, '', printerHref(printer.id));
+  }
 
   if (!printer.enabled) {
     setNotice(elements.message, `${printer.name} is disabled.`, 'error');
   }
 
   updateOperatorShell();
+  updateCapabilityView();
   renderFaultPanels();
 }
 
@@ -376,7 +404,7 @@ function applyPrinterStatus(value) {
 }
 
 async function loadMessages() {
-  if (!printerId) return;
+  if (!printerId || !canOperatePrinter(printerId)) return;
   messages = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/messages`);
   renderMessageOptions();
 }
@@ -389,8 +417,10 @@ async function loadPrinter() {
   }
 
   try {
+    await loadSession();
+    renderNavigation(elements.nav, { active: '/dashboard' });
     applyPrinterConfig(await apiJson(`/api/printers/${encodeURIComponent(printerId)}`));
-    await loadMessages();
+    if (canOperatePrinter(printerId)) await loadMessages();
     const cached = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/status`);
     applyPrinterStatus(cached);
     await loadFaultHistory();
@@ -433,7 +463,7 @@ function applyFaultEvent(event) {
 }
 
 async function checkPrinter() {
-  if (!printer || !printer.enabled || !serverConnected) return;
+  if (!printer || !printer.enabled || !serverConnected || !canOperatePrinter(printer.id)) return;
 
   setBusy(true);
   setNotice(elements.message, 'Checking coder...');
@@ -477,7 +507,7 @@ function renderReview(preview) {
 
 async function reviewPrinterUpdate(event) {
   event.preventDefault();
-  if (!printer || !printer.enabled || !serverConnected || manualBusy) return;
+  if (!printer || !printer.enabled || !serverConnected || manualBusy || !canOperatePrinter(printer.id)) return;
 
   const preview = await refreshPreviewNow();
   if (!preview) {
@@ -542,7 +572,7 @@ function showUpdateResult(result) {
 }
 
 async function confirmPrinterUpdate() {
-  if (!printer || !printer.enabled || !serverConnected || manualBusy) return;
+  if (!printer || !printer.enabled || !serverConnected || manualBusy || !canOperatePrinter(printer.id)) return;
 
   const definition = selectedMessageDefinition();
   const validation = validateFieldValues();
