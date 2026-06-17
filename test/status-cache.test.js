@@ -37,6 +37,43 @@ test('offline threshold waits for configured failures', () => {
   assert.equal(cache.get('coder-1').online, false);
 });
 
+test('a successful poll automatically recovers an offline printer', () => {
+  const events = [];
+  const cache = new StatusCache({
+    staleAfterMs: 1000,
+    offlineAfterFailures: 3,
+    onChange: (event, status) => events.push({ event, status })
+  });
+
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  cache.applySuccess('coder-1', { selectedMessage: '9 MONTH', rawStatus: '0000001', responseTimeMs: 10 });
+  cache.applyFailure('coder-1', new Error('timeout one'));
+  cache.applyFailure('coder-1', new Error('timeout two'));
+  cache.applyFailure('coder-1', new Error('timeout three'));
+
+  const offline = cache.get('coder-1');
+  assert.equal(offline.online, false);
+  assert.equal(offline.consecutiveFailures, 3);
+  assert.match(offline.lastError, /timeout three/);
+
+  const recovered = cache.applySuccess('coder-1', {
+    selectedMessage: '12 MONTH',
+    rawStatus: '0000002',
+    responseTimeMs: 12
+  });
+
+  assert.equal(recovered.online, true);
+  assert.equal(recovered.stale, false);
+  assert.equal(recovered.consecutiveFailures, 0);
+  assert.equal(recovered.lastError, null);
+  assert.equal(recovered.selectedMessage, '12 MONTH');
+  assert.equal(recovered.rawStatus, '0000002');
+  assert.equal(recovered.decodedStatus.alarm.label, 'Amber');
+  assert.ok(recovered.lastAttemptAt);
+  assert.ok(recovered.lastSuccessfulAt);
+  assert.ok(events.some(({ event, status }) => event === 'printer-status' && status.online === true && status.selectedMessage === '12 MONTH'));
+});
+
 test('stale calculation uses last successful timestamp', async () => {
   const cache = new StatusCache({ staleAfterMs: 5, offlineAfterFailures: 3 });
   cache.syncPrinters([{ id: 'coder-1' }]);
