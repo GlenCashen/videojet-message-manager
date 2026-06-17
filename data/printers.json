@@ -1,0 +1,29 @@
+[
+  {
+    "id": "coder-1",
+    "name": "Coder 1",
+    "location": "Packaging line",
+    "host": "192.168.100.2",
+    "port": 3100,
+    "enabled": true,
+    "mode": "real"
+  },
+  {
+    "id": "coder-2",
+    "name": "Coder 2",
+    "location": "Packaging line",
+    "host": "127.0.0.1",
+    "port": 3101,
+    "enabled": false,
+    "mode": "emulator"
+  },
+  {
+    "id": "coder-3",
+    "name": "Coder 3",
+    "location": "Packaging line",
+    "host": "127.0.0.1",
+    "port": 3102,
+    "enabled": false,
+    "mode": "emulator"
+  }
+]
