@@ -3,6 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { CoderQueue } from '../server/coder-queue.js';
 import {
   MessageUpdateError,
   executeMessageUpdate,
@@ -12,6 +13,7 @@ import {
   validateMessageFields,
   validateMessages
 } from '../server/message-store.js';
+import { StatusCache } from '../server/status-cache.js';
 
 const definitions = [
   {
@@ -154,20 +156,32 @@ test('stops on field ACK failure', async () => {
       sendCommand: async ({ command }) => {
         commands.push(command);
         if (command.startsWith('UBATCH')) return response('nack', '!00');
+        if (command === 'Q') return response('packet', '12 MONTH');
+        if (command === 'E') return response('packet', '0000002');
         return response('ack');
       }
     }),
     (error) => {
       assert.equal(error instanceof MessageUpdateError, true);
+      assert.equal(error.code, 'FIELD_UPDATE_REJECTED');
+      assert.equal(error.communicationSucceeded, true);
+      assert.equal(error.result.printerOnline, true);
       assert.equal(error.result.messageSelection, 'Not attempted');
       assert.deepEqual(error.result.fieldResults, [
         { key: 'brew', printerFieldName: 'BREW', acknowledged: true },
-        { key: 'batch', printerFieldName: 'BATCH', acknowledged: false }
+        {
+          key: 'batch',
+          printerFieldName: 'BATCH',
+          acknowledged: false,
+          error: 'Printer rejected field update'
+        }
       ]);
+      assert.equal(error.result.status.online, true);
+      assert.equal(error.result.selectedMessage, '12 MONTH');
       return true;
     }
   );
-  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A']);
+  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'Q', 'E']);
 });
 
 test('reports message selection mismatch', async () => {
@@ -177,4 +191,94 @@ test('reports message selection mismatch', async () => {
   assert.equal(result.messageMatches, false);
   assert.equal(result.requestedMessage, '12 MONTH');
   assert.equal(result.selectedMessage, '9 MONTH');
+});
+
+test('field NACK refresh preserves cache online state and failures', async () => {
+  const cache = new StatusCache({ staleAfterMs: 1000, offlineAfterFailures: 3 });
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  cache.applySuccess('coder-1', { selectedMessage: 'TEST', rawStatus: '0000002', responseTimeMs: 10 });
+  const before = cache.get('coder-1');
+  const commands = [];
+
+  await assert.rejects(
+    executeMessageUpdate({
+      ...updateArgs().args,
+      applySuccess: (status) => cache.applySuccess('coder-1', status),
+      sendCommand: async ({ command }) => {
+        commands.push(command);
+        if (command === 'UBREW\nBR1246') return response('nack', '!00');
+        if (command === 'Q') return response('packet', 'TEST');
+        if (command === 'E') return response('packet', '0000002');
+        return response('ack');
+      }
+    }),
+    MessageUpdateError
+  );
+
+  const after = cache.get('coder-1');
+  assert.deepEqual(commands, ['UBREW\nBR1246', 'Q', 'E']);
+  assert.equal(after.online, true);
+  assert.equal(after.consecutiveFailures, 0);
+  assert.equal(after.selectedMessage, 'TEST');
+  assert.equal(after.rawStatus, '0000002');
+  assert.equal(after.lastError, null);
+});
+
+test('failed refresh can follow normal failure threshold policy', async () => {
+  const cache = new StatusCache({ staleAfterMs: 1000, offlineAfterFailures: 2 });
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  cache.applySuccess('coder-1', { selectedMessage: 'TEST', rawStatus: '0000002', responseTimeMs: 10 });
+
+  await assert.rejects(
+    executeMessageUpdate({
+      ...updateArgs().args,
+      applySuccess: (status) => cache.applySuccess('coder-1', status),
+      sendCommand: async ({ command }) => {
+        if (command === 'UBREW\nBR1246') return response('nack', '!00');
+        if (command === 'Q') throw new Error('Printer did not respond within 5000 ms.');
+        return response('ack');
+      }
+    }),
+    (error) => {
+      assert.equal(error instanceof MessageUpdateError, true);
+      assert.equal(error.communicationSucceeded, false);
+      cache.applyFailure('coder-1', error.refreshError || error);
+      return true;
+    }
+  );
+
+  assert.equal(cache.get('coder-1').online, true);
+  assert.equal(cache.get('coder-1').consecutiveFailures, 1);
+  cache.applyFailure('coder-1', new Error('second timeout'));
+  assert.equal(cache.get('coder-1').online, false);
+});
+
+test('queue releases after field NACK and subsequent valid update succeeds', async () => {
+  const queue = new CoderQueue();
+  let rejectFirst = true;
+
+  await assert.rejects(queue.run('coder-1', { operation: 'message-update' }, async () => {
+    const commands = [];
+    return executeMessageUpdate({
+      ...updateArgs().args,
+      sendCommand: async ({ command }) => {
+        commands.push(command);
+        if (rejectFirst && command === 'UBREW\nBR1246') {
+          rejectFirst = false;
+          return response('nack', '!00');
+        }
+        if (command === 'Q') return response('packet', 'TEST');
+        if (command === 'E') return response('packet', '0000002');
+        return response('ack');
+      }
+    });
+  }), MessageUpdateError);
+
+  assert.equal(queue.isBusy('coder-1'), false);
+
+  const result = await queue.run('coder-1', { operation: 'message-update' }, async () =>
+    executeMessageUpdate(updateArgs().args)
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.selectedMessage, '12 MONTH');
 });

@@ -43,7 +43,6 @@ function subscribeToPrinterEvents(handlers = {}) {
 
   source.addEventListener('operation-failed', (event) => {
     const message = JSON.parse(event.data);
-    handlers.onPrinterStatus?.(message.payload);
     handlers.onOperationFailed?.(message.payload);
   });
 

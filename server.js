@@ -128,9 +128,34 @@ async function runCoderOperation(printer, operation, task) {
         revision: finalStatus.revision
       };
     } catch (error) {
-      statusCache.applyFailure(printer.id, error);
+      const operationFailed = error instanceof MessageUpdateError && error.result;
+      if (!operationFailed || !error.communicationSucceeded) {
+        statusCache.applyFailure(printer.id, error.refreshError || error);
+      }
       statusCache.completeOperation(printer.id);
-      broadcast('operation-failed', { ...statusCache.get(printer.id), error: error.message });
+      if (operationFailed) {
+        const status = statusCache.get(printer.id);
+        const result = {
+          ...error.result,
+          printerOnline: status.online,
+          selectedMessage: error.result.selectedMessage || status.selectedMessage,
+          status: error.result.status || {
+            online: status.online,
+            stale: status.stale,
+            selectedMessage: status.selectedMessage,
+            rawStatus: status.rawStatus,
+            decodedStatus: status.decodedStatus,
+            lastSuccessfulAt: status.lastSuccessfulAt,
+            consecutiveFailures: status.consecutiveFailures,
+            lastError: status.lastError
+          }
+        };
+        broadcast('operation-failed', result);
+        broadcast('printer-status', status);
+        error.result = result;
+      } else {
+        broadcast('operation-failed', { ...statusCache.get(printer.id), error: error.message });
+      }
       throw error;
     }
   });
@@ -572,7 +597,6 @@ app.post('/api/printers/:id/set', async (req, res) => {
     if (error instanceof MessageUpdateError && error.result) {
       const result = { ...error.result, checkedAt: new Date().toISOString() };
       addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
-      broadcast('printer-status', result);
       return res.status(502).json(result);
     }
     if (error.statusCode === 400) {

@@ -359,7 +359,22 @@ function fieldResultLine(result) {
 }
 
 function showUpdateResult(result) {
-  applyPrinterStatus(result);
+  if (result.messageMatches) {
+    applyPrinterStatus(result);
+  } else if (result.status) {
+    applyPrinterStatus({
+      ok: true,
+      printerId: result.printerId || printerId,
+      online: result.status.online,
+      stale: result.status.stale,
+      selectedMessage: result.status.selectedMessage || result.selectedMessage,
+      rawStatus: result.status.rawStatus,
+      decodedStatus: result.status.decodedStatus,
+      lastSuccessfulAt: result.status.lastSuccessfulAt,
+      consecutiveFailures: result.status.consecutiveFailures,
+      lastError: result.status.lastError
+    });
+  }
 
   if (result.messageMatches) {
     const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
@@ -415,13 +430,7 @@ async function confirmPrinterUpdate() {
     hideReview();
     if (error.data?.fieldResults || error.data?.selectedMessage) showUpdateResult(error.data);
     else {
-      applyPrinterStatus({
-        ok: false,
-        printerId,
-        online: false,
-        error: normalizeError(error),
-        checkedAt: new Date().toISOString()
-      });
+      setNotice(elements.message, normalizeError(error), 'error');
     }
   } finally {
     setBusy(false);
@@ -468,6 +477,12 @@ subscribeToPrinterEvents({
   onPrinterStatus: (value) => {
     markServerConnected();
     applyPrinterStatus(value);
+  },
+
+  onOperationFailed: (value) => {
+    markServerConnected();
+    const id = value.id || value.printerId;
+    if (id === printerId && value.fieldResults) showUpdateResult(value);
   },
 
   onPrinterConfig: (value) => {

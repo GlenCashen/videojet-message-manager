@@ -5,13 +5,7 @@
     "printerMessageName": "9 MONTH",
     "enabled": true,
     "fields": [
-      {
-        "key": "brew",
-        "label": "Brew code",
-        "printerFieldName": "BREW",
-        "required": true,
-        "maxLength": 30
-      },
+      
       {
         "key": "batch",
         "label": "Batch code",
@@ -46,6 +40,36 @@
         "key": "batch",
         "label": "Batch code",
         "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 12
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ]
+  },
+  {
+    "id": "test",
+    "displayName": "test",
+    "printerMessageName": "TEST",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "TBREW",
+        "required": true,
+        "maxLength": 30
+      },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "TEST",
         "required": true,
         "maxLength": 30
       }
