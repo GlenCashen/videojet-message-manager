@@ -68,17 +68,8 @@
         </div>
       </div>
       <form id="operatorSetForm" class="grid">
-        <label for="operatorMessageName">Stored message
-          <select id="operatorMessageName">
-            <option>9 MONTH</option>
-            <option>12 MONTH</option>
-          </select>
-        </label>
-        <label for="operatorFieldName">Text user field
-          <input id="operatorFieldName" value="TEST" maxlength="30" autocomplete="off">
-        </label>
-        <label class="wide" for="operatorFieldValue">Batch / field value
-          <input id="operatorFieldValue" value="TEST123" maxlength="50" autocomplete="off">
+        <label for="operatorMessageName">Select message
+          <select id="operatorMessageName"></select>
         </label>
         <div id="messageFields" class="wide message-fields"></div>
         <section class="wide preview-panel" aria-labelledby="previewTitle">
@@ -86,9 +77,17 @@
           <p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p>
         </section>
         <div class="actions wide">
-          <button id="operatorSetButton" class="primary" type="submit">Set and verify</button>
+          <button id="operatorSetButton" class="primary" type="submit">Review update</button>
         </div>
       </form>
+      <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle">
+        <h3 id="reviewTitle">Apply to coder?</h3>
+        <div id="reviewContent" class="review-content"></div>
+        <div class="actions">
+          <button id="cancelReviewButton" class="secondary" type="button">Cancel</button>
+          <button id="confirmSetButton" class="primary" type="button">Set printer</button>
+        </div>
+      </section>
     </section>
   </main>
   <script type="module" src="/printer-page.js"></script>

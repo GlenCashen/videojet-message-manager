@@ -4,6 +4,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPrinters, updatePrinter } from './printer-store.js';
 import { CoderQueue } from './server/coder-queue.js';
+import {
+  MessageUpdateError,
+  enabledMessages,
+  executeMessageUpdate,
+  getMessageById,
+  loadMessages,
+  renderPreview,
+  validateMessageFields
+} from './server/message-store.js';
 import { Monitor } from './server/monitor.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
@@ -160,7 +169,7 @@ async function refreshPrinterStatus(printer, operation = 'check') {
   });
 }
 
-async function setPrinterMessage(printer, body) {
+async function legacySetPrinterMessage(printer, body) {
   const target = printerTarget(printer);
   const { messageName, fieldName, fieldValue } = body;
   validateAscii(messageName, 'Message name', 30);
@@ -216,10 +225,40 @@ async function setPrinterMessage(printer, body) {
   });
 }
 
+async function setPrinterMessage(printer, body) {
+  if (!body?.messageId) return legacySetPrinterMessage(printer, body);
+
+  let message;
+  let fields;
+  try {
+    const messages = await loadMessages();
+    message = getMessageById(messages, body.messageId);
+    fields = validateMessageFields(message, body.fields || {});
+  } catch (error) {
+    error.statusCode = 400;
+    throw error;
+  }
+  const target = printerTarget(printer);
+
+  return runCoderOperation(printer, 'message-update', async (id) =>
+    executeMessageUpdate({
+      printer,
+      target,
+      message,
+      fields,
+      operationId: id,
+      productionDate: body.productionDate,
+      sendCommand: (command) => wsiClient.sendCommand(command),
+      delay: () => delay(BETWEEN_COMMAND_DELAY_MS),
+      applySuccess: (status) => statusCache.applySuccess(printer.id, status)
+    })
+  );
+}
+
 const emulator = {
   selectedMessage: '9 MONTH',
   availableMessages: ['9 MONTH', '12 MONTH'],
-  userFields: { TEST: 'TEST123' },
+  userFields: { TEST: 'TEST123', BREW: 'BR1246', BATCH: 'B260617A' },
   status: '0000002',
   softwarePartNumber: '1.0.484.0       ',
   printCounter: 2141608,
@@ -327,6 +366,34 @@ app.get('/api/config', (_req, res) => {
 app.get('/api/logs', (_req, res) => res.json(commandLog));
 app.get('/api/emulator', (_req, res) => res.json(emulatorSnapshot()));
 
+app.get('/api/messages', async (_req, res) => {
+  try {
+    res.json(enabledMessages(await loadMessages()));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/messages/:id', async (req, res) => {
+  try {
+    const message = getMessageById(await loadMessages(), req.params.id);
+    if (!message.enabled) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
+    res.json(message);
+  } catch (error) {
+    res.status(404).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/messages/:id/preview', async (req, res) => {
+  try {
+    const message = getMessageById(await loadMessages(), req.params.id);
+    if (!message.enabled) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
+    res.json(renderPreview(message, req.body?.fields || {}, { productionDate: req.body?.productionDate }));
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
 app.get('/api/debug/wsi-counters', (_req, res) => {
   if (!ENABLE_TEST_ENDPOINTS) return res.status(404).json({ ok: false, error: 'Not found.' });
   res.json(wsiClient.getCounters());
@@ -373,6 +440,17 @@ app.get('/api/printers/status', async (_req, res) => {
   try {
     statusCache.syncPrinters(await readPrinters());
     res.json(statusCache.all());
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printers/:printerId/messages', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    const printer = printers.find((item) => item.id === req.params.printerId);
+    if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.printerId} was not found.` });
+    res.json(enabledMessages(await loadMessages()));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -485,12 +563,23 @@ app.post('/api/printers/:id/set', async (req, res) => {
     }
 
     stateChangingOperations.add(printer.id);
-    addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageName });
+    addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageId || req.body?.messageName });
     const result = await setPrinterMessage(printer, req.body || {});
-    addLog({ action: 'message-update-success', printerId: printer.id, operationId: result.operationId, requestedMessage: result.expectedMessage, verifiedSelectedMessage: result.selectedMessage, fieldUpdateAcknowledged: result.fieldUpdateAcknowledged, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], ...result });
+    addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
     broadcast('printer-status', result);
     res.status(result.messageMatches ? 200 : 409).json(result);
   } catch (error) {
+    if (error instanceof MessageUpdateError && error.result) {
+      const result = { ...error.result, checkedAt: new Date().toISOString() };
+      addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
+      broadcast('printer-status', result);
+      return res.status(502).json(result);
+    }
+    if (error.statusCode === 400) {
+      addLog({ action: 'message-update-rejected', printerId: req.params.id, ok: false, error: error.message });
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+
     const result = {
       ok: false,
       printerId: req.params.id,
@@ -565,7 +654,7 @@ app.post('/api/emulator', (req, res) => {
 
 app.post('/api/emulator/reset', (_req, res) => {
   emulator.selectedMessage = '9 MONTH';
-  emulator.userFields = { TEST: 'TEST123' };
+  emulator.userFields = { TEST: 'TEST123', BREW: 'BR1246', BATCH: 'B260617A' };
   emulator.status = '0000002';
   emulator.responseDelayMs = 40;
   emulator.enabled = true;
@@ -635,8 +724,19 @@ app.post('/api/set', async (req, res) => {
       stateChangingOperations.add(printer.id);
       try {
         const result = await setPrinterMessage(printer, req.body || {});
-        addLog({ action: 'message-update-success', printerId: printer.id, operationId: result.operationId, ...result });
+        addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, ...result });
         return res.status(result.messageMatches ? 200 : 409).json(result);
+      } catch (error) {
+        if (error instanceof MessageUpdateError && error.result) {
+          const result = { ...error.result, checkedAt: new Date().toISOString() };
+          addLog({ action: 'message-update-failure', printerId: printer.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
+          return res.status(502).json(result);
+        }
+        if (error.statusCode === 400) {
+          addLog({ action: 'message-update-rejected', printerId: printer.id, ok: false, error: error.message });
+          return res.status(400).json({ ok: false, error: error.message });
+        }
+        throw error;
       } finally {
         stateChangingOperations.delete(printer.id);
       }

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "9-month",
+    "displayName": "9 Month",
+    "printerMessageName": "9 MONTH",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30
+      },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 9
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ]
+  },
+  {
+    "id": "12-month",
+    "displayName": "12 Month",
+    "printerMessageName": "12 MONTH",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30
+      },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 12
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ]
+  }
+]
