@@ -3,6 +3,10 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPrinters, updatePrinter } from './printer-store.js';
+import { CoderQueue } from './server/coder-queue.js';
+import { Monitor } from './server/monitor.js';
+import { StatusCache } from './server/status-cache.js';
+import { WsiClient } from './server/wsi-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,21 +17,54 @@ const DEFAULT_PRINTER_IP = process.env.PRINTER_IP || '192.168.100.2';
 const DEFAULT_PRINTER_PORT = Number(process.env.PRINTER_PORT || 3100);
 const COMMAND_TIMEOUT_MS = Number(process.env.COMMAND_TIMEOUT_MS || 5000);
 const BETWEEN_COMMAND_DELAY_MS = Number(process.env.BETWEEN_COMMAND_DELAY_MS || 150);
+const BETWEEN_CODER_DELAY_MS = Number(process.env.BETWEEN_CODER_DELAY_MS || 300);
 const EMULATOR_HOST = process.env.EMULATOR_HOST || '127.0.0.1';
 const EMULATOR_PORT = Number(process.env.EMULATOR_PORT || 3100);
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || process.env.STATUS_POLL_MS || 5000);
+const STALE_AFTER_MS = Number(process.env.STALE_AFTER_MS || 15000);
+const OFFLINE_AFTER_FAILURES = Number(process.env.OFFLINE_AFTER_FAILURES || 3);
+const SSE_HEARTBEAT_MS = Number(process.env.SSE_HEARTBEAT_MS || 20000);
+const ENABLE_UNSAFE_DEVELOPMENT_TOOLS = process.env.ENABLE_UNSAFE_DEVELOPMENT_TOOLS === 'true';
+const ENABLE_TEST_ENDPOINTS = process.env.NODE_ENV === 'test' || process.env.ENABLE_TEST_ENDPOINTS === 'true';
 
 app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const commandLog = [];
 const MAX_LOG_ENTRIES = 200;
-const printerQueues = new Map();
+const eventClients = new Set();
+const coderQueue = new CoderQueue();
+const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
+const stateChangingOperations = new Set();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function addLog(entry) {
-  commandLog.unshift({ time: new Date().toISOString(), ...entry });
+  const logEntry = { time: new Date().toISOString(), ...entry };
+  commandLog.unshift(logEntry);
   if (commandLog.length > MAX_LOG_ENTRIES) commandLog.length = MAX_LOG_ENTRIES;
+  broadcast('log-entry', logEntry);
 }
+
+function broadcast(type, payload) {
+  const data = JSON.stringify({ type, payload });
+  for (const client of eventClients) {
+    try {
+      client.write(`event: ${type}\ndata: ${data}\n\n`);
+    } catch (_error) {
+      eventClients.delete(client);
+    }
+  }
+}
+
+function sendEvent(client, type, payload) {
+  client.write(`event: ${type}\ndata: ${JSON.stringify({ type, payload })}\n\n`);
+}
+
+const statusCache = new StatusCache({
+  staleAfterMs: STALE_AFTER_MS,
+  offlineAfterFailures: OFFLINE_AFTER_FAILURES,
+  onChange: (event, status) => broadcast(event, status)
+});
 
 function validateAscii(value, label, maxLength) {
   if (typeof value !== 'string' || value.length < 1 || value.length > maxLength) {
@@ -36,11 +73,6 @@ function validateAscii(value, label, maxLength) {
   if (!/^[\x20-\x7E]+$/.test(value)) {
     throw new Error(`${label} must contain printable ASCII characters only.`);
   }
-}
-
-function buildPacket(command) {
-  const payload = Buffer.from(command, 'ascii');
-  return Buffer.concat([Buffer.from([0x02]), payload, Buffer.from([0x03])]);
 }
 
 function packetResponse(value) {
@@ -52,77 +84,6 @@ function acknowledgement(command, ok = true) {
   return Buffer.from(`${ok ? '$' : '!'}${sum.toString(16).padStart(2, '0').toUpperCase()}`, 'ascii');
 }
 
-function decodeResponse(buffer) {
-  const hex = [...buffer].map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
-  const ascii = buffer.toString('ascii');
-
-  if (buffer.length >= 2 && buffer[0] === 0x02 && buffer.at(-1) === 0x03) {
-    return { kind: 'packet', value: buffer.subarray(1, -1).toString('ascii'), ascii, hex };
-  }
-
-  if (/^[!$][0-9A-F]{2}$/i.test(ascii)) {
-    return { kind: ascii.startsWith('$') ? 'ack' : 'nack', value: ascii, ascii, hex };
-  }
-
-  return { kind: 'raw', value: ascii, ascii, hex };
-}
-
-function sendWsiCommand({ ip, port, command, timeoutMs = COMMAND_TIMEOUT_MS }) {
-  return new Promise((resolve, reject) => {
-    const socket = new net.Socket();
-    const chunks = [];
-    let settled = false;
-
-    const finish = (error, value) => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      error ? reject(error) : resolve(value);
-    };
-
-    socket.setTimeout(timeoutMs);
-    socket.on('connect', () => socket.write(buildPacket(command)));
-    socket.on('data', (chunk) => {
-      chunks.push(chunk);
-      const data = Buffer.concat(chunks);
-      if (data.length >= 3 && (/^[!$][0-9A-F]{2}$/i.test(data.toString('ascii')) || data.at(-1) === 0x03)) {
-        finish(null, decodeResponse(data));
-      }
-    });
-    socket.on('timeout', () => finish(new Error(`Printer did not respond within ${timeoutMs} ms.`)));
-    socket.on('error', (error) => finish(error));
-    socket.on('close', () => {
-      if (!settled) {
-        const data = Buffer.concat(chunks);
-        if (data.length) finish(null, decodeResponse(data));
-        else finish(new Error('Printer closed the connection without replying.'));
-      }
-    });
-    socket.connect(port, ip);
-  });
-}
-
-function targetKey({ ip, host, port }) {
-  return `${host || ip}:${port}`;
-}
-
-async function runSequentially(target, task) {
-  const key = targetKey(target);
-  const previous = printerQueues.get(key) || Promise.resolve();
-  let release;
-  const current = new Promise((resolve) => { release = resolve; });
-  const queued = previous.catch(() => {}).then(() => current);
-  printerQueues.set(key, queued);
-
-  await previous.catch(() => {});
-  try {
-    return await task();
-  } finally {
-    release();
-    if (printerQueues.get(key) === queued) printerQueues.delete(key);
-  }
-}
-
 function printerConfig(body = {}) {
   const ip = body.ip || DEFAULT_PRINTER_IP;
   const port = Number(body.port || DEFAULT_PRINTER_PORT);
@@ -131,26 +92,126 @@ function printerConfig(body = {}) {
   return { ip, port };
 }
 
-async function checkPrinterConnection(printer) {
-  return runSequentially({ host: printer.host, port: printer.port }, async () => {
+function printerTarget(printer) {
+  if (printer.mode === 'emulator') {
+    return { ip: EMULATOR_HOST, port: EMULATOR_PORT };
+  }
+  return { ip: printer.host, port: printer.port };
+}
+
+function operationId(prefix, printerId) {
+  return `${prefix}-${printerId}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+async function runCoderOperation(printer, operation, task) {
+  const id = operationId(operation, printer.id);
+  return coderQueue.run(printer.id, { operation, operationId: id }, async () => {
+    statusCache.startOperation(printer.id, operation, id);
+    try {
+      const result = await task(id);
+      statusCache.completeOperation(printer.id);
+      const finalStatus = statusCache.get(printer.id);
+      return {
+        ...result,
+        busy: finalStatus.busy,
+        currentOperation: finalStatus.currentOperation,
+        currentOperationId: finalStatus.currentOperationId,
+        revision: finalStatus.revision
+      };
+    } catch (error) {
+      statusCache.applyFailure(printer.id, error);
+      statusCache.completeOperation(printer.id);
+      broadcast('operation-failed', { ...statusCache.get(printer.id), error: error.message });
+      throw error;
+    }
+  });
+}
+
+async function refreshPrinterStatus(printer, operation = 'check') {
+  const target = printerTarget(printer);
+  return runCoderOperation(printer, operation, async (id) => {
     const startedAt = Date.now();
-    const message = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'Q' });
+    const message = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' });
     await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = await sendWsiCommand({ ip: printer.host, port: printer.port, command: 'E' });
+    const status = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    const responseTimeMs = Date.now() - startedAt;
+    const cached = statusCache.applySuccess(printer.id, {
+      selectedMessage: message.value,
+      rawStatus: status.value,
+      responseTimeMs
+    });
 
     return {
+      ...cached,
       id: printer.id,
+      operationId: id,
       name: printer.name,
       location: printer.location,
       host: printer.host,
       port: printer.port,
+      targetHost: target.ip,
+      targetPort: target.port,
+      mode: printer.mode,
+      enabled: printer.enabled,
+      status: status.value,
+      checkedAt: cached.lastSuccessfulAt,
+      elapsedMs: responseTimeMs
+    };
+  });
+}
+
+async function setPrinterMessage(printer, body) {
+  const target = printerTarget(printer);
+  const { messageName, fieldName, fieldValue } = body;
+  validateAscii(messageName, 'Message name', 30);
+  validateAscii(fieldName, 'User field name', 30);
+  validateAscii(fieldValue, 'User field value', 50);
+
+  return runCoderOperation(printer, 'message-update', async (id) => {
+    const startedAt = Date.now();
+    const update = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: `U${fieldName}\n${fieldValue}` });
+    if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
+    await delay(BETWEEN_COMMAND_DELAY_MS);
+
+    const select = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: `M${messageName}` });
+    if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
+    await delay(BETWEEN_COMMAND_DELAY_MS);
+
+    const selected = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    await delay(BETWEEN_COMMAND_DELAY_MS);
+    const status = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    const responseTimeMs = Date.now() - startedAt;
+    const cached = statusCache.applySuccess(printer.id, {
+      selectedMessage: selected.value,
+      rawStatus: status.value,
+      responseTimeMs
+    });
+
+    const messageMatches = selected.value === messageName;
+    return {
+      ...cached,
+      id: printer.id,
+      operationId: id,
+      name: printer.name,
+      location: printer.location,
+      host: printer.host,
+      port: printer.port,
+      targetHost: target.ip,
+      targetPort: target.port,
       mode: printer.mode,
       enabled: printer.enabled,
       online: true,
-      selectedMessage: message.value,
+      ok: messageMatches,
+      messageMatches,
+      expectedMessage: messageName,
+      selectedMessage: selected.value,
+      fieldName,
+      fieldValue,
+      fieldUpdateAcknowledged: update.value,
       status: status.value,
-      checkedAt: new Date().toISOString(),
-      elapsedMs: Date.now() - startedAt
+      acknowledgements: { update: update.value, select: select.value },
+      checkedAt: cached.lastSuccessfulAt,
+      elapsedMs: responseTimeMs
     };
   });
 }
@@ -266,9 +327,76 @@ app.get('/api/config', (_req, res) => {
 app.get('/api/logs', (_req, res) => res.json(commandLog));
 app.get('/api/emulator', (_req, res) => res.json(emulatorSnapshot()));
 
+app.get('/api/debug/wsi-counters', (_req, res) => {
+  if (!ENABLE_TEST_ENDPOINTS) return res.status(404).json({ ok: false, error: 'Not found.' });
+  res.json(wsiClient.getCounters());
+});
+
+app.post('/api/debug/wsi-counters/reset', (_req, res) => {
+  if (!ENABLE_TEST_ENDPOINTS) return res.status(404).json({ ok: false, error: 'Not found.' });
+  wsiClient.resetCounters();
+  res.json({ ok: true });
+});
+
+app.get('/api/events', async (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+  eventClients.add(res);
+  req.on('close', () => eventClients.delete(res));
+  sendEvent(res, 'connected', { connected: true });
+  sendEvent(res, 'logs-snapshot', commandLog);
+  sendEvent(res, 'emulator-snapshot', emulatorSnapshot());
+  try {
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    sendEvent(res, 'status-snapshot', statusCache.all());
+    sendEvent(res, 'fleet-snapshot', printers);
+  } catch (error) {
+    sendEvent(res, 'stream-error', { error: error.message });
+  }
+});
+
 app.get('/api/printers', async (_req, res) => {
   try {
-    res.json(await readPrinters());
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    res.json(printers);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printers/status', async (_req, res) => {
+  try {
+    statusCache.syncPrinters(await readPrinters());
+    res.json(statusCache.all());
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printers/:id', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    const printer = printers.find((item) => item.id === req.params.id);
+    if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    res.json(printer);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printers/:id/status', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    const printer = printers.find((item) => item.id === req.params.id);
+    if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    res.json(statusCache.get(req.params.id));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -277,7 +405,10 @@ app.get('/api/printers', async (_req, res) => {
 app.put('/api/printers/:id', async (req, res) => {
   try {
     const printers = await updatePrinter(req.params.id, req.body || {});
+    statusCache.syncPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
+    broadcast('printer-config', printer);
+    broadcast('status-snapshot', statusCache.all());
     res.json({ ok: true, printer });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
@@ -297,10 +428,19 @@ app.post('/api/printers/:id/check', async (req, res) => {
       return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
     }
 
-    const result = await checkPrinterConnection(printer);
-    addLog({ action: 'printer-check', printerId: printer.id, ok: true, ...result });
+    const result = await refreshPrinterStatus(printer, 'check');
+    addLog({ action: 'printer-check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
+    broadcast('printer-status', { ok: true, ...result });
     res.json({ ok: true, ...result });
   } catch (error) {
+    const result = {
+      ok: false,
+      printerId: req.params.id,
+      online: false,
+      error: error.message,
+      checkedAt: new Date().toISOString(),
+      elapsedMs: Date.now() - startedAt
+    };
     addLog({
       action: 'printer-check',
       printerId: req.params.id,
@@ -308,7 +448,61 @@ app.post('/api/printers/:id/check', async (req, res) => {
       error: error.message,
       elapsedMs: Date.now() - startedAt
     });
-    res.status(502).json({ ok: false, printerId: req.params.id, online: false, error: error.message });
+    broadcast('printer-status', result);
+    res.status(502).json(result);
+  }
+});
+
+app.post('/api/printers/:id/set', async (req, res) => {
+  try {
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    const printer = printers.find((item) => item.id === req.params.id);
+
+    if (!printer) {
+      return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
+    }
+    if (!printer.enabled) {
+      return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
+    }
+    if (!statusCache.hasRevision(printer.id, req.body?.expectedRevision)) {
+      const latest = statusCache.get(printer.id);
+      addLog({ action: 'revision-conflict', printerId: printer.id, ok: false, expectedRevision: req.body?.expectedRevision, currentRevision: latest.revision });
+      return res.status(409).json({ ok: false, code: 'REVISION_CONFLICT', error: 'Coder status changed before this update was submitted.', status: latest });
+    }
+    if (stateChangingOperations.has(printer.id)) {
+      const active = coderQueue.getActive(printer.id);
+      const latest = statusCache.get(printer.id);
+      addLog({ action: 'busy-rejected', printerId: printer.id, ok: false, operationId: active?.operationId || latest.currentOperationId });
+      return res.status(409).json({
+        ok: false,
+        code: 'CODER_BUSY',
+        error: 'A message update is already in progress.',
+        currentOperation: active?.operation || latest.currentOperation,
+        operationId: active?.operationId || latest.currentOperationId,
+        status: latest
+      });
+    }
+
+    stateChangingOperations.add(printer.id);
+    addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageName });
+    const result = await setPrinterMessage(printer, req.body || {});
+    addLog({ action: 'message-update-success', printerId: printer.id, operationId: result.operationId, requestedMessage: result.expectedMessage, verifiedSelectedMessage: result.selectedMessage, fieldUpdateAcknowledged: result.fieldUpdateAcknowledged, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], ...result });
+    broadcast('printer-status', result);
+    res.status(result.messageMatches ? 200 : 409).json(result);
+  } catch (error) {
+    const result = {
+      ok: false,
+      printerId: req.params.id,
+      online: false,
+      error: error.message,
+      checkedAt: new Date().toISOString()
+    };
+    addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message });
+    broadcast('printer-status', result);
+    res.status(502).json(result);
+  } finally {
+    stateChangingOperations.delete(req.params.id);
   }
 });
 
@@ -318,9 +512,10 @@ app.post('/api/printers/check-all', async (_req, res) => {
 
   for (const printer of printers) {
     try {
-      const result = await checkPrinterConnection(printer);
+      const result = await refreshPrinterStatus(printer, 'check');
       results.push({ ok: true, ...result });
-      addLog({ action: 'printer-check', printerId: printer.id, ok: true, ...result });
+      addLog({ action: 'printer-check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
+      broadcast('printer-status', { ok: true, ...result });
     } catch (error) {
       const result = {
         ok: false,
@@ -337,6 +532,7 @@ app.post('/api/printers/check-all', async (_req, res) => {
       };
       results.push(result);
       addLog({ action: 'printer-check', printerId: printer.id, ...result });
+      broadcast('printer-status', result);
     }
   }
 
@@ -361,7 +557,9 @@ app.post('/api/emulator', (req, res) => {
       }
     }
   }
-  res.json(emulatorSnapshot());
+  const snapshot = emulatorSnapshot();
+  broadcast('emulator-snapshot', snapshot);
+  res.json(snapshot);
 });
 
 app.post('/api/emulator/reset', (_req, res) => {
@@ -371,16 +569,31 @@ app.post('/api/emulator/reset', (_req, res) => {
   emulator.responseDelayMs = 40;
   emulator.enabled = true;
   emulator.failNextCommand = false;
-  res.json(emulatorSnapshot());
+  const snapshot = emulatorSnapshot();
+  broadcast('emulator-snapshot', snapshot);
+  res.json(snapshot);
 });
 
 app.post('/api/check', async (req, res) => {
   try {
+    if (req.body?.printerId) {
+      const printers = await readPrinters();
+      statusCache.syncPrinters(printers);
+      const printer = printers.find((item) => item.id === req.body.printerId);
+      if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
+      const result = await refreshPrinterStatus(printer, 'check');
+      addLog({ action: 'check', printerId: printer.id, operationId: result.operationId, ok: true, ...result });
+      return res.json({ ok: true, ...result });
+    }
+    if (!ENABLE_UNSAFE_DEVELOPMENT_TOOLS) {
+      return res.status(403).json({ ok: false, error: 'Arbitrary printer targets are disabled. Use printerId.' });
+    }
+
     const { ip, port } = printerConfig(req.body);
-    const { message, status } = await runSequentially({ ip, port }, async () => {
-      const message = await sendWsiCommand({ ip, port, command: 'Q' });
+    const { message, status } = await coderQueue.run(`unsafe:${ip}:${port}`, { operation: 'unsafe-check' }, async () => {
+      const message = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' });
       await delay(BETWEEN_COMMAND_DELAY_MS);
-      const status = await sendWsiCommand({ ip, port, command: 'E' });
+      const status = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' });
       return { message, status };
     });
     addLog({ action: 'check', ip, port, ok: true, message: message.value, status: status.value });
@@ -394,24 +607,61 @@ app.post('/api/check', async (req, res) => {
 app.post('/api/set', async (req, res) => {
   const startedAt = Date.now();
   try {
+    if (req.body?.printerId) {
+      const printers = await readPrinters();
+      statusCache.syncPrinters(printers);
+      const printer = printers.find((item) => item.id === req.body.printerId);
+      if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.body.printerId} was not found.` });
+      if (!printer.enabled) return res.status(409).json({ ok: false, error: `${printer.name} is disabled.` });
+      if (!statusCache.hasRevision(printer.id, req.body?.expectedRevision)) {
+        const latest = statusCache.get(printer.id);
+        addLog({ action: 'revision-conflict', printerId: printer.id, ok: false, expectedRevision: req.body?.expectedRevision, currentRevision: latest.revision });
+        return res.status(409).json({ ok: false, code: 'REVISION_CONFLICT', error: 'Coder status changed before this update was submitted.', status: latest });
+      }
+      if (stateChangingOperations.has(printer.id)) {
+        const active = coderQueue.getActive(printer.id);
+        const latest = statusCache.get(printer.id);
+        addLog({ action: 'busy-rejected', printerId: printer.id, ok: false, operationId: active?.operationId || latest.currentOperationId });
+        return res.status(409).json({
+          ok: false,
+          code: 'CODER_BUSY',
+          error: 'A message update is already in progress.',
+          currentOperation: active?.operation || latest.currentOperation,
+          operationId: active?.operationId || latest.currentOperationId,
+          status: latest
+        });
+      }
+      stateChangingOperations.add(printer.id);
+      try {
+        const result = await setPrinterMessage(printer, req.body || {});
+        addLog({ action: 'message-update-success', printerId: printer.id, operationId: result.operationId, ...result });
+        return res.status(result.messageMatches ? 200 : 409).json(result);
+      } finally {
+        stateChangingOperations.delete(printer.id);
+      }
+    }
+    if (!ENABLE_UNSAFE_DEVELOPMENT_TOOLS) {
+      return res.status(403).json({ ok: false, error: 'Arbitrary printer targets are disabled. Use printerId.' });
+    }
+
     const { ip, port } = printerConfig(req.body);
     const { messageName, fieldName, fieldValue } = req.body;
     validateAscii(messageName, 'Message name', 30);
     validateAscii(fieldName, 'User field name', 30);
     validateAscii(fieldValue, 'User field value', 50);
 
-    const { update, select, selected, status } = await runSequentially({ ip, port }, async () => {
-      const update = await sendWsiCommand({ ip, port, command: `U${fieldName}\n${fieldValue}` });
+    const { update, select, selected, status } = await coderQueue.run(`unsafe:${ip}:${port}`, { operation: 'unsafe-set' }, async () => {
+      const update = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: `U${fieldName}\n${fieldValue}` });
       if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
       await delay(BETWEEN_COMMAND_DELAY_MS);
 
-      const select = await sendWsiCommand({ ip, port, command: `M${messageName}` });
+      const select = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: `M${messageName}` });
       if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
       await delay(BETWEEN_COMMAND_DELAY_MS);
 
-      const selected = await sendWsiCommand({ ip, port, command: 'Q' });
+      const selected = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' });
       await delay(BETWEEN_COMMAND_DELAY_MS);
-      const status = await sendWsiCommand({ ip, port, command: 'E' });
+      const status = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' });
       return { update, select, selected, status };
     });
     const messageMatches = selected.value === messageName;
@@ -435,7 +685,31 @@ app.post('/api/set', async (req, res) => {
   }
 });
 
+const monitor = new Monitor({
+  readPrinters: async () => {
+    const printers = await readPrinters();
+    statusCache.syncPrinters(printers);
+    return printers;
+  },
+  pollPrinter: async (printer) => {
+    try {
+      await refreshPrinterStatus(printer, 'poll');
+    } catch (_error) {
+      // The cache and SSE stream are updated by runCoderOperation failure handling.
+    }
+  },
+  pollIntervalMs: POLL_INTERVAL_MS,
+  betweenCoderDelayMs: BETWEEN_CODER_DELAY_MS,
+  delay,
+  onError: (error) => broadcast('stream-error', { error: error.message })
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Videojet control running on http://localhost:${PORT}`);
   console.log(`Default printer: ${DEFAULT_PRINTER_IP}:${DEFAULT_PRINTER_PORT}`);
+  if (POLL_INTERVAL_MS > 0) {
+    monitor.start();
+    setInterval(() => broadcast('heartbeat', { time: new Date().toISOString() }), SSE_HEARTBEAT_MS);
+    console.log(`Server-side monitoring every ${POLL_INTERVAL_MS} ms`);
+  }
 });

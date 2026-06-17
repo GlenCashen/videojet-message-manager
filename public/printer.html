@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Videojet Coder Operator</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell operator-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Videojet 1620 operator page</p>
+        <h1 id="printerTitle">Coder</h1>
+        <p id="printerSubtitle" class="muted">Loading coder...</p>
+      </div>
+      <a class="secondary button-link" href="/">Dashboard</a>
+    </header>
+
+    <section class="panel operator-panel" aria-labelledby="statusTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="statusTitle">Current coder status</h2>
+          <p class="muted">This page only controls the selected coder.</p>
+        </div>
+        <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
+      </div>
+      <p id="operatorMessage" class="notice hidden" aria-live="polite"></p>
+      <div id="operatorStatus" class="operator-status">
+        <div class="detail"><span>Connection</span><strong id="operatorConnection">Not checked</strong></div>
+        <div class="detail"><span>Selected message</span><strong id="operatorSelectedMessage">-</strong></div>
+        <div class="detail"><span>Printer status</span><strong id="operatorPrinterStatus">-</strong></div>
+        <div class="detail"><span>Last checked</span><strong id="operatorCheckedAt">Not checked</strong></div>
+        <div class="detail"><span>Host</span><strong id="operatorHost">-</strong></div>
+        <div class="detail"><span>Mode</span><strong id="operatorMode">-</strong></div>
+      </div>
+    </section>
+
+    <section class="panel operator-panel" aria-labelledby="sendTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="sendTitle">Send message</h2>
+          <p class="muted">Requests are queued per coder so only one WSI command sequence runs at a time.</p>
+        </div>
+      </div>
+      <form id="operatorSetForm" class="grid">
+        <label for="operatorMessageName">Stored message
+          <select id="operatorMessageName">
+            <option>9 MONTH</option>
+            <option>12 MONTH</option>
+          </select>
+        </label>
+        <label for="operatorFieldName">Text user field
+          <input id="operatorFieldName" value="TEST" maxlength="30" autocomplete="off">
+        </label>
+        <label class="wide" for="operatorFieldValue">Batch / field value
+          <input id="operatorFieldValue" value="TEST123" maxlength="50" autocomplete="off">
+        </label>
+        <div class="actions wide">
+          <button id="operatorSetButton" class="primary" type="submit">Set and verify</button>
+        </div>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/printer-page.js"></script>
+</body>
+</html>

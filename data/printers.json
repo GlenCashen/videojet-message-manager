@@ -1,29 +1,29 @@
 [
   {
     "id": "coder-1",
-    "name": "Coder 1",
+    "name": "Can Coder",
     "location": "Packaging line",
     "host": "192.168.100.2",
     "port": 3100,
     "enabled": true,
-    "mode": "real"
+    "mode": "emulator"
   },
   {
     "id": "coder-2",
-    "name": "Coder 2",
+    "name": "Bottle Coder",
     "location": "Packaging line",
     "host": "127.0.0.1",
     "port": 3101,
-    "enabled": false,
+    "enabled": true,
     "mode": "emulator"
   },
   {
     "id": "coder-3",
-    "name": "Coder 3",
+    "name": "Case Coder",
     "location": "Packaging line",
     "host": "127.0.0.1",
     "port": 3102,
-    "enabled": false,
+    "enabled": true,
     "mode": "emulator"
   }
 ]

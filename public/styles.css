@@ -72,6 +72,7 @@ h3 { overflow-wrap: anywhere; }
 .badge.neutral { background: #e7ecf3; color: #344054; }
 .badge.good { background: #d9fbe5; color: #087a3e; }
 .badge.bad { background: #fee4e2; color: #b42318; }
+.badge.stale { background: #fff3cd; color: #8a5a00; }
 
 .coder-grid {
   display: grid;
@@ -94,12 +95,14 @@ h3 { overflow-wrap: anywhere; }
 .coder-card.is-disabled { border-left-color: #98a2b3; background: #f8fafc; }
 .coder-card.is-new { border-left-color: #f2b84b; }
 .coder-card.is-checking { border-left-color: #2563eb; }
+.coder-card.is-stale { border-left-color: #f2b84b; }
 
 .coder-card.is-online .status-pill { background: #d9fbe5; color: #087a3e; }
 .coder-card.is-offline .status-pill { background: #fee4e2; color: #b42318; }
 .coder-card.is-disabled .status-pill { background: #e7ecf3; color: #475467; }
 .coder-card.is-new .status-pill { background: #fff3cd; color: #8a5a00; }
 .coder-card.is-checking .status-pill { background: #dbeafe; color: #1d4ed8; }
+.coder-card.is-stale .status-pill { background: #fff3cd; color: #8a5a00; }
 
 .card-top {
   display: flex;
@@ -168,6 +171,15 @@ button {
 }
 
 button:disabled { opacity: .55; cursor: wait; }
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 11px 16px;
+  font-weight: 750;
+  text-decoration: none;
+}
 .primary { background: #172033; color: #fff; }
 .secondary { background: #e7ecf3; color: #172033; }
 .ghost { background: transparent; color: #344054; padding-inline: 8px; }
@@ -287,6 +299,14 @@ summary:focus-visible {
   overflow: auto;
 }
 
+.operator-shell { max-width: 900px; }
+.operator-panel { margin-top: 16px; }
+.operator-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+}
+
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .84rem; }
 th,
@@ -344,7 +364,8 @@ th { color: #667085; font-size: .75rem; text-transform: uppercase; letter-spacin
     align-items: stretch;
   }
   .grid,
-  .status-grid { grid-template-columns: 1fr; }
+  .status-grid,
+  .operator-status { grid-template-columns: 1fr; }
   .wide { grid-column: auto; }
   .actions,
   .card-actions { justify-content: stretch; }
