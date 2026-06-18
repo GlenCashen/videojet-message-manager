@@ -23,6 +23,10 @@ async function apiJson(url, options = {}) {
     const error = new Error(data && data.error ? data.error : `Request failed (${response.status})`);
     error.status = response.status;
     error.data = data;
+    if (response.status === 401 && !url.startsWith('/api/session') && !url.startsWith('/api/auth/')) {
+      const returnTo = encodeURIComponent(`${window.location.pathname}${window.location.search}`);
+      window.location.href = `/login?returnTo=${returnTo}`;
+    }
     throw error;
   }
   return data;

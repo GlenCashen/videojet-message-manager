@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login | Videojet Message Manager</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="loginTitle">
+      <p class="eyebrow">Videojet 1620 WSI</p>
+      <h1 id="loginTitle">Sign in</h1>
+      <p class="muted">Use your assigned account to view or operate coders.</p>
+      <form id="loginForm" class="auth-form">
+        <label for="username">Username
+          <input id="username" name="username" autocomplete="username" required autofocus>
+        </label>
+        <label for="password">Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button id="loginButton" class="primary" type="submit">Login</button>
+      </form>
+      <p id="authMessage" class="notice hidden" aria-live="polite"></p>
+    </section>
+  </main>
+  <script type="module" src="/js/auth-pages.js"></script>
+</body>
+
+</html>

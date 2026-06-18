@@ -3,6 +3,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPrinters, updatePrinter } from './printer-store.js';
+import { createSessionManager } from './server/auth.js';
 import { CoderQueue } from './server/coder-queue.js';
 import {
   MessageUpdateError,
@@ -28,6 +29,7 @@ import {
   canAccessDiagnostics,
   canConfigurePrinters,
   canEditMessages,
+  canManageUsers,
   canOperatePrinter,
   canViewAudit,
   canViewDashboard,
@@ -40,6 +42,14 @@ import {
   visiblePrinters
 } from './server/permissions.js';
 import { StatusCache } from './server/status-cache.js';
+import {
+  authenticateUser,
+  changePassword,
+  createUser,
+  ensureBootstrapAdmin,
+  listUsers,
+  updateUser
+} from './server/user-store.js';
 import { WsiClient } from './server/wsi-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,27 +73,58 @@ const ENABLE_TEST_ENDPOINTS = process.env.NODE_ENV === 'test' || process.env.ENA
 const ENABLE_DEV_IDENTITY = process.env.ENABLE_DEV_IDENTITY === 'true';
 const DEV_USER_ROLE = process.env.DEV_USER_ROLE || 'viewer';
 const DEV_USER_PRINTER_IDS = (process.env.DEV_USER_PRINTER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
+const SESSION_SECRET = process.env.SESSION_SECRET || '';
 const FAULT_HISTORY_LIMIT = Number(process.env.FAULT_HISTORY_LIMIT || 1000);
 const FAULT_HISTORY_PATH = process.env.FAULT_HISTORY_PATH || undefined;
 const FAULT_HISTORY_API_MAX_LIMIT = 500;
+const auth = createSessionManager({
+  secret: SESSION_SECRET || undefined,
+  secure: process.env.NODE_ENV === 'production'
+});
+const startupPrinters = await readPrinters();
+const bootstrap = await ensureBootstrapAdmin({ printers: startupPrinters, enableDevIdentity: ENABLE_DEV_IDENTITY });
+if (!ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
+  throw new Error('SESSION_SECRET is required when development identity is disabled.');
+}
+if (bootstrap.created) {
+  console.log(`Bootstrap admin created for ${bootstrap.users[0].username}. Password must be changed on first login.`);
+}
 
 app.use(express.json({ limit: '32kb' }));
 app.get('/', (_req, res) => res.redirect('/dashboard'));
 
+app.get('/login', (req, res) => {
+  const user = currentUser(req);
+  if (user && !user.mustChangePassword) return res.redirect('/dashboard');
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.get('/change-password', (req, res) => {
+  const user = currentUser(req);
+  if (!user) return redirectToLogin(req, res);
+  res.sendFile(path.join(__dirname, 'public', 'change-password.html'));
+});
+
 app.get('/dashboard', (req, res) => {
   const user = currentUser(req);
-  if (!canViewDashboard(user)) return res.status(401).send('Authentication is required.');
+  if (!user) return redirectToLogin(req, res);
+  if (user.mustChangePassword) return res.redirect('/change-password');
+  if (!canViewDashboard(user)) return res.status(403).send('You do not have permission to view the dashboard.');
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 app.get('/editor', (req, res) => {
   const user = currentUser(req);
+  if (!user) return redirectToLogin(req, res);
+  if (user.mustChangePassword) return res.redirect('/change-password');
   if (!canViewEditor(user)) return res.status(403).send('You do not have permission to view the editor.');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/printers/:printerId', async (req, res) => {
   const user = currentUser(req);
+  if (!user) return redirectToLogin(req, res);
+  if (user.mustChangePassword) return res.redirect('/change-password');
   if (!canViewPrinter(user, req.params.printerId)) return res.status(403).send('You do not have permission to view this printer.');
   const printers = await readPrinters();
   if (!printers.some((printer) => printer.id === req.params.printerId)) return res.status(404).send('Printer not found.');
@@ -119,20 +160,49 @@ function parseCookies(header = '') {
     }));
 }
 
+function redirectToLogin(req, res) {
+  const returnTo = encodeURIComponent(req.originalUrl || '/dashboard');
+  return res.redirect(`/login?returnTo=${returnTo}`);
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function normalizeDevelopmentPrinterIds(values, printers, role) {
+  const ids = uniqueValues(values);
+  if (ids.includes('*')) return ['*'];
+  if (role === 'operator' && !ids.length) {
+    const firstEnabled = printers.find((printer) => printer.enabled) || printers[0];
+    return firstEnabled ? [firstEnabled.id] : [];
+  }
+  const known = new Set(printers.map((printer) => printer.id));
+  for (const id of ids) {
+    if (!known.has(id)) {
+      const error = new Error(`Unknown printer id: ${id}`);
+      error.code = 'UNKNOWN_PRINTER';
+      throw error;
+    }
+  }
+  return ids;
+}
+
 function devIdentityFromRequest(req) {
   if (!ENABLE_DEV_IDENTITY) return null;
   const cookies = parseCookies(req.headers.cookie || '');
   const role = normalizeRole(cookies.devRole || DEV_USER_ROLE);
   if (!role) return null;
-  const printerIds = (cookies.devPrinterIds || DEV_USER_PRINTER_IDS.join(','))
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  let printerIds = uniqueValues((cookies.devPrinterIds || DEV_USER_PRINTER_IDS.join(',')).split(','));
+  if (printerIds.includes('*')) printerIds = ['*'];
+  if (role === 'operator' && !printerIds.length) {
+    const firstEnabled = startupPrinters.find((printer) => printer.enabled) || startupPrinters[0];
+    printerIds = firstEnabled ? [firstEnabled.id] : [];
+  }
   return developmentUser({ role, printerIds });
 }
 
 function currentUser(req) {
-  return devIdentityFromRequest(req);
+  return devIdentityFromRequest(req) || auth.read(parseCookies(req.headers.cookie || '')[auth.cookieName]);
 }
 
 function sessionPayload(req) {
@@ -141,7 +211,9 @@ function sessionPayload(req) {
     authenticated: Boolean(user),
     user,
     capabilities: getCapabilities(user),
-    devIdentityEnabled: ENABLE_DEV_IDENTITY
+    devIdentityEnabled: ENABLE_DEV_IDENTITY,
+    developmentIdentityActive: Boolean(user?.developmentIdentity),
+    passwordChangeRequired: Boolean(user?.mustChangePassword)
   };
 }
 
@@ -149,10 +221,21 @@ function forbidden(res, message = 'You do not have permission to access this res
   return res.status(403).json({ ok: false, code: 'FORBIDDEN', error: message });
 }
 
+function safeReturnTo(value) {
+  const target = String(value || '/dashboard');
+  if (!target.startsWith('/') || target.startsWith('//')) return '/dashboard';
+  if (target.startsWith('/api/')) return '/dashboard';
+  return target;
+}
+
 function requireUser(req, res) {
   const user = currentUser(req);
   if (!user) {
     res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', error: 'No authenticated user is available.' });
+    return null;
+  }
+  if (user.mustChangePassword && req.path !== '/api/auth/change-password') {
+    res.status(403).json({ ok: false, code: 'PASSWORD_CHANGE_REQUIRED', error: 'Password change is required before continuing.' });
     return null;
   }
   return user;
@@ -585,14 +668,70 @@ app.get('/api/session', (req, res) => {
   res.json(sessionPayload(req));
 });
 
-app.post('/api/dev/session', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const user = await authenticateUser(req.body?.username, req.body?.password);
+    if (!user) {
+      return res.status(401).json({ ok: false, code: 'INVALID_LOGIN', error: 'Username or password is incorrect.' });
+    }
+    const token = auth.create(user);
+    res.setHeader('Set-Cookie', auth.cookie(token));
+    res.json({
+      ok: true,
+      authenticated: true,
+      user,
+      capabilities: getCapabilities(user),
+      passwordChangeRequired: Boolean(user.mustChangePassword),
+      redirectTo: user.mustChangePassword ? '/change-password' : safeReturnTo(req.body?.returnTo)
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie || '');
+  auth.destroy(cookies[auth.cookieName]);
+  res.setHeader('Set-Cookie', auth.clearCookie());
+  res.json({ ok: true, redirectTo: '/login' });
+});
+
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const user = currentUser(req);
+    if (!user || user.developmentIdentity) {
+      return res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', error: 'No authenticated user is available.' });
+    }
+    const updated = await changePassword(user.id, req.body?.currentPassword, req.body?.newPassword);
+    if (!updated) {
+      return res.status(400).json({ ok: false, code: 'PASSWORD_CHANGE_FAILED', error: 'Current password is incorrect.' });
+    }
+    const cookies = parseCookies(req.headers.cookie || '');
+    auth.destroy(cookies[auth.cookieName]);
+    const token = auth.create(updated);
+    res.setHeader('Set-Cookie', auth.cookie(token));
+    res.json({ ok: true, user: updated, capabilities: getCapabilities(updated), redirectTo: '/dashboard' });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/dev/session', async (req, res) => {
   if (!ENABLE_DEV_IDENTITY) return forbidden(res, 'Development identity switching is disabled.');
   const role = normalizeRole(req.body?.role);
   if (!role) return res.status(400).json({ ok: false, error: 'Unsupported development role.' });
-  const printerIds = Array.isArray(req.body?.printerIds) ? req.body.printerIds.join(',') : String(req.body?.printerIds || '');
+  const rawPrinterIds = Array.isArray(req.body?.printerIds)
+    ? req.body.printerIds
+    : String(req.body?.printerIds || '').split(',');
+  let printerIds;
+  try {
+    printerIds = normalizeDevelopmentPrinterIds(rawPrinterIds, await readPrinters(), role);
+  } catch (error) {
+    return res.status(400).json({ ok: false, code: error.code || 'INVALID_PRINTER_ASSIGNMENT', error: error.message });
+  }
   res.setHeader('Set-Cookie', [
     `devRole=${encodeURIComponent(role)}; Path=/; SameSite=Lax`,
-    `devPrinterIds=${encodeURIComponent(printerIds)}; Path=/; SameSite=Lax`
+    `devPrinterIds=${encodeURIComponent(printerIds.join(','))}; Path=/; SameSite=Lax`
   ]);
   res.json({ ok: true });
 });
@@ -602,6 +741,46 @@ app.get('/api/logs', (req, res) => {
   if (!user) return;
   if (!canViewAudit(user) && !canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to view logs.');
   res.json(commandLog);
+});
+
+app.get('/api/audit', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canViewAudit(user)) return forbidden(res, 'You do not have permission to view audit records.');
+  res.json(commandLog);
+});
+
+app.get('/api/users', async (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage users.');
+  res.json(await listUsers());
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage users.');
+    const created = await createUser(req.body || {}, { printers: await readPrinters() });
+    addLog({ action: 'user-created', actor: user.username, username: created.username, ok: true });
+    res.status(201).json({ ok: true, user: created });
+  } catch (error) {
+    res.status(error.code === 'UNKNOWN_PRINTER' ? 400 : 400).json({ ok: false, code: error.code, error: error.message });
+  }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage users.');
+    const updated = await updateUser(req.params.id, req.body || {}, { printers: await readPrinters() });
+    addLog({ action: 'user-updated', actor: user.username, username: updated.username, ok: true });
+    res.json({ ok: true, user: updated });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, code: error.code, error: error.message });
+  }
 });
 
 app.get('/api/emulator', (req, res) => {
@@ -620,6 +799,25 @@ app.get('/api/messages', async (req, res) => {
     res.json(enabledMessages(await loadMessages(undefined, { printers })));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/messages', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to edit messages.');
+    const printers = await readPrinters();
+    const messages = await loadMessages(undefined, { printers });
+    if (messages.some((message) => message.id === req.body?.id)) {
+      return res.status(409).json({ ok: false, error: `Message ${req.body.id} already exists.` });
+    }
+    const saved = await saveMessages([...messages, req.body], undefined, { printers });
+    const message = saved.find((item) => item.id === req.body.id);
+    broadcast('messages-updated', { messages: saved });
+    res.status(201).json({ ok: true, message });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 

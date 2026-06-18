@@ -9,8 +9,8 @@ function hasRole(user, role) {
   return Boolean(user?.roles?.includes(role));
 }
 
-function isPrivileged(user) {
-  return Boolean(user?.roles?.some((role) => PRIVILEGED_ROLES.has(role)));
+function hasDevelopmentPrinterWildcard(user) {
+  return Boolean(user?.developmentIdentity && user?.printerIds?.includes('*'));
 }
 
 function getCapabilities(user) {
@@ -24,8 +24,8 @@ function getCapabilities(user) {
   return {
     viewDashboard: Boolean(user),
     viewEditor: privileged,
-    viewAllPrinters: viewer || privileged,
-    operateAllPrinters: qa || engineering || admin,
+    viewAllPrinters: viewer || privileged || hasDevelopmentPrinterWildcard(user),
+    operateAllPrinters: qa || engineering || admin || hasDevelopmentPrinterWildcard(user),
     editMessages: qa || engineering || admin,
     configurePrinters: engineering || admin,
     manageUsers: admin,
@@ -96,7 +96,8 @@ function developmentUser({ role = 'viewer', printerIds = [] } = {}) {
     username: `dev-${normalized}`,
     displayName: `Development ${displayRole}`,
     roles: [normalized],
-    printerIds
+    printerIds,
+    developmentIdentity: true
   };
 }
 

@@ -30,6 +30,34 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 
+.auth-page {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-shell {
+  width: min(100%, 460px);
+}
+
+.auth-card {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .32);
+}
+
+.auth-card h1 {
+  font-size: 2.2rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+}
+
 .shell {
   width: calc(100% - 32px);
   max-width: 1280px;
@@ -162,6 +190,49 @@ h3 { margin: 0; font-size: 1.15rem; }
 .dev-switcher input {
   min-width: 120px;
   padding: 8px 10px;
+}
+
+.dev-identity-banner {
+  margin-left: auto;
+  min-width: min(100%, 320px);
+  border: 1px solid rgba(69, 199, 255, .32);
+  border-radius: 8px;
+  background: rgba(69, 199, 255, .08);
+  padding: 8px 10px;
+}
+
+.dev-identity-banner summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dev-identity-banner summary::-webkit-details-marker { display: none; }
+
+.dev-mode-label {
+  grid-row: span 2;
+  align-self: center;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(245, 184, 65, .18);
+  color: #ffd684;
+  font-size: .72rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+
+.dev-change-link {
+  color: var(--accent);
+  font-weight: 850;
+  font-size: .84rem;
+}
+
+.dev-switcher-message {
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 
 .badge,
@@ -502,7 +573,8 @@ h3 { margin: 0; font-size: 1.15rem; }
 .diagnostics summary,
 .dev-panel summary,
 .log-panel summary,
-.message-config-panel summary {
+.message-config-panel summary,
+#userPanel summary {
   cursor: pointer;
   color: var(--text);
   font-weight: 850;
@@ -626,7 +698,8 @@ summary:focus-visible {
 }
 
 .dev-panel summary,
-.log-panel summary {
+.log-panel summary,
+#userPanel summary {
   display: flex;
   cursor: pointer;
   list-style: none;
@@ -638,13 +711,16 @@ summary:focus-visible {
 .dev-panel summary::-webkit-details-marker,
 .log-panel summary::-webkit-details-marker,
 .message-config-panel summary::-webkit-details-marker,
+#userPanel summary::-webkit-details-marker,
 .diagnostics summary::-webkit-details-marker { display: none; }
 .dev-panel summary span,
 .log-panel summary span,
-.message-config-panel summary span { display: grid; gap: 3px; }
+.message-config-panel summary span,
+#userPanel summary span { display: grid; gap: 3px; }
 .dev-panel details[open] summary,
 .log-panel details[open] summary,
-.message-config-panel details[open] summary { margin-bottom: 16px; }
+.message-config-panel details[open] summary,
+#userPanel details[open] summary { margin-bottom: 16px; }
 
 .mode-row {
   display: flex;
@@ -743,6 +819,24 @@ summary:focus-visible {
   display: grid;
   gap: 10px;
   margin-top: 10px;
+}
+
+.role-grid {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.role-grid legend {
+  color: var(--muted-2);
+  font-size: .78rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 0 6px;
 }
 
 .assignment-row {
@@ -909,7 +1003,8 @@ body.server-disconnected .dashboard-panel {
   .mode-row,
   .nav-shell,
   .dev-panel summary,
-  .log-panel summary {
+  .log-panel summary,
+  #userPanel summary {
     flex-direction: column;
     align-items: stretch;
   }
@@ -925,9 +1020,12 @@ body.server-disconnected .dashboard-panel {
   .card-actions { justify-content: stretch; flex-wrap: wrap; }
   .viewer-facts { grid-template-columns: 1fr; }
   .dev-switcher { margin-left: 0; }
+  .dev-identity-banner { margin-left: 0; }
+  .dev-identity-banner summary { grid-template-columns: 1fr; }
   .dev-switcher select,
   .dev-switcher input,
   .dev-switcher button { width: 100%; }
+  .role-grid { grid-template-columns: 1fr; }
   .actions button,
   .card-actions button,
   .card-actions a,

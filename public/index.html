@@ -220,6 +220,52 @@
       </details>
     </section>
 
+    <section id="userPanel" class="panel hidden" aria-labelledby="usersTitle">
+      <details id="usersDetails">
+        <summary>
+          <span>
+            <strong id="usersTitle">Users</strong>
+            <span class="muted">Manage local accounts, roles and printer assignments</span>
+          </span>
+          <button id="refreshUsersButton" class="ghost" type="button">Refresh</button>
+        </summary>
+        <p id="userMessage" class="notice hidden" aria-live="polite"></p>
+        <div class="message-config-layout">
+          <div id="userList" class="message-list" aria-label="Users"></div>
+          <form id="userForm" class="message-form hidden">
+            <input id="userId" type="hidden">
+            <label for="userUsername">Username
+              <input id="userUsername" maxlength="40" autocomplete="off" required>
+            </label>
+            <label for="userDisplayName">Display name
+              <input id="userDisplayName" maxlength="80" autocomplete="off" required>
+            </label>
+            <label for="userPassword">Temporary password
+              <input id="userPassword" type="password" minlength="8" autocomplete="new-password">
+            </label>
+            <label for="userPrinterIds">Printer IDs
+              <input id="userPrinterIds" placeholder="coder-1,coder-2" autocomplete="off">
+            </label>
+            <fieldset class="wide role-grid" id="userRoles">
+              <legend>Roles</legend>
+            </fieldset>
+            <label class="checkbox-line" for="userEnabled">
+              <input id="userEnabled" type="checkbox">
+              Enabled
+            </label>
+            <label class="checkbox-line" for="userMustChangePassword">
+              <input id="userMustChangePassword" type="checkbox">
+              Force password change
+            </label>
+            <div class="actions wide">
+              <button id="newUserButton" class="secondary" type="button">New user</button>
+              <button id="saveUserButton" class="primary" type="submit">Save user</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
+
     <section id="logPanel" class="panel log-panel" aria-labelledby="logTitle">
       <details>
         <summary>

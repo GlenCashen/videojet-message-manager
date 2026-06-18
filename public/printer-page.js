@@ -91,7 +91,7 @@ function setBusy(busy) {
 function accessLabel() {
   if (!printer) return 'Loading';
   const session = currentSession();
-  if (!canOperatePrinter(printer.id)) return 'View only';
+  if (!canOperatePrinter(printer.id)) return 'Read-only access';
   if (session?.user?.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role))) return 'Privileged';
   return 'Operator';
 }

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   canAccessDiagnostics,
@@ -62,6 +65,11 @@ function startServer({ role, printerIds = '', extraEnv = {} }) {
   child.stdout.on('data', (chunk) => output.push(chunk.toString()));
   child.stderr.on('data', (chunk) => output.push(chunk.toString()));
   return { baseUrl, child, output };
+}
+
+async function tempUsersPath(prefix = 'vmm-users-') {
+  const dir = await mkdtemp(path.join(tmpdir(), prefix));
+  return path.join(dir, 'users.json');
 }
 
 async function withServer(options, run) {
@@ -129,6 +137,8 @@ async function readSseEvents(url, wantedType, limit = 10) {
 test('permission helpers expose role capabilities centrally', () => {
   const viewer = developmentUser({ role: 'viewer' });
   const operator = developmentUser({ role: 'operator', printerIds: ['coder-1'] });
+  const devWildcardOperator = developmentUser({ role: 'operator', printerIds: ['*'] });
+  const productionWildcardOperator = { roles: ['operator'], printerIds: ['*'] };
   const qa = developmentUser({ role: 'qa' });
   const engineering = developmentUser({ role: 'engineering' });
   const admin = developmentUser({ role: 'admin' });
@@ -140,6 +150,8 @@ test('permission helpers expose role capabilities centrally', () => {
   assert.deepEqual(visiblePrinters(operator, TEST_PRINTERS).map((printer) => printer.id), ['coder-1']);
   assert.equal(canOperatePrinter(operator, 'coder-1'), true);
   assert.equal(canOperatePrinter(operator, 'coder-2'), false);
+  assert.deepEqual(visiblePrinters(devWildcardOperator, TEST_PRINTERS).map((printer) => printer.id), ['coder-1', 'coder-2', 'coder-3']);
+  assert.deepEqual(visiblePrinters(productionWildcardOperator, TEST_PRINTERS), []);
 
   assert.equal(canEditMessages(qa), true);
   assert.equal(canAccessDiagnostics(qa), false);
@@ -198,6 +210,28 @@ test('operator APIs are filtered to assigned printers', async () => {
   });
 });
 
+test('development operator wildcard and switcher validation are explicit', async () => {
+  await withServer({ role: 'operator', printerIds: '*' }, async (baseUrl) => {
+    const printers = await jsonFetch(`${baseUrl}/api/printers`);
+    assert.deepEqual(printers.data.map((printer) => printer.id), ['coder-1', 'coder-2', 'coder-3']);
+
+    const unknown = await jsonFetch(`${baseUrl}/api/dev/session`, {
+      method: 'POST',
+      body: { role: 'operator', printerIds: ['coder-99'] }
+    });
+    assert.equal(unknown.response.status, 400);
+    assert.equal(unknown.data.code, 'UNKNOWN_PRINTER');
+
+    const empty = await jsonFetch(`${baseUrl}/api/dev/session`, {
+      method: 'POST',
+      body: { role: 'operator', printerIds: [] }
+    });
+    assert.equal(empty.response.ok, true);
+    const cookie = empty.response.headers.get('set-cookie');
+    assert.match(cookie, /devPrinterIds=coder-1/);
+  });
+});
+
 test('privileged roles expose editor, audit, diagnostics and admin capabilities', async () => {
   await withServer({ role: 'qa' }, async (baseUrl) => {
     assert.equal((await fetch(`${baseUrl}/editor`)).status, 200);
@@ -221,11 +255,12 @@ test('privileged roles expose editor, audit, diagnostics and admin capabilities'
   });
 });
 
-test('requests without enabled development identity are denied', async () => {
-  await withServer({ role: 'viewer', extraEnv: { ENABLE_DEV_IDENTITY: 'false' } }, async (baseUrl) => {
-    assert.equal((await fetch(`${baseUrl}/dashboard`)).status, 401);
-    assert.equal((await jsonFetch(`${baseUrl}/api/printers`)).response.status, 401);
-  });
+test('startup fails without users, bootstrap credentials or development identity', async () => {
+  const usersPath = await tempUsersPath('vmm-no-users-');
+  const server = startServer({ role: 'viewer', extraEnv: { ENABLE_DEV_IDENTITY: 'false', SESSION_SECRET: 'test-secret', USERS_PATH: usersPath } });
+  await new Promise((resolve) => server.child.once('exit', resolve));
+  assert.notEqual(server.child.exitCode, 0);
+  assert.match(server.output.join(''), /No users exist/);
 });
 
 test('SSE snapshots are filtered by session visibility', async () => {
@@ -237,5 +272,21 @@ test('SSE snapshots are filtered by session visibility', async () => {
   await withServer({ role: 'engineering' }, async (baseUrl) => {
     const fleet = await readSseEvents(`${baseUrl}/api/events`, 'fleet-snapshot');
     assert.deepEqual(fleet.payload.map((printer) => printer.id), ['coder-1', 'coder-2', 'coder-3']);
+  });
+});
+
+test('unauthenticated SSE is rejected when real auth is required', async () => {
+  const usersPath = await tempUsersPath('vmm-bootstrap-sse-');
+  await withServer({
+    role: 'viewer',
+    extraEnv: {
+      ENABLE_DEV_IDENTITY: 'false',
+      SESSION_SECRET: 'test-secret',
+      USERS_PATH: usersPath,
+      BOOTSTRAP_ADMIN_USERNAME: 'admin',
+      BOOTSTRAP_ADMIN_PASSWORD: 'password123'
+    }
+  }, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/events`)).status, 401);
   });
 });

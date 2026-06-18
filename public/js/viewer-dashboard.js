@@ -2,7 +2,7 @@ import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
-import { loadSession } from './session.js';
+import { currentSession, loadSession } from './session.js';
 import {
   alarmSummary,
   faultCountLabel,
@@ -87,8 +87,14 @@ function createCard(printer) {
 function render() {
   clear(elements.grid);
   if (!state.order.length) {
+    const session = currentSession();
+    const isDevelopmentOperator = session?.developmentIdentityActive && session.user?.roles?.includes('operator');
     elements.grid.appendChild(el('article', { className: 'viewer-card empty' }, [
-      el('h2', { text: 'No printers are available to this account.' })
+      el('h2', {
+        text: isDevelopmentOperator
+          ? 'Development Operator has no printer assignments. Open Change identity and assign a printer.'
+          : 'No printers are assigned to this account.'
+      })
     ]));
     return;
   }

@@ -10,6 +10,7 @@ import { state } from './js/state.js';
 import { setLiveBadge } from './js/status-ui.js';
 import { normalizeError, setNotice } from './js/dom.js';
 import { elements } from './js/elements.js';
+import { loadUsers, setupUserManagement } from './js/user-management.js';
 
 function canLoadLogs() {
   return hasCapability('viewAudit') || hasCapability('accessDiagnostics');
@@ -20,6 +21,7 @@ function applyCapabilityLayout() {
   elements.messageConfigPanel?.classList.toggle('hidden', !hasCapability('editMessages'));
   elements.devPanel?.classList.toggle('hidden', !hasCapability('accessDiagnostics'));
   elements.logPanel?.classList.toggle('hidden', !canLoadLogs());
+  elements.userPanel?.classList.toggle('hidden', !hasCapability('manageUsers'));
 }
 
 function safeLoadLogs() {
@@ -127,13 +129,15 @@ async function start() {
     if (canLoadLogs()) setupLogs();
     if (hasCapability('editMessages')) setupMessageConfig();
     if (hasCapability('accessDiagnostics')) setupSinglePrinterTools({ loadLogs: safeLoadLogs });
+    if (hasCapability('manageUsers')) setupUserManagement();
     setupEventStream();
 
     await Promise.all([
       hasCapability('accessDiagnostics') ? loadConfig() : Promise.resolve(),
       loadPrinters().then(loadStatuses),
       safeLoadLogs(),
-      hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve()
+      hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve(),
+      hasCapability('manageUsers') ? loadUsers() : Promise.resolve()
     ]);
   } catch (error) {
     setNotice(elements.dashboardMessage, normalizeError(error), 'error');

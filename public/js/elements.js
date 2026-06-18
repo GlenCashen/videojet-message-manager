@@ -60,7 +60,23 @@ const elements = {
   failNextCommand: $('failNextCommand'),
   saveEmulator: $('saveEmulator'),
   resetEmulator: $('resetEmulator'),
-  emulatorFields: $('emulatorFields')
+  emulatorFields: $('emulatorFields'),
+  userPanel: $('userPanel'),
+  usersDetails: $('usersDetails'),
+  refreshUsersButton: $('refreshUsersButton'),
+  userMessage: $('userMessage'),
+  userList: $('userList'),
+  userForm: $('userForm'),
+  userId: $('userId'),
+  userUsername: $('userUsername'),
+  userDisplayName: $('userDisplayName'),
+  userPassword: $('userPassword'),
+  userPrinterIds: $('userPrinterIds'),
+  userRoles: $('userRoles'),
+  userEnabled: $('userEnabled'),
+  userMustChangePassword: $('userMustChangePassword'),
+  newUserButton: $('newUserButton'),
+  saveUserButton: $('saveUserButton')
 };
 
 export { elements };
