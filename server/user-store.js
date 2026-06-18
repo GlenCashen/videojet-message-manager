@@ -3,6 +3,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeRole } from './permissions.js';
+import {
+  getUserById,
+  getUserByUsername,
+  listUserRecords,
+  recordLogin,
+  replaceUserRecords,
+  setPasswordHash,
+  upsertUserRecord
+} from './repositories/user-repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +21,10 @@ const PASSWORD_MIN_LENGTH = 8;
 
 function usersPath(filePath) {
   return filePath || process.env.USERS_PATH || DEFAULT_USERS_PATH;
+}
+
+function useJsonFile(filePath) {
+  return Boolean(filePath);
 }
 
 function clone(value) {
@@ -112,6 +125,7 @@ function normalizeUserRecord(input, printers, existing = {}) {
 }
 
 async function readUsers(filePath) {
+  if (!useJsonFile(filePath)) return listUserRecords();
   const target = usersPath(filePath);
   if (!(await fileExists(target))) return [];
   const raw = await fs.readFile(target, 'utf8');
@@ -121,6 +135,7 @@ async function readUsers(filePath) {
 }
 
 async function writeUsers(users, filePath) {
+  if (!useJsonFile(filePath)) return replaceUserRecords(users);
   const target = usersPath(filePath);
   await fs.mkdir(path.dirname(target), { recursive: true });
   const temp = path.join(path.dirname(target), `.users-${process.pid}-${Date.now()}.tmp`);
@@ -151,8 +166,12 @@ async function createUser(input, { printers = [], filePath } = {}) {
     mustChangePassword: input.mustChangePassword ?? true
   }, printers);
   assertUniqueUsername(users, user.username);
-  const next = [...users, user];
-  await writeUsers(next, filePath);
+  if (useJsonFile(filePath)) {
+    const next = [...users, user];
+    await writeUsers(next, filePath);
+  } else {
+    upsertUserRecord(user);
+  }
   return publicUser(user);
 }
 
@@ -169,7 +188,8 @@ async function updateUser(id, changes, { printers = [], filePath } = {}) {
   assertUniqueUsername(users, updated.username, id);
   const next = users.map((user, userIndex) => userIndex === index ? updated : user);
   assertLastEnabledAdmin(users, next);
-  await writeUsers(next, filePath);
+  if (useJsonFile(filePath)) await writeUsers(next, filePath);
+  else upsertUserRecord(updated);
   return publicUser(updated);
 }
 
@@ -178,10 +198,16 @@ async function listUsers(options = {}) {
 }
 
 async function findUserById(id, options = {}) {
+  if (!useJsonFile(options.filePath)) return publicUser(getUserById(id));
   return publicUser((await readUsers(options.filePath)).find((user) => user.id === id));
 }
 
 async function authenticateUser(username, password, options = {}) {
+  if (!useJsonFile(options.filePath)) {
+    const user = getUserByUsername(String(username || '').trim());
+    if (!user || !user.enabled || !(await verifyPassword(password, user.passwordHash))) return null;
+    return publicUser(recordLogin(user.id));
+  }
   const users = await readUsers(options.filePath);
   const user = users.find((item) => item.username.toLowerCase() === String(username || '').trim().toLowerCase());
   if (!user || !user.enabled || !(await verifyPassword(password, user.passwordHash))) return null;
@@ -191,6 +217,11 @@ async function authenticateUser(username, password, options = {}) {
 }
 
 async function changePassword(userId, currentPassword, nextPassword, options = {}) {
+  if (!useJsonFile(options.filePath)) {
+    const user = getUserById(userId);
+    if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) return null;
+    return publicUser(setPasswordHash(user.id, await hashPassword(nextPassword), false));
+  }
   const users = await readUsers(options.filePath);
   const user = users.find((item) => item.id === userId);
   if (!user || !(await verifyPassword(currentPassword, user.passwordHash))) return null;

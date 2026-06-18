@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listMessages, replaceMessages } from './repositories/message-repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,12 +146,18 @@ function validateMessages(messages, options = {}) {
 }
 
 async function loadMessages(filePath = DEFAULT_MESSAGES_PATH, options = {}) {
+  if (filePath === DEFAULT_MESSAGES_PATH) {
+    return validateMessages(listMessages(), options);
+  }
   const raw = await fs.readFile(filePath, 'utf8');
   return validateMessages(JSON.parse(raw), options);
 }
 
 async function saveMessages(messages, filePath = DEFAULT_MESSAGES_PATH, options = {}) {
   const validated = validateMessages(messages, options);
+  if (filePath === DEFAULT_MESSAGES_PATH) {
+    return replaceMessages(validated);
+  }
   const dir = path.dirname(filePath);
   const tempPath = path.join(dir, `.messages-${process.pid}-${Date.now()}.tmp`);
   await fs.writeFile(tempPath, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');

@@ -45,6 +45,7 @@ async function waitForServer(baseUrl, child) {
 function startServer({ role, printerIds = '', extraEnv = {} }) {
   const port = randomPort();
   const emulatorPort = randomPort(19180);
+  const dbPath = extraEnv.DB_PATH || path.join(tmpdir(), `vmm-permissions-${port}.db`);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
@@ -54,6 +55,7 @@ function startServer({ role, printerIds = '', extraEnv = {} }) {
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: dbPath,
       ENABLE_DEV_IDENTITY: 'true',
       DEV_USER_ROLE: role,
       DEV_USER_PRINTER_IDS: printerIds,
@@ -67,9 +69,9 @@ function startServer({ role, printerIds = '', extraEnv = {} }) {
   return { baseUrl, child, output };
 }
 
-async function tempUsersPath(prefix = 'vmm-users-') {
+async function tempDbPath(prefix = 'vmm-db-') {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  return path.join(dir, 'users.json');
+  return path.join(dir, 'videojet.db');
 }
 
 async function withServer(options, run) {
@@ -256,8 +258,8 @@ test('privileged roles expose editor, audit, diagnostics and admin capabilities'
 });
 
 test('startup fails without users, bootstrap credentials or development identity', async () => {
-  const usersPath = await tempUsersPath('vmm-no-users-');
-  const server = startServer({ role: 'viewer', extraEnv: { ENABLE_DEV_IDENTITY: 'false', SESSION_SECRET: 'test-secret', USERS_PATH: usersPath } });
+  const dbPath = await tempDbPath('vmm-no-users-');
+  const server = startServer({ role: 'viewer', extraEnv: { ENABLE_DEV_IDENTITY: 'false', SESSION_SECRET: 'test-secret', DB_PATH: dbPath } });
   await new Promise((resolve) => server.child.once('exit', resolve));
   assert.notEqual(server.child.exitCode, 0);
   assert.match(server.output.join(''), /No users exist/);
@@ -276,13 +278,13 @@ test('SSE snapshots are filtered by session visibility', async () => {
 });
 
 test('unauthenticated SSE is rejected when real auth is required', async () => {
-  const usersPath = await tempUsersPath('vmm-bootstrap-sse-');
+  const dbPath = await tempDbPath('vmm-bootstrap-sse-');
   await withServer({
     role: 'viewer',
     extraEnv: {
       ENABLE_DEV_IDENTITY: 'false',
       SESSION_SECRET: 'test-secret',
-      USERS_PATH: usersPath,
+      DB_PATH: dbPath,
       BOOTSTRAP_ADMIN_USERNAME: 'admin',
       BOOTSTRAP_ADMIN_PASSWORD: 'password123'
     }

@@ -6,10 +6,101 @@ This proof of concept can connect to a real Videojet 1620 over WSI Simple Protoc
 
 ```powershell
 npm install
+npm run migrate
+npm run migrate:json
 npm start
 ```
 
 Open `http://localhost:8080`.
+
+## SQLite persistence
+
+Persistent application data now lives in SQLite at `data/videojet.db`.
+
+SQLite stores:
+
+- printer configuration
+- users, roles and printer assignments
+- message definitions, fields and printer message assignments
+- last expected printed output
+- message update events
+- fault transitions
+- audit events
+- login sessions
+
+Live printer polling state is still rebuilt in memory after restart. This includes online/offline state, stale indicators, current queue activity, SSE clients, response time and the latest raw status.
+
+The database is opened with foreign keys enabled, WAL journaling and a 5 second busy timeout.
+
+## Migration commands
+
+Create or update the schema:
+
+```powershell
+npm run migrate
+```
+
+Import existing JSON data once:
+
+```powershell
+npm run migrate:json
+```
+
+The JSON importer reads any existing files in `data/`, including `printers.json`, `messages.json`, `users.json`, `fault-history.json`, `audit-log.json` and `printer-state.json`. After a successful import it records a migration marker in SQLite, then copies source JSON files to `data/json-backup/<timestamp>/`. Later startup skips JSON import so stale JSON cannot overwrite database data.
+
+## Backup and restore
+
+Create a WAL-safe database backup:
+
+```powershell
+npm run db:backup
+```
+
+Backups are written to `backups/videojet-YYYYMMDD-HHmmss.db`.
+
+Check database health:
+
+```powershell
+npm run db:check
+npm run db:status
+```
+
+To restore, stop the application, copy the chosen backup over `data/videojet.db`, then start the app again. If `videojet.db-wal` or `videojet.db-shm` files exist from the previous database, remove those only while the app is stopped so SQLite recreates them for the restored database.
+
+`GET /api/health` includes safe database status:
+
+```json
+{
+  "ok": true,
+  "database": {
+    "connected": true,
+    "journalMode": "wal",
+    "foreignKeys": true,
+    "schemaVersion": 2
+  }
+}
+```
+
+Sessions are stored in SQLite, so logins survive a process restart. Expired sessions are cleaned up when read, logout deletes the session row, and disabled users are rejected even if an old session cookie remains.
+
+## First run
+
+If no users exist, provide bootstrap credentials or enable development identity:
+
+```powershell
+$env:BOOTSTRAP_ADMIN_USERNAME="admin"
+$env:BOOTSTRAP_ADMIN_PASSWORD="change-this-password"
+npm start
+```
+
+The bootstrap Admin is created only when the user table is empty.
+
+## Troubleshooting
+
+- Run `npm run db:check` if the app reports a database error.
+- Run `npm run db:status` to confirm WAL mode, foreign keys and schema version.
+- If migration fails, the transaction rolls back and the error message points to the invalid source data.
+- JSON files remain as migration inputs and fixtures. Normal runtime updates write to SQLite.
 
 ## Emulator mode
 
@@ -44,3 +135,6 @@ The emulator panel can also simulate an offline printer, command failure, status
 - `PRINTER_PORT` — default real printer WSI port
 - `EMULATOR_HOST` — default `127.0.0.1`
 - `EMULATOR_PORT` — default `3100`
+- `DB_PATH` — override SQLite path, default `data/videojet.db`
+- `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` — create the first Admin user when no users exist
+- `ENABLE_DEV_IDENTITY` — enable development identity switching

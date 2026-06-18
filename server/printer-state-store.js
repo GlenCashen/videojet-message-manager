@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listExpectedOutputs, upsertExpectedOutput } from './repositories/expected-output-repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,7 @@ function validateExpectedOutput(record, printerId) {
 }
 
 async function loadPrinterState(filePath = DEFAULT_STATE_PATH) {
+  if (filePath === DEFAULT_STATE_PATH) return listExpectedOutputs();
   try {
     const raw = await fs.readFile(filePath, 'utf8');
     const parsed = JSON.parse(raw);
@@ -52,6 +54,10 @@ async function loadPrinterState(filePath = DEFAULT_STATE_PATH) {
 }
 
 async function savePrinterState(records, filePath = DEFAULT_STATE_PATH) {
+  if (filePath === DEFAULT_STATE_PATH) {
+    for (const [printerId, record] of Object.entries(records || {})) upsertExpectedOutput(printerId, record);
+    return;
+  }
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
   const tempPath = path.join(dir, `.printer-state-${process.pid}-${Date.now()}.tmp`);

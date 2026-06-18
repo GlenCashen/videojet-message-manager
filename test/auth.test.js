@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import Database from 'better-sqlite3';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -9,14 +10,15 @@ function randomPort(base = 20180) {
   return base + Math.floor(Math.random() * 1000);
 }
 
-async function tempUsersPath(prefix = 'vmm-auth-') {
+async function tempDbPath(prefix = 'vmm-auth-') {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  return path.join(dir, 'users.json');
+  return path.join(dir, 'videojet.db');
 }
 
 function startServer(extraEnv = {}) {
   const port = randomPort();
   const emulatorPort = randomPort(21180);
+  const dbPath = extraEnv.DB_PATH || path.join(tmpdir(), `vmm-auth-${port}.db`);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
@@ -26,6 +28,7 @@ function startServer(extraEnv = {}) {
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: dbPath,
       ENABLE_DEV_IDENTITY: 'false',
       SESSION_SECRET: 'test-session-secret',
       ...extraEnv
@@ -83,9 +86,9 @@ function sessionCookie(response) {
 }
 
 test('bootstrap admin, login, password change and logout flow works', async () => {
-  const usersPath = await tempUsersPath();
+  const dbPath = await tempDbPath();
   await withServer({
-    USERS_PATH: usersPath,
+    DB_PATH: dbPath,
     BOOTSTRAP_ADMIN_USERNAME: 'admin',
     BOOTSTRAP_ADMIN_PASSWORD: 'password123',
     BOOTSTRAP_ADMIN_DISPLAY_NAME: 'Bootstrap Admin'
@@ -196,27 +199,29 @@ test('bootstrap admin, login, password change and logout flow works', async () =
     assert.equal(afterLogout.response.status, 401);
   });
 
-  const users = JSON.parse(await readFile(usersPath, 'utf8'));
-  assert.equal(users[0].username, 'admin');
-  assert.equal(users[0].password, undefined);
-  assert.match(users[0].passwordHash, /^scrypt:/);
+  const db = new Database(dbPath, { readonly: true });
+  const user = db.prepare('SELECT username, password_hash FROM users WHERE username = ?').get('admin');
+  db.close();
+  assert.equal(user.username, 'admin');
+  assert.match(user.password_hash, /^scrypt:/);
 });
 
 test('bootstrap admin is created once and not overwritten', async () => {
-  const usersPath = await tempUsersPath();
+  const dbPath = await tempDbPath();
   await withServer({
-    USERS_PATH: usersPath,
+    DB_PATH: dbPath,
     BOOTSTRAP_ADMIN_USERNAME: 'admin',
     BOOTSTRAP_ADMIN_PASSWORD: 'password123'
   }, async () => {});
 
   await withServer({
-    USERS_PATH: usersPath,
+    DB_PATH: dbPath,
     BOOTSTRAP_ADMIN_USERNAME: 'otheradmin',
     BOOTSTRAP_ADMIN_PASSWORD: 'password456'
   }, async () => {});
 
-  const users = JSON.parse(await readFile(usersPath, 'utf8'));
-  assert.equal(users.length, 1);
-  assert.equal(users[0].username, 'admin');
+  const db = new Database(dbPath, { readonly: true });
+  const users = db.prepare('SELECT username FROM users ORDER BY username').all();
+  db.close();
+  assert.deepEqual(users, [{ username: 'admin' }]);
 });

@@ -1,7 +1,11 @@
 import crypto from 'node:crypto';
+import { getDb } from './db.js';
+import { getSetting, setSetting } from './repositories/settings-repository.js';
+import { getUserById } from './repositories/user-repository.js';
 
 const COOKIE_NAME = 'vmm_session';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const SESSION_SECRET_SETTING = 'session_cookie_secret';
 
 function base64Url(value) {
   return Buffer.from(value).toString('base64url');
@@ -21,14 +25,24 @@ function serializeCookie(name, value, options = {}) {
   return parts.join('; ');
 }
 
+function getSessionSecret(secret) {
+  if (secret) return secret;
+  const existing = getSetting(SESSION_SECRET_SETTING);
+  if (existing?.value) return existing.value;
+  const generated = crypto.randomBytes(32).toString('hex');
+  setSetting(SESSION_SECRET_SETTING, { value: generated });
+  return generated;
+}
+
 function createSessionManager({ secret, secure = false } = {}) {
-  const sessions = new Map();
-  const sessionSecret = secret || crypto.randomBytes(32).toString('hex');
+  const sessionSecret = getSessionSecret(secret);
 
   function create(user) {
     const id = base64Url(crypto.randomUUID());
     const expiresAt = Date.now() + SESSION_TTL_MS;
-    sessions.set(id, { user, expiresAt });
+    const now = new Date().toISOString();
+    getDb().prepare('INSERT INTO sessions (id, user_id, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, user.id, new Date(expiresAt).toISOString(), now, now);
     return `${id}.${sign(id, sessionSecret)}`;
   }
 
@@ -37,19 +51,22 @@ function createSessionManager({ secret, secure = false } = {}) {
     const [id, signature] = cookieValue.split('.');
     if (!id || !signature || sign(id, sessionSecret) !== signature) return null;
 
-    const session = sessions.get(id);
+    const db = getDb();
+    db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(new Date().toISOString());
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id);
     if (!session) return null;
-    if (session.expiresAt <= Date.now()) {
-      sessions.delete(id);
+    const user = getUserById(session.user_id, db);
+    if (!user || !user.enabled) {
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
       return null;
     }
-    return session.user;
+    return user;
   }
 
   function destroy(cookieValue) {
     if (!cookieValue || !cookieValue.includes('.')) return;
     const [id] = cookieValue.split('.');
-    sessions.delete(id);
+    getDb().prepare('DELETE FROM sessions WHERE id = ?').run(id);
   }
 
   function cookie(value) {

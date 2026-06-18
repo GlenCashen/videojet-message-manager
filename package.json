@@ -6,9 +6,15 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "migrate": "node server/migrate.js",
+    "migrate:json": "node server/migrate-json-to-sqlite.js",
+    "db:status": "node server/db-status.js",
+    "db:check": "node server/db-check.js",
+    "db:backup": "node server/db-backup.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "express": "^4.21.2"
   }
 }

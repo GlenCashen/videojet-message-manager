@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { activeFaultsFromEvents, insertFaultEvents, listFaultEvents } from './repositories/fault-repository.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,9 +50,20 @@ class FaultHistoryStore {
     this.now = now;
     this.active = {};
     this.history = [];
+    this.useDatabase = filePath === DEFAULT_FAULT_HISTORY_PATH;
   }
 
   async load() {
+    if (this.useDatabase) {
+      const activeFaults = activeFaultsFromEvents();
+      this.active = {};
+      for (const fault of activeFaults) {
+        this.active[fault.printerId] ||= {};
+        this.active[fault.printerId][fault.faultCode] = fault;
+      }
+      this.history = listFaultEvents({ limit: this.limit }).reverse();
+      return this;
+    }
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
       const data = normalizeStore(JSON.parse(raw));
@@ -66,6 +78,7 @@ class FaultHistoryStore {
   }
 
   async save() {
+    if (this.useDatabase) return;
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tempPath = path.join(dir, `.fault-history-${process.pid}-${Date.now()}.tmp`);
@@ -147,6 +160,7 @@ class FaultHistoryStore {
 
     this.active[printerId] = nextActive;
     if (events.length) {
+      if (this.useDatabase) insertFaultEvents(events);
       this.history.push(...events);
       this.trimHistory();
       await this.save();
@@ -168,7 +182,9 @@ class FaultHistoryStore {
     const activeFaults = printerId
       ? this.activeFor(printerId)
       : Object.values(this.active).flatMap((records) => Object.values(records).map(clone));
-    const history = activeOnly
+    const history = this.useDatabase && !activeOnly
+      ? listFaultEvents({ printerId, from, to, limit }).map(clone)
+      : activeOnly
       ? []
       : this.history.filter(matches).slice(-limit).reverse().map(clone);
 

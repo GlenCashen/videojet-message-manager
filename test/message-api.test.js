@@ -32,6 +32,7 @@ test('preview endpoint does not issue WSI commands', async () => {
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: path.join(tmpdir(), `vmm-message-api-${port}.db`),
       ENABLE_DEV_IDENTITY: 'true',
       DEV_USER_ROLE: 'engineering'
     },
@@ -82,6 +83,7 @@ test('fault history API records activation and clear from emulator checks', asyn
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: path.join(tmpdir(), `vmm-message-api-${port}.db`),
       ENABLE_DEV_IDENTITY: 'true',
       DEV_USER_ROLE: 'engineering',
       FAULT_HISTORY_LIMIT: '20',

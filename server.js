@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { readPrinters, updatePrinter } from './printer-store.js';
 import { createSessionManager } from './server/auth.js';
 import { CoderQueue } from './server/coder-queue.js';
+import { databaseStatus } from './server/db.js';
+import { importJsonToSqlite } from './server/migrate-json-to-sqlite.js';
 import {
   MessageUpdateError,
   enabledMessages,
@@ -50,6 +52,8 @@ import {
   listUsers,
   updateUser
 } from './server/user-store.js';
+import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
+import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { WsiClient } from './server/wsi-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -81,6 +85,7 @@ const auth = createSessionManager({
   secret: SESSION_SECRET || undefined,
   secure: process.env.NODE_ENV === 'production'
 });
+await importJsonToSqlite();
 const startupPrinters = await readPrinters();
 const bootstrap = await ensureBootstrapAdmin({ printers: startupPrinters, enableDevIdentity: ENABLE_DEV_IDENTITY });
 if (!ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
@@ -147,6 +152,11 @@ function addLog(entry) {
   const logEntry = { time: new Date().toISOString(), ...entry };
   commandLog.unshift(logEntry);
   if (commandLog.length > MAX_LOG_ENTRIES) commandLog.length = MAX_LOG_ENTRIES;
+  try {
+    insertAuditEvent(logEntry);
+  } catch (error) {
+    console.error(`Audit insert failed: ${error.message}`);
+  }
   broadcast('log-entry', logEntry);
 }
 
@@ -664,6 +674,14 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
+app.get('/api/health', (_req, res) => {
+  try {
+    res.json({ ok: true, database: databaseStatus() });
+  } catch (_error) {
+    res.status(500).json({ ok: false, database: { connected: false } });
+  }
+});
+
 app.get('/api/session', (req, res) => {
   res.json(sessionPayload(req));
 });
@@ -747,7 +765,7 @@ app.get('/api/audit', (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
   if (!canViewAudit(user)) return forbidden(res, 'You do not have permission to view audit records.');
-  res.json(commandLog);
+  res.json(listAuditEvents(req.query));
 });
 
 app.get('/api/users', async (req, res) => {
@@ -1118,6 +1136,7 @@ app.post('/api/printers/:id/set', async (req, res) => {
     stateChangingOperations.add(printer.id);
     addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageId || req.body?.messageName });
     const result = await setPrinterMessage(printer, req.body || {});
+    insertMessageUpdateEvent(result, user);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
     addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
     broadcast('printer-status', result);
@@ -1125,6 +1144,7 @@ app.post('/api/printers/:id/set', async (req, res) => {
   } catch (error) {
     if (error instanceof MessageUpdateError && error.result) {
       const result = { ...error.result, checkedAt: new Date().toISOString() };
+      insertMessageUpdateEvent(result, currentUser(req) || {});
       addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
       return res.status(502).json(result);
     }
@@ -1294,12 +1314,14 @@ app.post('/api/set', async (req, res) => {
       stateChangingOperations.add(printer.id);
       try {
         const result = await setPrinterMessage(printer, req.body || {});
+        insertMessageUpdateEvent(result, user);
         if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
         addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, ...result });
         return res.status(result.messageMatches ? 200 : 409).json(result);
       } catch (error) {
         if (error instanceof MessageUpdateError && error.result) {
           const result = { ...error.result, checkedAt: new Date().toISOString() };
+          insertMessageUpdateEvent(result, user);
           addLog({ action: 'message-update-failure', printerId: printer.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
           return res.status(502).json(result);
         }
