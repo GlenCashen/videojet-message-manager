@@ -194,6 +194,18 @@ test('sends multi-field WSI commands in order', async () => {
   ]);
 });
 
+test('1710 updates skip unsupported current-message readback', async () => {
+  const { args, commands } = updateArgs({ supportsCurrentMessageReadback: false });
+  const result = await executeMessageUpdate(args);
+
+  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'M12 MONTH', 'E']);
+  assert.equal(result.ok, true);
+  assert.equal(result.messageMatches, null);
+  assert.equal(result.verificationAvailable, false);
+  assert.equal(result.selectedMessage, null);
+  assert.equal(result.messageVerification, 'unsupported');
+});
+
 test('stops on field ACK failure', async () => {
   const message = getMessageById(definitions, '12-month');
   const commands = [];

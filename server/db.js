@@ -4,11 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as initialSchema from './migrations/001_initial_schema.js';
 import * as indexes from './migrations/002_indexes.js';
+import * as printerModels from './migrations/003_printer_models.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', 'data', 'videojet.db');
-const migrations = [initialSchema, indexes].sort((a, b) => a.version - b.version);
+const migrations = [initialSchema, indexes, printerModels].sort((a, b) => a.version - b.version);
 
 let connection = null;
 

@@ -244,6 +244,28 @@ test('current-message endpoint tracks emulator selection and reports rejection s
     const recoveredResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
     assert.equal(recoveredResponse.ok, true);
     assert.equal((await recoveredResponse.json()).currentMessage, '12 MONTH');
+
+    const modelResponse = await fetch(`${baseUrl}/api/printers/coder-1`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: '1710' })
+    });
+    assert.equal(modelResponse.ok, true);
+    assert.equal((await modelResponse.json()).printer.capabilities.currentMessageReadback, false);
+
+    await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
+    const unsupportedResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
+    assert.equal(unsupportedResponse.status, 409);
+    assert.equal((await unsupportedResponse.json()).reasonCode, 'CURRENT_MESSAGE_READBACK_UNSUPPORTED');
+
+    const checkResponse = await fetch(`${baseUrl}/api/printers/coder-1/check`, { method: 'POST' });
+    assert.equal(checkResponse.ok, true);
+    const checkResult = await checkResponse.json();
+    assert.equal(checkResult.messageVerification, 'unsupported');
+
+    const counters = await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json();
+    assert.equal(counters['coder-1'].Q, 0);
+    assert.equal(counters['coder-1'].E, 1);
   } finally {
     const exitPromise = child.exitCode === null
       ? new Promise((resolve) => child.once('exit', resolve))

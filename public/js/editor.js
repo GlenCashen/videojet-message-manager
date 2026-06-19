@@ -18,6 +18,7 @@ function startEdit(id) {
   elements.printerHost.value = printer.host;
   elements.printerPort.value = printer.port;
   elements.printerMode.value = printer.mode;
+  elements.printerModel.value = printer.model || '1620';
   elements.printerEnabled.checked = printer.enabled;
   elements.editorSubtitle.textContent = `Editing ${printer.name}`;
   setNotice(elements.editorMessage);
@@ -48,7 +49,8 @@ async function savePrinter(event) {
         host: elements.printerHost.value.trim(),
         port: Number(elements.printerPort.value),
         enabled: elements.printerEnabled.checked,
-        mode: elements.printerMode.value
+        mode: elements.printerMode.value,
+        model: elements.printerModel.value
       }
     });
 

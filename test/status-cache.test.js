@@ -115,6 +115,20 @@ test('expected output is included in status and preserved by polls', () => {
   assert.deepEqual(cache.get('coder-1').expectedOutput, expectedOutput);
 });
 
+test('status records when current-message verification is unsupported', () => {
+  const cache = new StatusCache();
+  cache.syncPrinters([{ id: 'coder-1710' }]);
+  const status = cache.applySuccess('coder-1710', {
+    messageVerification: 'unsupported',
+    rawStatus: '0000001',
+    responseTimeMs: 10
+  });
+
+  assert.equal(status.online, true);
+  assert.equal(status.selectedMessage, null);
+  assert.equal(status.messageVerification, 'unsupported');
+});
+
 test('successful unchanged polls broadcast fresh timestamps without changing revision', async () => {
   const events = [];
   const cache = new StatusCache({

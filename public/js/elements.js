@@ -18,6 +18,7 @@ const elements = {
   printerHost: $('printerHost'),
   printerPort: $('printerPort'),
   printerMode: $('printerMode'),
+  printerModel: $('printerModel'),
   printerEnabled: $('printerEnabled'),
   savePrinterButton: $('savePrinterButton'),
   cancelEditButton: $('cancelEditButton'),

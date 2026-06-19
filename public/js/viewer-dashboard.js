@@ -53,12 +53,17 @@ function expectedMessage(status) {
   return status?.expectedOutput?.printerMessageName || null;
 }
 
-function syncState(status) {
+function readbackUnsupported(printer, status) {
+  return status.messageVerification === 'unsupported' || printer.capabilities?.currentMessageReadback === false;
+}
+
+function syncState(printer, status) {
   if (!status?.lastSuccessfulAt) return { label: 'WAITING', tone: 'neutral' };
   if (!state.serverConnected) return { label: 'SERVER OFFLINE', tone: 'bad' };
   if (status.online === false) return { label: 'OFFLINE', tone: 'bad' };
   if (isStale(status)) return { label: 'STALE', tone: 'stale' };
   if (status.consecutiveFailures > 0) return { label: 'RETRYING', tone: 'stale' };
+  if (readbackUnsupported(printer, status)) return { label: 'READBACK N/A', tone: 'neutral' };
   const expected = expectedMessage(status);
   if (expected && expected !== status.selectedMessage) return { label: 'MISMATCH', tone: 'bad' };
   return { label: 'SYNCED', tone: 'good' };
@@ -66,13 +71,16 @@ function syncState(status) {
 
 function createReadback(printer, status) {
   const expected = expectedMessage(status);
-  const sync = syncState(status);
+  const sync = syncState(printer, status);
   let syncMessage = `Server polling is active. ${formatAge(status.lastSuccessfulAt)}.`;
   if (!status.lastSuccessfulAt) syncMessage = 'Waiting for the first successful server poll.';
   else if (!state.serverConnected) syncMessage = 'Live server connection lost. Showing the last successful readback.';
   else if (status.online === false) syncMessage = `Printer is offline. Automatic polling continues. ${status.lastError || ''}`.trim();
   else if (isStale(status)) syncMessage = `Data is stale. Automatic polling continues. ${status.lastError || ''}`.trim();
   else if (status.consecutiveFailures > 0) syncMessage = `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
+  else if (readbackUnsupported(printer, status)) {
+    syncMessage = `Videojet ${printer.model || '1710'} does not support current-message readback. Status and faults are still polling normally.`;
+  }
 
   return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [
     el('div', { className: 'readback-heading' }, [
@@ -85,7 +93,7 @@ function createReadback(printer, status) {
       expected ? el('span', { text: 'Expected message' }) : null,
       expected ? el('strong', { text: expected }) : null,
       el('span', { text: 'Current printer message' }),
-      el('strong', { text: status.selectedMessage || '-' }),
+      el('strong', { text: readbackUnsupported(printer, status) ? 'Verification unavailable' : status.selectedMessage || '-' }),
       el('span', { text: 'Last successful sync' }),
       el('strong', { text: status.lastSuccessfulAt ? new Date(status.lastSuccessfulAt).toLocaleString() : 'Waiting' }),
       el('span', { text: 'Latest attempt' }),
@@ -122,7 +130,7 @@ function createCard(printer) {
     el('div', { className: 'viewer-facts' }, [
       el('div', {}, [
         el('span', { text: messageLabel }),
-        el('strong', { text: status.selectedMessage || '-' })
+        el('strong', { text: readbackUnsupported(printer, status) ? 'Readback unavailable' : status.selectedMessage || '-' })
       ]),
       el('div', {}, [
         el('span', { text: faultLabel }),

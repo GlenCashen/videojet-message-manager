@@ -357,14 +357,18 @@ async function refreshStateAfterRejection({
   delay,
   applySuccess,
   now,
-  startedAt
+  startedAt,
+  supportsCurrentMessageReadback = true
 }) {
   try {
-    const selected = assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
-    await delay();
+    const selected = supportsCurrentMessageReadback
+      ? assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
+      : null;
+    if (selected) await delay();
     const status = assertPacketResponse('E', await sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const cached = applySuccess({
-      selectedMessage: selected.value,
+      ...(selected ? { selectedMessage: selected.value } : {}),
+      messageVerification: supportsCurrentMessageReadback ? 'verified' : 'unsupported',
       rawStatus: status.value,
       responseTimeMs: now() - startedAt
     });
@@ -372,7 +376,7 @@ async function refreshStateAfterRejection({
       code,
       error,
       failedStep,
-      selectedMessage: selected.value,
+      selectedMessage: selected?.value || null,
       rawStatus: status.value,
       status: statusResult(cached)
     });
@@ -405,6 +409,7 @@ async function executeMessageUpdate({
   delay = async () => {},
   applySuccess,
   productionDate,
+  supportsCurrentMessageReadback = true,
   now = () => Date.now()
 }) {
   const startedAt = now();
@@ -432,10 +437,12 @@ async function executeMessageUpdate({
     targetHost: target.ip,
     targetPort: target.port,
     mode: printer.mode,
+    model: printer.model || '1620',
     enabled: printer.enabled,
     requestedMessage: message.printerMessageName,
     expectedMessage: message.printerMessageName,
-    expectedOutput
+    expectedOutput,
+    verificationAvailable: supportsCurrentMessageReadback
   };
 
   for (const field of message.fields) {
@@ -464,7 +471,8 @@ async function executeMessageUpdate({
             delay,
             applySuccess,
             now,
-            startedAt
+            startedAt,
+            supportsCurrentMessageReadback
           });
         }
         fieldResults.push({
@@ -533,7 +541,8 @@ async function executeMessageUpdate({
         delay,
         applySuccess,
         now,
-        startedAt
+        startedAt,
+        supportsCurrentMessageReadback
       });
     }
     throw new MessageUpdateError('Message selection was not acknowledged.', failureResult(base, fieldResults, 'Failed', {
@@ -549,8 +558,10 @@ async function executeMessageUpdate({
   let selected;
   let status;
   try {
-    selected = assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
-    await delay();
+    selected = supportsCurrentMessageReadback
+      ? assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
+      : null;
+    if (selected) await delay();
     status = assertPacketResponse('E', await sendCommand({ printerId: printer.id, ...target, command: 'E' }));
   } catch (error) {
     const code = transportFailureCode(error);
@@ -564,23 +575,25 @@ async function executeMessageUpdate({
   }
   const elapsedMs = now() - startedAt;
   const cached = applySuccess({
-    selectedMessage: selected.value,
+    ...(selected ? { selectedMessage: selected.value } : {}),
+    messageVerification: supportsCurrentMessageReadback ? 'verified' : 'unsupported',
     rawStatus: status.value,
     responseTimeMs: elapsedMs,
     expectedOutput
   });
-  const messageMatches = selected.value === message.printerMessageName;
+  const messageMatches = selected ? selected.value === message.printerMessageName : null;
 
   return {
     ...cached,
     ...base,
     online: true,
-    ok: messageMatches,
-    code: messageMatches ? undefined : 'MESSAGE_MISMATCH',
+    ok: messageMatches !== false,
+    code: messageMatches === false ? 'MESSAGE_MISMATCH' : undefined,
     communicationSucceeded: true,
     printerOnline: true,
     messageMatches,
-    selectedMessage: selected.value,
+    verificationAvailable: supportsCurrentMessageReadback,
+    selectedMessage: selected?.value || null,
     fieldResults,
     messageSelection: 'Acknowledged',
     status: status.value,

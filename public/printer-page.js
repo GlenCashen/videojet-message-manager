@@ -42,6 +42,7 @@ const elements = {
   checkedAt: $('operatorCheckedAt'),
   host: $('operatorHost'),
   mode: $('operatorMode'),
+  model: $('operatorModel'),
   form: $('operatorSetForm'),
   controlsPanel: $('operatorControlsPanel'),
   setButton: $('operatorSetButton'),
@@ -262,7 +263,9 @@ function updateOperatorShell() {
 
   if (latestStatus) {
     elements.connection.textContent = statusLabel(latestStatus);
-    elements.selectedMessage.textContent = latestStatus.selectedMessage || '-';
+    elements.selectedMessage.textContent = latestStatus.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false
+      ? `Readback unavailable (${printer?.model || '1710'})`
+      : latestStatus.selectedMessage || '-';
     elements.alarmStatus.textContent = lightState.label;
     elements.faults.textContent = faultSummary(latestStatus.decodedStatus);
     elements.printerStatus.textContent = latestStatus.rawStatus || latestStatus.status || '-';
@@ -370,6 +373,7 @@ function applyPrinterConfig(value) {
   elements.breadcrumb.textContent = `Dashboard / ${printer.name}`;
   elements.host.textContent = `${printer.host}:${printer.port}`;
   elements.mode.textContent = printer.mode === 'emulator' ? 'Emulator' : 'Real printer';
+  elements.model.textContent = `Videojet ${printer.model || '1620'}`;
   if (window.location.pathname !== printerHref(printer.id) && window.location.pathname.startsWith('/printers/')) {
     window.history.replaceState(null, '', printerHref(printer.id));
   }
@@ -396,6 +400,7 @@ function applyPrinterStatus(value) {
     rawStatus: value.rawStatus || value.status || latestStatus?.rawStatus || latestStatus?.status || null,
     decodedStatus: value.decodedStatus || latestStatus?.decodedStatus || null,
     expectedOutput: value.expectedOutput || latestStatus?.expectedOutput || null,
+    messageVerification: value.messageVerification || latestStatus?.messageVerification || null,
     lastSuccessfulAt: value.lastSuccessfulAt || latestStatus?.lastSuccessfulAt || null,
     busy: visibleBusy,
     currentOperation: visibleBusy ? value.currentOperation || null : null
@@ -533,6 +538,16 @@ function fieldResultLine(result) {
 }
 
 function showUpdateResult(result) {
+  if (result.ok && result.verificationAvailable === false) {
+    applyPrinterStatus(result);
+    const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
+    setNotice(
+      elements.message,
+      `Message change acknowledged by the printer\n\nCurrent-message readback is unavailable on Videojet ${printer?.model || '1710'}.\n${fieldLines}\nPhysical print check: Required`,
+      'success'
+    );
+    return;
+  }
   if (result.messageMatches) {
     applyPrinterStatus(result);
   } else if (result.status) {
@@ -601,24 +616,26 @@ async function confirmPrinterUpdate() {
     });
     hideReview();
     showUpdateResult(result);
-    try {
-      const readback = await apiJson(`/api/printer/current-message?printerId=${encodeURIComponent(printerId)}`);
-      applyPrinterStatus({
-        printerId,
-        selectedMessage: readback.currentMessage,
-        checkedAt: readback.checkedAt
-      });
-      if (readback.currentMessage !== result.requestedMessage) {
-        setNotice(
-          elements.message,
-          `MESSAGE MISMATCH\n\nRequested: ${result.requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
-          'error'
-        );
-      } else {
-        showUpdateResult(result);
+    if (result.verificationAvailable !== false && printer?.capabilities?.currentMessageReadback !== false) {
+      try {
+        const readback = await apiJson(`/api/printer/current-message?printerId=${encodeURIComponent(printerId)}`);
+        applyPrinterStatus({
+          printerId,
+          selectedMessage: readback.currentMessage,
+          checkedAt: readback.checkedAt
+        });
+        if (readback.currentMessage !== result.requestedMessage) {
+          setNotice(
+            elements.message,
+            `MESSAGE MISMATCH\n\nRequested: ${result.requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
+            'error'
+          );
+        } else {
+          showUpdateResult(result);
+        }
+      } catch (readbackError) {
+        setNotice(elements.message, `Message change sent, but readback failed: ${normalizeError(readbackError)}`, 'error');
       }
-    } catch (readbackError) {
-      setNotice(elements.message, `Message change sent, but readback failed: ${normalizeError(readbackError)}`, 'error');
     }
   } catch (error) {
     hideReview();

@@ -1,6 +1,8 @@
-# Videojet 1620 Control + Local WSI Emulator
+# Videojet 1620/1710 Control + Local WSI Emulator
 
-This proof of concept can connect to a real Videojet 1620 over WSI Simple Protocol or to a built-in local emulator.
+This proof of concept can connect to Videojet 1620 and 1710 printers over WSI Simple Protocol or to a built-in local emulator.
+
+Set the correct model for every printer in the editor. A 1620 is polled with `Q` and `E`; a 1710 is polled with `E` only because the supplied protocol marks current-message command `Q` unsupported on the 1710. Message changes on a 1710 are acknowledgement-based and require a physical print check.
 
 ## Run
 
@@ -76,7 +78,7 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
-    "schemaVersion": 2
+    "schemaVersion": 3
   }
 }
 ```

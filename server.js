@@ -6,6 +6,7 @@ import { readPrinters, updatePrinter } from './printer-store.js';
 import { createSessionManager } from './server/auth.js';
 import { CoderQueue } from './server/coder-queue.js';
 import { requestCurrentMessage } from './server/current-message.js';
+import { printerCapabilities } from './server/printer-capabilities.js';
 import { databaseStatus } from './server/db.js';
 import { importJsonToSqlite } from './server/migrate-json-to-sqlite.js';
 import {
@@ -462,14 +463,18 @@ async function runCoderOperation(printer, operation, task) {
 
 async function refreshPrinterStatus(printer, operation = 'check') {
   const target = printerTarget(printer);
+  const capabilities = printerCapabilities(printer.model);
   return runCoderOperation(printer, operation, async (id) => {
     const startedAt = Date.now();
-    const message = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
-    await delay(BETWEEN_COMMAND_DELAY_MS);
+    const message = capabilities.currentMessageReadback
+      ? assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
+      : null;
+    if (message) await delay(BETWEEN_COMMAND_DELAY_MS);
     const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
     const cached = statusCache.applySuccess(printer.id, {
-      selectedMessage: message.value,
+      ...(message ? { selectedMessage: message.value } : {}),
+      messageVerification: capabilities.currentMessageReadback ? 'verified' : 'unsupported',
       rawStatus: status.value,
       responseTimeMs
     });
@@ -485,6 +490,8 @@ async function refreshPrinterStatus(printer, operation = 'check') {
       targetHost: target.ip,
       targetPort: target.port,
       mode: printer.mode,
+      model: printer.model,
+      capabilities,
       enabled: printer.enabled,
       status: status.value,
       checkedAt: cached.lastSuccessfulAt,
@@ -495,6 +502,7 @@ async function refreshPrinterStatus(printer, operation = 'check') {
 
 async function legacySetPrinterMessage(printer, body) {
   const target = printerTarget(printer);
+  const capabilities = printerCapabilities(printer.model);
   const { messageName, fieldName, fieldValue } = body;
   validateAscii(messageName, 'Message name', 30);
   validateAscii(fieldName, 'User field name', 30);
@@ -510,17 +518,20 @@ async function legacySetPrinterMessage(printer, body) {
     if (select.kind !== 'ack') throw new Error(failureMessage(`M${messageName}`, select));
     await delay(BETWEEN_COMMAND_DELAY_MS);
 
-    const selected = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
-    await delay(BETWEEN_COMMAND_DELAY_MS);
+    const selected = capabilities.currentMessageReadback
+      ? assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
+      : null;
+    if (selected) await delay(BETWEEN_COMMAND_DELAY_MS);
     const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
     const cached = statusCache.applySuccess(printer.id, {
-      selectedMessage: selected.value,
+      ...(selected ? { selectedMessage: selected.value } : {}),
+      messageVerification: capabilities.currentMessageReadback ? 'verified' : 'unsupported',
       rawStatus: status.value,
       responseTimeMs
     });
 
-    const messageMatches = selected.value === messageName;
+    const messageMatches = selected ? selected.value === messageName : null;
     return {
       ...cached,
       id: printer.id,
@@ -532,12 +543,15 @@ async function legacySetPrinterMessage(printer, body) {
       targetHost: target.ip,
       targetPort: target.port,
       mode: printer.mode,
+      model: printer.model,
+      capabilities,
       enabled: printer.enabled,
       online: true,
-      ok: messageMatches,
+      ok: messageMatches !== false,
       messageMatches,
+      verificationAvailable: capabilities.currentMessageReadback,
       expectedMessage: messageName,
-      selectedMessage: selected.value,
+      selectedMessage: selected?.value || null,
       fieldName,
       fieldValue,
       fieldUpdateAcknowledged: update.value,
@@ -564,6 +578,7 @@ async function setPrinterMessage(printer, body) {
     throw error;
   }
   const target = printerTarget(printer);
+  const capabilities = printerCapabilities(printer.model);
 
   return runCoderOperation(printer, 'message-update', async (id) =>
     executeMessageUpdate({
@@ -573,6 +588,7 @@ async function setPrinterMessage(printer, body) {
       fields,
       operationId: id,
       productionDate: body.productionDate,
+      supportsCurrentMessageReadback: capabilities.currentMessageReadback,
       sendCommand: (command) => wsiClient.sendCommand(command),
       delay: () => delay(BETWEEN_COMMAND_DELAY_MS),
       applySuccess: (status) => statusCache.applySuccess(printer.id, status)
@@ -1003,6 +1019,7 @@ app.get('/api/printer/current-message', async (req, res) => {
     if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
 
     target = printerTarget(printer);
+    const capabilities = printerCapabilities(printer.model);
     const address = `${target.ip}:${target.port}`;
     addLog({
       action: 'current-message-request-start',
@@ -1016,6 +1033,12 @@ app.get('/api/printer/current-message', async (req, res) => {
     if (!printer.enabled) {
       const error = new Error(`${printer.name} is disabled.`);
       error.statusCode = 409;
+      throw error;
+    }
+    if (!capabilities.currentMessageReadback) {
+      const error = new Error(`Current-message readback is unavailable on Videojet ${printer.model} printers.`);
+      error.statusCode = 409;
+      error.reasonCode = 'CURRENT_MESSAGE_READBACK_UNSUPPORTED';
       throw error;
     }
 
@@ -1239,9 +1262,9 @@ app.post('/api/printers/:id/set', async (req, res) => {
     const result = await setPrinterMessage(printer, req.body || {});
     insertMessageUpdateEvent(result, user);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
-    addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
+    addLog({ action: result.messageMatches === false ? 'message-update-mismatch' : 'message-update-success', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
     broadcast('printer-status', result);
-    res.status(result.messageMatches ? 200 : 409).json(result);
+    res.status(result.ok ? 200 : 409).json(result);
   } catch (error) {
     if (error instanceof MessageUpdateError && error.result) {
       const result = { ...error.result, checkedAt: new Date().toISOString() };
@@ -1427,8 +1450,8 @@ app.post('/api/set', async (req, res) => {
         const result = await setPrinterMessage(printer, req.body || {});
         insertMessageUpdateEvent(result, user);
         if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
-        addLog({ action: result.messageMatches ? 'message-update-success' : 'message-update-mismatch', printerId: printer.id, operationId: result.operationId, ...result });
-        return res.status(result.messageMatches ? 200 : 409).json(result);
+        addLog({ action: result.messageMatches === false ? 'message-update-mismatch' : 'message-update-success', printerId: printer.id, operationId: result.operationId, ...result });
+        return res.status(result.ok ? 200 : 409).json(result);
       } catch (error) {
         if (error instanceof MessageUpdateError && error.result) {
           const result = { ...error.result, checkedAt: new Date().toISOString() };

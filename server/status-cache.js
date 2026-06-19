@@ -14,6 +14,7 @@ function initialStatus(printerId) {
     currentOperationId: null,
     revision: 0,
     selectedMessage: null,
+    messageVerification: null,
     rawStatus: null,
     decodedStatus: null,
     expectedOutput: null,
@@ -41,6 +42,7 @@ function materialFields(status) {
     currentOperation: status.currentOperation,
     currentOperationId: status.currentOperationId,
     selectedMessage: status.selectedMessage,
+    messageVerification: status.messageVerification,
     rawStatus: status.rawStatus,
     expectedOutput: status.expectedOutput,
     lastError: status.lastError,
@@ -127,7 +129,7 @@ class StatusCache {
     return this.get(printerId);
   }
 
-  applySuccess(printerId, { selectedMessage, rawStatus, responseTimeMs, expectedOutput }) {
+  applySuccess(printerId, { selectedMessage, messageVerification, rawStatus, responseTimeMs, expectedOutput }) {
     const current = this.ensure(printerId);
     const before = { ...current };
     const decodedStatus = assertValidStatus(rawStatus);
@@ -135,7 +137,8 @@ class StatusCache {
 
     current.online = true;
     current.stale = false;
-    current.selectedMessage = selectedMessage;
+    if (selectedMessage !== undefined) current.selectedMessage = selectedMessage;
+    if (messageVerification !== undefined) current.messageVerification = messageVerification;
     current.rawStatus = decodedStatus.valid ? decodedStatus.raw : rawStatus;
     current.decodedStatus = decodedStatus;
     if (expectedOutput) current.expectedOutput = JSON.parse(JSON.stringify(expectedOutput));

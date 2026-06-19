@@ -1,5 +1,6 @@
 import net from 'node:net';
 import { getDb } from '../db.js';
+import { normalizePrinterModel, printerCapabilities } from '../printer-capabilities.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -13,6 +14,8 @@ function rowToPrinter(row) {
     location: row.location || '',
     host: row.host,
     port: row.port,
+    model: row.model || '1620',
+    capabilities: printerCapabilities(row.model || '1620'),
     mode: row.mode,
     enabled: Boolean(row.enabled)
   };
@@ -29,13 +32,14 @@ function validatePrinter(printer) {
   const port = Number(printer.port);
   const enabled = Boolean(printer.enabled);
   const mode = printer.mode === 'emulator' ? 'emulator' : 'real';
+  const model = normalizePrinterModel(printer.model);
 
   if (!/^[a-z0-9-]{1,50}$/i.test(id)) throw new Error('Printer id must contain only letters, numbers and hyphens.');
   if (!name || name.length > 80) throw new Error('Printer name must be 1-80 characters.');
   if (location.length > 120) throw new Error('Printer location must be 120 characters or fewer.');
   if (!net.isIP(host) && host !== 'localhost') throw new Error('Printer host must be a valid IP address or localhost.');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Printer port must be between 1 and 65535.');
-  return { id, name, location, host, port, enabled, mode };
+  return { id, name, location, host, port, model, enabled, mode };
 }
 
 function listPrinters(db = getDb()) {
@@ -50,13 +54,14 @@ function upsertPrinter(printer, db = getDb()) {
   const value = validatePrinter(printer);
   const now = nowIso();
   db.prepare(`
-    INSERT INTO printers (id, name, location, host, port, mode, enabled, created_at, updated_at)
-    VALUES (@id, @name, @location, @host, @port, @mode, @enabled, @now, @now)
+    INSERT INTO printers (id, name, location, host, port, model, mode, enabled, created_at, updated_at)
+    VALUES (@id, @name, @location, @host, @port, @model, @mode, @enabled, @now, @now)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       location = excluded.location,
       host = excluded.host,
       port = excluded.port,
+      model = excluded.model,
       mode = excluded.mode,
       enabled = excluded.enabled,
       updated_at = excluded.updated_at

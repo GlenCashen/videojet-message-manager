@@ -105,6 +105,8 @@ test('repositories persist printers, users, messages and expected output', () =>
   }, db);
 
   assert.equal(listPrinters(db).length, 1);
+  assert.equal(listPrinters(db)[0].model, '1620');
+  assert.equal(listPrinters(db)[0].capabilities.currentMessageReadback, true);
   assert.equal(getUserByUsername('operator', db).roles.includes('qa'), true);
   assert.equal(listMessagesForPrinter('coder-1', db)[0].printerMessageName, '9 MONTH');
   assert.equal(listExpectedOutputs(db)['coder-1'].rendered, 'ABC');

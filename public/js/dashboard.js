@@ -38,6 +38,9 @@ function setCoderFromConfig(printer) {
     config: printer,
     state: current.state && current.state !== 'disabled' ? current.state : disabledState,
     selectedMessage: current.selectedMessage || '-',
+    messageVerification: printer.capabilities?.currentMessageReadback === false
+      ? 'unsupported'
+      : current.messageVerification || null,
     status: current.status || '-',
     rawStatus: current.rawStatus || null,
     decodedStatus: current.decodedStatus || null,
@@ -65,6 +68,7 @@ function applyCheckResult(result) {
     ...current,
     state: result.ok === false || result.online === false ? 'offline' : 'online',
     selectedMessage: result.selectedMessage || current.selectedMessage || '-',
+    messageVerification: result.messageVerification || current.messageVerification || null,
     status: result.rawStatus || result.status || current.status || '-',
     rawStatus: result.rawStatus || result.status || current.rawStatus || null,
     decodedStatus: result.decodedStatus || current.decodedStatus || null,
@@ -136,7 +140,7 @@ function cardValues(coder) {
     statusText: coder.checking ? 'Checking' : statusLabel(coder),
     name: printer.name,
     location: printer.location || 'No location set',
-    selectedMessage: coder.selectedMessage,
+    selectedMessage: coder.messageVerification === 'unsupported' ? 'Readback unavailable' : coder.selectedMessage,
     expectedOutput: expectedOutputText(coder.expectedOutput),
     expectedOutputLabel: coder.expectedOutput?.source === 'last-known' ? 'Last expected output' : 'Expected print',
     faultHeading: faultHeading(coder),
@@ -148,6 +152,7 @@ function cardValues(coder) {
     dataSource: state.serverConnected ? 'Live data stream' : 'Last known status',
     host: `${printer.host}:${printer.port}`,
     mode: printer.mode === 'emulator' ? 'Emulator' : 'Real printer',
+    model: `Videojet ${printer.model || '1620'}`,
     enabled: printer.enabled ? 'Enabled' : 'Disabled',
     connectionState: coder.state || 'not-checked',
     alarm: alarmSummary(coder.decodedStatus),
@@ -313,6 +318,7 @@ function createCoderCard(coder) {
       el('div', { className: 'coder-meta' }, [
         keyedDetail('host', 'Host', values.host),
         keyedDetail('mode', 'Mode', values.mode),
+        keyedDetail('model', 'Model', values.model),
         keyedDetail('enabled', 'Enabled', values.enabled),
         keyedDetail('connectionState', 'Connection state', values.connectionState),
         keyedDetail('alarm', 'Alarm', values.alarm),
