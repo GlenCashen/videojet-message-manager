@@ -27,6 +27,7 @@ const elements = {
   deletePrinterButton: $('deletePrinterButton'),
   editorMessage: $('editorMessage'),
   refreshMessagesButton: $('refreshMessagesButton'),
+  newMessageButton: $('newMessageButton'),
   messageConfigPanel: $('messageConfigPanel'),
   messageConfigMessage: $('messageConfigMessage'),
   messageList: $('messageList'),

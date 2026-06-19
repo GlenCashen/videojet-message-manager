@@ -1,22 +1,10 @@
 import { normalizeError, setNotice } from './dom.js';
+import { apiJson } from './api.js';
 
 const message = document.getElementById('authMessage');
 
 async function postJson(url, body) {
-  let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  } catch (error) {
-    throw new Error(`Server unavailable: ${normalizeError(error)}`);
-  }
-
-  const data = await response.json().catch(() => ({ ok: false, error: 'Server returned a malformed API response.' }));
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
-  return data;
+  return apiJson(url, { method: 'POST', body });
 }
 
 function returnTo() {

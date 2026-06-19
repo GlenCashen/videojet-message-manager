@@ -17,6 +17,28 @@ function freePort() {
   });
 }
 
+async function freePortBlock(size = 3) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const base = 35000 + Math.floor(Math.random() * 12000);
+    const servers = [];
+    try {
+      for (let offset = 0; offset < size; offset += 1) {
+        const server = net.createServer();
+        await new Promise((resolve, reject) => {
+          server.once('error', reject);
+          server.listen(base + offset, '127.0.0.1', resolve);
+        });
+        servers.push(server);
+      }
+      await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+      return base;
+    } catch (_error) {
+      await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+    }
+  }
+  throw new Error('Unable to reserve a contiguous emulator port block.');
+}
+
 async function waitForServer(baseUrl, child, output = []) {
   let lastError;
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -34,7 +56,7 @@ async function waitForServer(baseUrl, child, output = []) {
 
 test('preview endpoint does not issue WSI commands', async () => {
   const port = await freePort();
-  const emulatorPort = await freePort();
+  const emulatorPort = await freePortBlock();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
@@ -84,9 +106,89 @@ test('preview endpoint does not issue WSI commands', async () => {
   }
 });
 
+test('legacy message jobs cannot be created or sent', async () => {
+  const port = await freePort();
+  const emulatorPort = await freePortBlock();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      PORT: String(port),
+      POLL_INTERVAL_MS: '0',
+      EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: path.join(tmpdir(), `vmm-message-jobs-${port}.db`),
+      ENABLE_DEV_IDENTITY: 'true',
+      DEV_USER_ROLE: 'engineering'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  const output = [];
+  child.stdout.on('data', (chunk) => output.push(chunk.toString()));
+  child.stderr.on('data', (chunk) => output.push(chunk.toString()));
+
+  try {
+    await waitForServer(baseUrl, child, output);
+    await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
+    const createResponse = await fetch(`${baseUrl}/api/message-jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messageId: '12-month',
+        printerIds: ['coder-1', 'coder-2'],
+        fields: { brew: 'BR1246', batch: 'B260617A' },
+        productionDate: '2026-06-17T14:32:08+10:00',
+        expiresHours: 8
+      })
+    });
+    assert.equal(createResponse.status, 410);
+    const created = await createResponse.json();
+    assert.match(created.error, /controlled production releases/i);
+    assert.deepEqual(await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json(), {});
+    return;
+    assert.equal(created.job.status, 'pending');
+    assert.equal(created.job.targets.length, 2);
+    assert.equal(created.job.targets[0].preview.rendered, 'BR1246 B260617A\nBBD: 17/06/2027 14:32:08');
+    assert.deepEqual(await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json(), {});
+
+    const acceptResponse = await fetch(`${baseUrl}/api/message-jobs/${created.job.id}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printerIds: ['coder-1'] })
+    });
+    const accepted = await acceptResponse.json();
+    assert.equal(acceptResponse.ok, true, JSON.stringify(accepted));
+    assert.equal(accepted.job.targets.find((target) => target.printerId === 'coder-1').status, 'succeeded');
+    assert.equal(accepted.job.targets.find((target) => target.printerId === 'coder-2').status, 'pending');
+    assert.equal((await (await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`)).json()).currentMessage, '12 MONTH');
+
+    const declineResponse = await fetch(`${baseUrl}/api/message-jobs/${created.job.id}/decline`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printerIds: ['coder-2'], reason: 'Wrong production line' })
+    });
+    assert.equal(declineResponse.ok, true);
+    const declined = await declineResponse.json();
+    assert.equal(declined.job.status, 'completed');
+    assert.equal(declined.job.targets.find((target) => target.printerId === 'coder-2').status, 'declined');
+
+    const listed = await (await fetch(`${baseUrl}/api/message-jobs`)).json();
+    assert.equal(listed[0].id, created.job.id);
+  } finally {
+    const exitPromise = child.exitCode === null
+      ? new Promise((resolve) => child.once('exit', resolve))
+      : Promise.resolve();
+    child.kill();
+    await exitPromise;
+    if (child.exitCode && child.exitCode !== 0 && child.exitCode !== 1) throw new Error(output.join(''));
+  }
+});
+
 test('fault history API records activation and clear from emulator checks', async () => {
   const port = await freePort();
-  const emulatorPort = await freePort();
+  const emulatorPort = await freePortBlock();
   const dir = await mkdtemp(path.join(tmpdir(), 'fault-api-'));
   const faultHistoryPath = path.join(dir, 'fault-history.json');
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -177,7 +279,7 @@ test('fault history API records activation and clear from emulator checks', asyn
 
 test('current-message endpoint tracks emulator selection and reports rejection safely', async () => {
   const port = await freePort();
-  const emulatorPort = await freePort();
+  const emulatorPort = await freePortBlock();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),

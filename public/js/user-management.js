@@ -3,7 +3,7 @@ import { clear, el, normalizeError, setNotice } from './dom.js';
 import { elements } from './elements.js';
 import { currentSession } from './session.js';
 
-const ROLES = ['viewer', 'operator', 'qa', 'engineering', 'admin'];
+const ROLES = ['viewer', 'operator', 'planner', 'packaging_leader', 'qa', 'engineering', 'admin'];
 let users = [];
 let selectedId = null;
 

@@ -7,11 +7,14 @@ import * as indexes from './migrations/002_indexes.js';
 import * as printerModels from './migrations/003_printer_models.js';
 import * as printerReadbackMode from './migrations/004_printer_readback_mode.js';
 import * as printerArchiving from './migrations/005_printer_archiving.js';
+import * as messageJobs from './migrations/006_message_jobs.js';
+import * as batchReleases from './migrations/007_batch_releases.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', 'data', 'videojet.db');
-const migrations = [initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving].sort((a, b) => a.version - b.version);
+const migrations = [initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving, messageJobs, batchReleases]
+  .sort((a, b) => a.version - b.version);
 
 let connection = null;
 

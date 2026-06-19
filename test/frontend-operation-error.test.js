@@ -54,6 +54,33 @@ test('assigned operators can review and confirm a dashboard message change', asy
   assert.ok(dialog.includes('Message change sent, but readback failed:'));
 });
 
+test('production releases require an independent review and expose no direct operator send', async () => {
+  const editorHtml = await readFile('public/index.html', 'utf8');
+  const dashboardHtml = await readFile('public/dashboard.html', 'utf8');
+  const releases = await readFile('public/js/release-workflow.js', 'utf8');
+
+  assert.ok(editorHtml.includes('id="releaseWorkflowPanel"'));
+  assert.ok(editorHtml.includes('Approve and reserve run'));
+  assert.ok(releases.includes('releaseApprovalCheck'));
+  assert.ok(releases.includes("mode === 'approve'"));
+  assert.equal(dashboardHtml.includes('Accept and send'), false);
+});
+
+test('new messages define fields that product masters infer', async () => {
+  const html = await readFile('public/index.html', 'utf8');
+  const messageConfig = await readFile('public/js/message-config.js', 'utf8');
+  const releases = await readFile('public/js/release-workflow.js', 'utf8');
+
+  assert.ok(html.includes('id="newMessageButton"'));
+  assert.equal(html.includes('id="masterRunField"'), false);
+  assert.equal(html.includes('id="masterBatchField"'), false);
+  assert.ok(html.includes('id="masterFieldMappings"'));
+  assert.ok(messageConfig.includes("method: creating ? 'POST' : 'PUT'"));
+  assert.ok(releases.includes('function renderMessageSummary()'));
+  assert.ok(releases.includes('field.printerFieldName'));
+  assert.ok(releases.includes("['run_code', 'Tracked product run (optional)']"));
+});
+
 test('printer editor persists the current-message readback override', async () => {
   const html = await readFile('public/index.html', 'utf8');
   const editor = await readFile('public/js/editor.js', 'utf8');
@@ -87,4 +114,16 @@ test('admin user simulation has start and return controls', async () => {
   assert.ok(users.includes("'/api/admin/simulate-user'"));
   assert.ok(navigation.includes("method: 'DELETE'"));
   assert.ok(navigation.includes('Return to admin'));
+});
+
+test('page navigation closes the active event stream and API requests are bounded', async () => {
+  const events = await readFile('public/js/events.js', 'utf8');
+  const api = await readFile('public/js/api.js', 'utf8');
+
+  assert.ok(events.includes("window.addEventListener('pagehide', closeForNavigation"));
+  assert.ok(events.includes("window.addEventListener('beforeunload', closeForNavigation"));
+  assert.ok(events.includes('activeSource.close()'));
+  assert.ok(api.includes('const controller = new AbortController()'));
+  assert.ok(api.includes("method === 'GET' ? 10000 : 30000"));
+  assert.ok(api.includes('Request timed out after'));
 });

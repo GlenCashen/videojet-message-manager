@@ -147,7 +147,10 @@ class EmulatorManager {
     if (existing) await this.stop(printer.id);
     this.state(printer.id);
 
+    const sockets = new Set();
     const server = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
       let buffer = Buffer.alloc(0);
       socket.on('data', async (chunk) => {
         buffer = Buffer.concat([buffer, chunk]);
@@ -168,13 +171,14 @@ class EmulatorManager {
     });
     server.removeAllListeners('error');
     server.on('error', (error) => this.onError(`WSI emulator ${printer.id} failed on ${endpoint.ip}:${endpoint.port}: ${error.message}`));
-    this.listeners.set(printer.id, { server, port: endpoint.port });
+    this.listeners.set(printer.id, { server, port: endpoint.port, sockets });
   }
 
   async stop(printerId) {
     const listener = this.listeners.get(printerId);
     if (!listener) return;
     this.listeners.delete(printerId);
+    for (const socket of listener.sockets) socket.destroy();
     await new Promise((resolve) => listener.server.close(resolve));
   }
 
@@ -185,7 +189,14 @@ class EmulatorManager {
       if (!activeIds.has(printerId)) await this.stop(printerId);
     }
     this.printers = new Map(emulatorPrinters.map((printer) => [printer.id, printer]));
-    for (const printer of emulatorPrinters) await this.start(printer);
+    for (const printer of emulatorPrinters) {
+      try {
+        await this.start(printer);
+      } catch (error) {
+        const endpoint = this.endpoint(printer);
+        this.onError(`WSI emulator ${printer.id} could not listen on ${endpoint.ip}:${endpoint.port}: ${error.message}`);
+      }
+    }
     for (const printerId of [...this.states.keys()]) {
       if (!activeIds.has(printerId)) this.states.delete(printerId);
     }

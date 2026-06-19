@@ -1,5 +1,4 @@
-const ROLES = new Set(['viewer', 'operator', 'qa', 'engineering', 'admin']);
-const PRIVILEGED_ROLES = new Set(['qa', 'engineering', 'admin']);
+const ROLES = new Set(['viewer', 'operator', 'planner', 'packaging_leader', 'qa', 'engineering', 'admin']);
 
 function normalizeRole(role) {
   return ROLES.has(role) ? role : null;
@@ -16,10 +15,12 @@ function hasDevelopmentPrinterWildcard(user) {
 function getCapabilities(user) {
   const viewer = hasRole(user, 'viewer');
   const operator = hasRole(user, 'operator');
+  const planner = hasRole(user, 'planner');
+  const packagingLeader = hasRole(user, 'packaging_leader');
   const qa = hasRole(user, 'qa');
   const engineering = hasRole(user, 'engineering');
   const admin = hasRole(user, 'admin');
-  const privileged = qa || engineering || admin;
+  const privileged = planner || packagingLeader || qa || engineering || admin;
 
   return {
     viewDashboard: Boolean(user),
@@ -27,6 +28,10 @@ function getCapabilities(user) {
     viewAllPrinters: viewer || privileged || hasDevelopmentPrinterWildcard(user),
     operateAllPrinters: qa || engineering || admin || hasDevelopmentPrinterWildcard(user),
     editMessages: qa || engineering || admin,
+    viewBatchReleases: operator || planner || packagingLeader || qa || engineering || admin,
+    createBatchReleases: planner || packagingLeader || qa || engineering || admin,
+    reviewBatchReleases: packagingLeader || qa || admin,
+    manageProductMasters: qa || admin,
     configurePrinters: engineering || admin,
     manageUsers: admin,
     accessDiagnostics: engineering || admin,

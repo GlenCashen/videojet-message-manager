@@ -5,6 +5,7 @@ import { elements } from './elements.js';
 let messages = [];
 let printers = [];
 let selectedId = null;
+let creating = false;
 
 function selectedMessage() {
   return messages.find((message) => message.id === selectedId) || null;
@@ -66,7 +67,9 @@ function renderAssignments(message) {
 
 function populateForm(message) {
   selectedId = message.id;
+  creating = false;
   elements.messageForm.classList.remove('hidden');
+  elements.messageConfigId.readOnly = true;
   elements.messageConfigId.value = message.id;
   elements.messageDisplayName.value = message.displayName;
   elements.messageEnabled.checked = message.enabled;
@@ -75,6 +78,25 @@ function populateForm(message) {
   elements.messagePreviewLines.value = (message.previewLines || []).join('\n');
   renderAssignments(message);
   renderMessageList();
+}
+
+function startNewMessage() {
+  creating = true;
+  selectedId = null;
+  elements.messageForm.classList.remove('hidden');
+  elements.messageConfigId.readOnly = false;
+  elements.messageConfigId.value = '';
+  elements.messageDisplayName.value = '';
+  elements.messageEnabled.checked = true;
+  elements.messageDateMonths.value = '15';
+  elements.messageFieldsJson.value = JSON.stringify([
+    { key: 'run', label: 'Run number', printerFieldName: 'RUN', required: true, maxLength: 30, transform: 'uppercase' },
+    { key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: true, maxLength: 30, transform: 'uppercase' }
+  ], null, 2);
+  elements.messagePreviewLines.value = '{{run}}{{batch}}\nBBD: {{bestBeforeDate}} {{currentTime}}';
+  renderAssignments({ printerAssignments: [] });
+  renderMessageList();
+  elements.messageConfigId.focus();
 }
 
 function collectAssignments() {
@@ -94,7 +116,7 @@ function collectAssignments() {
 async function saveMessage(event) {
   event.preventDefault();
   const message = selectedMessage();
-  if (!message) return;
+  if (!message && !creating) return;
 
   elements.saveMessageButton.disabled = true;
   setNotice(elements.messageConfigMessage, 'Saving message...');
@@ -105,21 +127,26 @@ async function saveMessage(event) {
       .map((line) => line.trimEnd())
       .filter((line) => line.length > 0);
 
-    const data = await apiJson(`/api/messages/${encodeURIComponent(message.id)}`, {
-      method: 'PUT',
-      body: {
+    const id = elements.messageConfigId.value.trim().toLowerCase();
+    const payload = {
+      id,
         displayName: elements.messageDisplayName.value.trim(),
         enabled: elements.messageEnabled.checked,
         fields,
         dateRule: { type: 'offset-months', months: Number(elements.messageDateMonths.value) },
         previewLines,
         printerAssignments: collectAssignments()
-      }
+    };
+    const data = await apiJson(creating ? '/api/messages' : `/api/messages/${encodeURIComponent(message.id)}`, {
+      method: creating ? 'POST' : 'PUT',
+      body: payload
     });
 
-    const index = messages.findIndex((item) => item.id === message.id);
-    messages[index] = data.message;
+    const index = messages.findIndex((item) => item.id === data.message.id);
+    if (index >= 0) messages[index] = data.message;
+    else messages.push(data.message);
     populateForm(data.message);
+    window.dispatchEvent(new CustomEvent('messages-saved', { detail: data.message }));
     setNotice(elements.messageConfigMessage, `${data.message.displayName} saved.`, 'success');
   } catch (error) {
     setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
@@ -146,6 +173,7 @@ async function loadMessageConfig() {
 }
 
 function setupMessageConfig() {
+  elements.newMessageButton.addEventListener('click', startNewMessage);
   elements.messageList.addEventListener('click', (event) => {
     const button = event.target.closest('[data-id]');
     if (!button) return;

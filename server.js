@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,26 @@ import {
 } from './server/user-store.js';
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
+import {
+  createMessageJob,
+  getMessageJob,
+  listMessageJobs,
+  updateMessageJobTarget
+} from './server/repositories/message-job-repository.js';
+import {
+  createProductMaster,
+  getProductMaster,
+  listProductMasters,
+  updateProductMaster
+} from './server/repositories/product-master-repository.js';
+import {
+  approveBatchRelease,
+  createBatchRelease,
+  getBatchRelease,
+  listBatchReleases,
+  rejectBatchRelease,
+  submitBatchRelease
+} from './server/repositories/batch-release-repository.js';
 import { WsiClient } from './server/wsi-client.js';
 import { assertPacketResponse, failureMessage } from './server/wsi-response.js';
 
@@ -629,6 +650,11 @@ async function setPrinterMessage(printer, body) {
     const printers = await readPrinters();
     const messages = await loadMessages(undefined, { printers });
     message = getMessageForPrinter(messages, body.messageId, printer.id);
+    if (body.expectedDefinitionHash && messageDefinitionHash(message) !== body.expectedDefinitionHash) {
+      const error = new Error('The message definition changed after it was reviewed. Create a new job and review it again.');
+      error.statusCode = 409;
+      throw error;
+    }
     fields = validateMessageFields(message, body.fields || {});
   } catch (error) {
     error.statusCode = error.statusCode || 400;
@@ -933,6 +959,376 @@ app.post('/api/messages/:id/preview', async (req, res) => {
     res.json(renderPreview(message, req.body?.fields || {}, { productionDate: req.body?.productionDate }));
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+async function validateProductMasterInput(input) {
+  const specification = input?.specification || {};
+  const printers = await readPrinters();
+  const printerMap = new Map(printers.map((printer) => [printer.id, printer]));
+  const messages = await loadMessages(undefined, { printers });
+  let selectedMessage = null;
+  for (const printerId of specification.printerIds || []) {
+    const printer = printerMap.get(printerId);
+    if (!printer) throw new Error(`Printer ${printerId} was not found.`);
+    const message = getMessageForPrinter(messages, specification.messageId, printerId);
+    selectedMessage = selectedMessage || message;
+  }
+  if (!selectedMessage) throw new Error('Select at least one permitted printer.');
+  if (selectedMessage.previewLines.length !== 2) throw new Error('Production release messages must define exactly two preview lines.');
+  const allowedSources = new Set(['run_code', 'brew_sheet_product', 'brew_number', 'batch_number']);
+  const mappings = Array.isArray(specification.fieldMappings) ? specification.fieldMappings : [];
+  const mappingByKey = new Map(mappings.map((mapping) => [mapping.fieldKey, mapping.source]));
+  for (const field of selectedMessage.fields) {
+    const source = mappingByKey.get(field.key);
+    if (!allowedSources.has(source)) throw new Error(`Choose a release value source for message field ${field.label}.`);
+  }
+  return {
+    ...input,
+    specification: {
+      ...specification,
+      fieldMappings: selectedMessage.fields.map((field) => ({ fieldKey: field.key, source: mappingByKey.get(field.key) })),
+      bestBeforeMonths: selectedMessage.dateRule.months,
+      firstLineTemplate: selectedMessage.previewLines[0],
+      secondLineTemplate: selectedMessage.previewLines[1]
+    }
+  };
+}
+
+function visibleBatchRelease(user, release) {
+  const capabilities = getCapabilities(user);
+  if (!capabilities.viewBatchReleases) return null;
+  if (!user.roles?.includes('operator') || capabilities.viewAllPrinters) return release;
+  if (release.status !== 'released') return null;
+  const assigned = new Set(user.printerIds || []);
+  const printerIds = release.printerIds.filter((id) => assigned.has(id));
+  return printerIds.length ? { ...release, printerIds } : null;
+}
+
+app.get('/api/product-masters', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  const capabilities = getCapabilities(user);
+  if (!capabilities.createBatchReleases && !capabilities.manageProductMasters) {
+    return forbidden(res, 'You do not have permission to view product masters.');
+  }
+  res.json(listProductMasters({ enabledOnly: req.query.enabled === 'true' }));
+});
+
+app.post('/api/product-masters', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).manageProductMasters) return forbidden(res, 'You do not have permission to manage product masters.');
+    const input = await validateProductMasterInput(req.body);
+    const master = createProductMaster(input, user);
+    addLog({ action: 'product-master-created', actor: user.username, targetId: master.id, productCode: master.productCode, ok: true });
+    res.status(201).json({ ok: true, master });
+  } catch (error) {
+    res.status(error.statusCode || (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 409 : 400)).json({ ok: false, error: error.message });
+  }
+});
+
+app.put('/api/product-masters/:id', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).manageProductMasters) return forbidden(res, 'You do not have permission to manage product masters.');
+    const current = getProductMaster(req.params.id);
+    if (!current) return res.status(404).json({ ok: false, error: 'Product master was not found.' });
+    const input = await validateProductMasterInput({ ...req.body, specification: req.body?.specification || current.specification });
+    const master = updateProductMaster(req.params.id, input, user);
+    addLog({ action: 'product-master-version-created', actor: user.username, targetId: master.id, version: master.currentVersion, ok: true });
+    res.json({ ok: true, master });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/batch-releases', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).viewBatchReleases) return forbidden(res, 'You do not have permission to view batch releases.');
+    const statuses = String(req.query.status || '').split(',').map((value) => value.trim()).filter(Boolean);
+    const releases = listBatchReleases({ limit: req.query.limit, statuses })
+      .map((release) => visibleBatchRelease(user, release)).filter(Boolean);
+    res.json(releases);
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to create batch releases.');
+    const release = createBatchRelease(req.body || {}, user);
+    addLog({ action: 'batch-release-created', actor: user.username, targetId: release.id, productMasterId: release.productMasterId, ok: true });
+    res.status(201).json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/submit', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to submit batch releases.');
+    const release = submitBatchRelease(req.params.id, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    addLog({ action: 'batch-release-submitted', actor: user.username, targetId: release.id, ok: true });
+    res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/approve', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to approve batch releases.');
+    const release = approveBatchRelease(req.params.id, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    addLog({ action: 'batch-release-approved', actor: user.username, targetId: release.id, runCode: release.runCode, ok: true });
+    res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/reject', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to review batch releases.');
+    const release = rejectBatchRelease(req.params.id, req.body?.reason, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    addLog({ action: 'batch-release-rejected', actor: user.username, targetId: release.id, reason: release.rejectionReason, ok: true });
+    res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+function visibleMessageJob(user, job) {
+  if (!job) return null;
+  const targets = job.targets
+    .filter((target) => canViewPrinter(user, target.printerId))
+    .map((target) => ({
+      ...target,
+      canOperate: canOperatePrinter(user, target.printerId) && target.status === 'pending'
+    }));
+  return targets.length ? { ...job, targets } : null;
+}
+
+function messageDefinitionHash(message) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    printerMessageName: message.printerMessageName,
+    fields: message.fields,
+    dateRule: message.dateRule,
+    previewLines: message.previewLines
+  })).digest('hex');
+}
+
+function requestedJobTargetIds(body, targets, user) {
+  const requested = Array.isArray(body?.printerIds)
+    ? [...new Set(body.printerIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : targets.filter((target) => target.status === 'pending' && canOperatePrinter(user, target.printerId)).map((target) => target.printerId);
+  const known = new Set(targets.map((target) => target.printerId));
+  for (const printerId of requested) {
+    if (!known.has(printerId)) {
+      const error = new Error(`Printer ${printerId} is not a target of this message job.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!canOperatePrinter(user, printerId)) {
+      const error = new Error(`You do not have permission to operate printer ${printerId}.`);
+      error.statusCode = 403;
+      throw error;
+    }
+    if (targets.find((target) => target.printerId === printerId)?.status !== 'pending') {
+      const error = new Error(`Printer ${printerId} is no longer pending for this message job.`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+  return requested;
+}
+
+app.get('/api/message-jobs', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const jobs = listMessageJobs({ limit: req.query.limit }).map((job) => visibleMessageJob(user, job)).filter(Boolean);
+    res.json(jobs);
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/message-jobs', async (req, res) => {
+  return res.status(410).json({ ok: false, error: 'Message jobs have been replaced by controlled production releases.' });
+  /* Legacy implementation retained temporarily for migration compatibility.
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to create message jobs.');
+    const printerIds = [...new Set((Array.isArray(req.body?.printerIds) ? req.body.printerIds : [])
+      .map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!printerIds.length) return res.status(400).json({ ok: false, error: 'Select at least one target printer.' });
+
+    const printers = await readPrinters();
+    const printerMap = new Map(printers.map((printer) => [printer.id, printer]));
+    const messages = await loadMessages(undefined, { printers });
+    const targets = [];
+    let normalizedFields = null;
+    let displayName = null;
+    for (const printerId of printerIds) {
+      const printer = printerMap.get(printerId);
+      if (!printer) throw new Error(`Printer ${printerId} was not found.`);
+      if (!printer.enabled) throw new Error(`${printer.name} is disabled.`);
+      if (!canOperatePrinter(user, printerId)) return forbidden(res, `You do not have permission to operate ${printer.name}.`);
+      const message = getMessageForPrinter(messages, req.body?.messageId, printerId);
+      const preview = {
+        ...renderPreview(message, req.body?.fields || {}, { productionDate: req.body?.productionDate }),
+        definitionHash: messageDefinitionHash(message)
+      };
+      normalizedFields = normalizedFields || preview.fields;
+      displayName = displayName || message.displayName;
+      targets.push({
+        printerId,
+        printerName: printer.name,
+        printerMessageName: message.printerMessageName,
+        preview
+      });
+    }
+
+    const now = Date.now();
+    const expiresHours = Math.min(Math.max(Number(req.body?.expiresHours) || 24, 1), 168);
+    const expiresAtMs = req.body?.expiresAt ? new Date(req.body.expiresAt).valueOf() : now + expiresHours * 60 * 60 * 1000;
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= now || expiresAtMs > now + 7 * 24 * 60 * 60 * 1000) {
+      return res.status(400).json({ ok: false, error: 'Job expiry must be within the next seven days.' });
+    }
+    const job = createMessageJob({
+      id: crypto.randomUUID(),
+      messageId: req.body?.messageId,
+      displayName,
+      fields: normalizedFields,
+      productionDate: req.body?.productionDate || null,
+      createdByUserId: user.developmentIdentity ? null : user.id,
+      createdByUsername: user.username,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      targets
+    });
+    addLog({ action: 'message-job-created', actor: user.username, targetId: job.id, messageId: job.messageId, printerIds, ok: true });
+    res.status(201).json({ ok: true, job: visibleMessageJob(user, job) });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+  */
+});
+
+app.post('/api/message-jobs/:id/accept', async (req, res) => {
+  return res.status(410).json({ ok: false, error: 'Direct message-job execution is disabled. Use an approved production release.' });
+  /* Legacy implementation retained temporarily for migration compatibility.
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    let job = getMessageJob(req.params.id);
+    if (!job) return res.status(404).json({ ok: false, error: `Message job ${req.params.id} was not found.` });
+    if (job.status === 'expired') return res.status(409).json({ ok: false, error: 'This message job has expired.' });
+    const printerIds = requestedJobTargetIds(req.body, job.targets, user);
+    if (!printerIds.length) return res.status(409).json({ ok: false, error: 'No assigned pending targets are available.' });
+    const printers = await readPrinters();
+    const printerMap = new Map(printers.map((printer) => [printer.id, printer]));
+    const messages = await loadMessages(undefined, { printers });
+
+    const busyPrinterId = printerIds.find((printerId) => stateChangingOperations.has(printerId));
+    if (busyPrinterId) {
+      return res.status(409).json({ ok: false, error: `Printer ${busyPrinterId} is already processing another message change.` });
+    }
+
+    for (const printerId of printerIds) {
+      const target = job.targets.find((item) => item.printerId === printerId);
+      if (target.status !== 'pending') continue;
+      const printer = printerMap.get(printerId);
+      if (!printer || !printer.enabled) {
+        job = updateMessageJobTarget(job.id, printerId, { status: 'failed', result: { ok: false, error: 'Printer is unavailable or disabled.' } }, user);
+        continue;
+      }
+      let currentAssignment;
+      try {
+        currentAssignment = getMessageForPrinter(messages, job.messageId, printerId);
+      } catch (error) {
+        job = updateMessageJobTarget(job.id, printerId, { status: 'failed', result: { ok: false, error: error.message } }, user);
+        continue;
+      }
+      const definitionChanged = target.preview?.definitionHash
+        ? messageDefinitionHash(currentAssignment) !== target.preview.definitionHash
+        : currentAssignment.printerMessageName !== target.printerMessageName;
+      if (definitionChanged) {
+        job = updateMessageJobTarget(job.id, printerId, {
+          status: 'failed',
+          result: { ok: false, error: 'The printer message assignment changed after this job was created. Create a new job and review it again.' }
+        }, user);
+        continue;
+      }
+      updateMessageJobTarget(job.id, printerId, { status: 'processing', result: null }, user);
+      stateChangingOperations.add(printerId);
+      try {
+        const result = await setPrinterMessage(printer, {
+          messageId: job.messageId,
+          fields: job.fields,
+          productionDate: job.productionDate,
+          expectedDefinitionHash: target.preview?.definitionHash
+        });
+        insertMessageUpdateEvent(result, user);
+        if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
+        const targetStatus = result.ok ? 'succeeded' : 'failed';
+        job = updateMessageJobTarget(job.id, printerId, { status: targetStatus, result }, user);
+        addLog({ action: 'message-job-target-completed', actor: user.username, targetId: job.id, printerId, ok: result.ok, result: targetStatus });
+        broadcast('printer-status', result);
+      } catch (error) {
+        const result = error.result || { ok: false, error: error.message };
+        if (error instanceof MessageUpdateError && error.result) insertMessageUpdateEvent(error.result, user);
+        job = updateMessageJobTarget(job.id, printerId, { status: 'failed', result }, user);
+        addLog({ action: 'message-job-target-failed', actor: user.username, targetId: job.id, printerId, ok: false, error: error.message });
+      } finally {
+        stateChangingOperations.delete(printerId);
+      }
+    }
+    res.json({ ok: true, job: visibleMessageJob(user, getMessageJob(job.id)) });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+  */
+});
+
+app.post('/api/message-jobs/:id/decline', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    let job = getMessageJob(req.params.id);
+    if (!job) return res.status(404).json({ ok: false, error: `Message job ${req.params.id} was not found.` });
+    const printerIds = requestedJobTargetIds(req.body, job.targets, user);
+    if (!printerIds.length) return res.status(409).json({ ok: false, error: 'No assigned pending targets are available.' });
+    for (const printerId of printerIds) {
+      const target = job.targets.find((item) => item.printerId === printerId);
+      if (target.status === 'pending') {
+        job = updateMessageJobTarget(job.id, printerId, {
+          status: 'declined',
+          result: { reason: String(req.body?.reason || 'Declined by operator').slice(0, 200) }
+        }, user);
+      }
+    }
+    addLog({ action: 'message-job-declined', actor: user.username, targetId: job.id, printerIds, ok: true });
+    res.json({ ok: true, job: visibleMessageJob(user, job) });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
   }
 });
 

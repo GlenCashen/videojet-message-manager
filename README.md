@@ -82,12 +82,29 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
-    "schemaVersion": 5
+    "schemaVersion": 7
   }
 }
 ```
 
 Sessions are stored in SQLite, so logins survive a process restart. Expired sessions are cleaned up when read, logout deletes the session row, and disabled users are rejected even if an old session cookie remains.
+
+## Production releases
+
+Production coding is prepared through controlled releases. QA owns versioned product masters. Planners and packaging leaders create drafts from brew-sheet data. A different QA or Packaging Leader must review a submitted release before it becomes available for production.
+
+Approval atomically reserves the next run number for that product only. For example, `TBUNDRC` and `SMGOLD` maintain independent sequences. Cancelled or failed approvals never reuse an already reserved number. Every release stays pinned to the product-master version used when the draft was created.
+
+The current release workflow deliberately stops at `released`; it does not send WSI commands. The legacy message-job creation and execution endpoints return HTTP 410. Operator confirmation, printer execution and first-print verification will be added as a separate guarded stage.
+
+- `GET /api/product-masters` - list product specifications
+- `POST /api/product-masters` - QA/Admin create a versioned master
+- `PUT /api/product-masters/:id` - create the next immutable master version
+- `GET /api/batch-releases` - list releases visible to the current role
+- `POST /api/batch-releases` - create a draft
+- `POST /api/batch-releases/:id/submit` - submit for independent review
+- `POST /api/batch-releases/:id/approve` - approve and reserve the product run
+- `POST /api/batch-releases/:id/reject` - return with a required reason
 
 ## First run
 

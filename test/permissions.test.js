@@ -145,6 +145,8 @@ test('permission helpers expose role capabilities centrally', () => {
   const devWildcardOperator = developmentUser({ role: 'operator', printerIds: ['*'] });
   const productionWildcardOperator = { roles: ['operator'], printerIds: ['*'] };
   const qa = developmentUser({ role: 'qa' });
+  const planner = developmentUser({ role: 'planner' });
+  const packagingLeader = developmentUser({ role: 'packaging_leader' });
   const engineering = developmentUser({ role: 'engineering' });
   const admin = developmentUser({ role: 'admin' });
 
@@ -159,6 +161,11 @@ test('permission helpers expose role capabilities centrally', () => {
   assert.deepEqual(visiblePrinters(productionWildcardOperator, TEST_PRINTERS), []);
 
   assert.equal(canEditMessages(qa), true);
+  assert.equal(getCapabilities(planner).createBatchReleases, true);
+  assert.equal(getCapabilities(planner).reviewBatchReleases, false);
+  assert.equal(getCapabilities(packagingLeader).reviewBatchReleases, true);
+  assert.equal(getCapabilities(packagingLeader).manageProductMasters, false);
+  assert.equal(getCapabilities(qa).manageProductMasters, true);
   assert.equal(canAccessDiagnostics(qa), false);
   assert.equal(canConfigurePrinters(engineering), true);
   assert.equal(canManageUsers(admin), true);

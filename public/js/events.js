@@ -1,10 +1,27 @@
+let activeSource = null;
+
+function closeActiveSource() {
+  if (!activeSource) return;
+  activeSource.close();
+  activeSource = null;
+}
+
 function subscribeToPrinterEvents(handlers = {}) {
   if (!('EventSource' in window)) {
     handlers.onDisconnected?.({ reason: 'unsupported' });
     return null;
   }
 
+  closeActiveSource();
   const source = new EventSource('/api/events');
+  activeSource = source;
+
+  const closeForNavigation = () => {
+    if (activeSource === source) closeActiveSource();
+    else source.close();
+  };
+  window.addEventListener('pagehide', closeForNavigation, { once: true });
+  window.addEventListener('beforeunload', closeForNavigation, { once: true });
 
   source.addEventListener('open', () => {
     handlers.onConnected?.();
@@ -89,4 +106,4 @@ function subscribeToPrinterEvents(handlers = {}) {
   return source;
 }
 
-export { subscribeToPrinterEvents };
+export { closeActiveSource, subscribeToPrinterEvents };

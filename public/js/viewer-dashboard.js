@@ -224,8 +224,12 @@ async function loadInitialData() {
   try {
     await loadSession();
     renderNavigation(elements.nav, { active: '/dashboard' });
-    applyFleet(await apiJson('/api/printers'));
-    for (const status of await apiJson('/api/printers/status')) mergeStatus(status);
+    const [printers, statuses] = await Promise.all([
+      apiJson('/api/printers'),
+      apiJson('/api/printers/status')
+    ]);
+    applyFleet(printers);
+    for (const status of statuses) mergeStatus(status);
     setNotice(elements.message);
     render();
   } catch (error) {

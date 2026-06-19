@@ -6,9 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Videojet Multi-Coder Dashboard</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/editor.css">
 </head>
 
-<body>
+<body class="editor-app">
   <main class="shell">
     <header class="app-header">
       <div>
@@ -115,13 +116,18 @@
             <strong id="messageConfigTitle">Messages</strong>
             <span class="muted">Edit logical messages and assign stored names to coders</span>
           </span>
-          <button id="refreshMessagesButton" class="ghost" type="button">Refresh</button>
+          <span class="actions">
+            <button id="newMessageButton" class="primary" type="button">New message</button>
+            <button id="refreshMessagesButton" class="ghost" type="button">Refresh</button>
+          </span>
         </summary>
         <p id="messageConfigMessage" class="notice hidden" aria-live="polite"></p>
         <div class="message-config-layout">
           <div id="messageList" class="message-list" aria-label="Messages"></div>
           <form id="messageForm" class="message-form hidden">
-            <input id="messageConfigId" type="hidden">
+            <label for="messageConfigId">Message ID
+              <input id="messageConfigId" maxlength="50" pattern="[a-z0-9-]+" required autocomplete="off">
+            </label>
             <label for="messageDisplayName">Display name
               <input id="messageDisplayName" maxlength="80" required autocomplete="off">
             </label>
@@ -149,6 +155,97 @@
         </div>
       </details>
     </section>
+
+    <section id="releaseWorkflowPanel" class="panel message-config-panel" aria-labelledby="releaseWorkflowTitle">
+      <details>
+        <summary>
+          <span>
+            <strong id="releaseWorkflowTitle">Production releases</strong>
+            <span class="muted">Prepare, independently review and release approved production coding</span>
+          </span>
+          <button id="refreshReleaseWorkflow" class="ghost" type="button">Refresh</button>
+        </summary>
+        <p id="releaseWorkflowNotice" class="notice hidden" aria-live="polite"></p>
+        <div class="release-summary-strip" aria-label="Release summary">
+          <div><span>Drafts</span><strong id="releaseDraftCount">0</strong></div>
+          <div><span>Awaiting review</span><strong id="releaseReviewCount">0</strong></div>
+          <div><span>Released</span><strong id="releaseReadyCount">0</strong></div>
+        </div>
+        <div class="release-command-bar">
+          <input id="releaseSearch" type="search" placeholder="Search product, brew or batch">
+          <select id="releaseStatusFilter" aria-label="Filter releases by status">
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="pending_review">Awaiting review</option>
+            <option value="released">Released</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <button id="openProductMasterForm" class="secondary" type="button">New product master</button>
+          <button id="openBatchReleaseForm" class="primary" type="button">New release</button>
+        </div>
+        <div id="releaseFormWorkspace" class="release-workflow-layout hidden">
+          <section id="productMasterSection" class="sub-panel" aria-labelledby="productMasterTitle">
+            <h3 id="productMasterTitle">QA product master</h3>
+            <p class="muted">Creating or changing a master creates a permanent specification version.</p>
+            <form id="productMasterForm" class="message-job-builder">
+              <label>Product sequence code<input id="masterProductCode" placeholder="TBUNDRC" maxlength="30" required></label>
+              <label>Display name<input id="masterDisplayName" placeholder="Bundaberg Rum & Cola" maxlength="100" required></label>
+              <label>First available run<input id="masterNextRun" type="number" min="1" value="1" required></label>
+              <label>Run prefix<input id="masterRunPrefix" value="T" maxlength="10" required></label>
+              <label>Run digits<input id="masterRunWidth" type="number" min="1" max="8" value="4" required></label>
+              <label>Stored message<select id="masterMessage" required></select></label>
+              <div id="masterMessageSummary" class="master-message-summary"></div>
+              <section class="master-field-section wide" aria-labelledby="masterFieldsTitle">
+                <h4 id="masterFieldsTitle">Message fields</h4>
+                <p class="muted">Choose the approved release value supplied to each field.</p>
+                <div id="masterFieldMappings" class="master-field-mappings"></div>
+              </section>
+              <fieldset id="masterPrinters" class="message-job-target-picker wide"><legend>Permitted printers</legend></fieldset>
+              <div class="actions wide"><button class="primary" type="submit">Create product master</button></div>
+            </form>
+          </section>
+
+          <section id="batchReleaseSection" class="sub-panel" aria-labelledby="batchReleaseTitle">
+            <h3 id="batchReleaseTitle">New batch release</h3>
+            <p class="muted">Run numbers are reserved only after independent approval.</p>
+            <form id="batchReleaseForm" class="message-job-builder">
+              <label>Product master<select id="releaseProductMaster" required></select></label>
+              <label>Brew-sheet product<input id="releaseBrewProduct" placeholder="TBUNDRC-50" maxlength="50" required></label>
+              <label>Brew number<input id="releaseBrewNumber" placeholder="H0477" maxlength="50"></label>
+              <label>Batch number<input id="releaseBatchNumber" placeholder="FV27" maxlength="50"></label>
+              <label>Planned production<input id="releaseProductionAt" type="datetime-local" required></label>
+              <fieldset id="releasePrinters" class="message-job-target-picker wide"><legend>Target printers</legend></fieldset>
+              <label class="wide">Notes<textarea id="releaseNotes" rows="3" maxlength="1000"></textarea></label>
+              <div class="actions wide"><button class="secondary" type="submit">Save draft</button></div>
+            </form>
+          </section>
+        </div>
+        <section class="release-register" aria-labelledby="releaseRegisterTitle">
+          <div class="section-heading compact-heading"><h3 id="releaseRegisterTitle">Release register</h3></div>
+          <div id="batchReleaseList" class="message-job-list"></div>
+        </section>
+      </details>
+    </section>
+
+    <dialog id="releaseReviewDialog" class="message-dialog" aria-labelledby="releaseReviewDialogTitle">
+      <div class="message-dialog-shell release-review-dialog">
+        <header class="message-dialog-header">
+          <div><h2 id="releaseReviewDialogTitle">Review production release</h2><p class="muted">Approval permanently reserves the next product run.</p></div>
+          <button id="closeReleaseReview" class="ghost dialog-close" type="button">Close</button>
+        </header>
+        <div id="releaseReviewBody" class="release-review-body"></div>
+        <label id="releaseApprovalAttestation" class="release-attestation">
+          <input id="releaseApprovalCheck" type="checkbox">
+          <span>I have independently checked the brew-sheet values, product master and target printers.</span>
+        </label>
+        <label id="releaseRejectionField" class="hidden">Reason for rejection<textarea id="releaseRejectionReason" rows="3" maxlength="500"></textarea></label>
+        <p id="releaseReviewNotice" class="notice hidden" aria-live="polite"></p>
+        <div class="actions release-review-actions">
+          <button id="cancelReleaseReview" class="secondary" type="button">Cancel</button>
+          <button id="confirmReleaseReview" class="primary" type="button">Approve and reserve run</button>
+        </div>
+      </div>
+    </dialog>
 
     <section id="faultHistoryPanel" class="panel fault-history-editor-panel" aria-labelledby="editorFaultTitle">
       <details>

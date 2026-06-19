@@ -59,7 +59,7 @@ function accessSummary(session) {
 function createDevSwitcher(session) {
   const message = el('p', { className: 'notice hidden dev-switcher-message', 'aria-live': 'polite' });
   const roleSelect = el('select', { 'aria-label': 'Development role' });
-  for (const role of ['viewer', 'operator', 'qa', 'engineering', 'admin']) {
+  for (const role of ['viewer', 'operator', 'planner', 'packaging_leader', 'qa', 'engineering', 'admin']) {
     roleSelect.appendChild(el('option', {
       value: role,
       selected: session.user?.roles?.includes(role) ? 'selected' : null,
