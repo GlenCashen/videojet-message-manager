@@ -2,7 +2,8 @@ import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
-import { currentSession, loadSession } from './session.js';
+import { canOperatePrinter, currentSession, loadSession } from './session.js';
+import { createOperatorMessageDialog } from './operator-message-dialog.js';
 import {
   faultCountLabel,
   formatAge,
@@ -20,6 +21,29 @@ const elements = {
   nav: document.getElementById('topNavigation'),
   liveBadge: document.getElementById('serverConnectionBadge')
 };
+
+const messageDialog = createOperatorMessageDialog({
+  elements: {
+    dialog: document.getElementById('setMessageDialog'),
+    title: document.getElementById('setMessageDialogTitle'),
+    subtitle: document.getElementById('setMessageDialogSubtitle'),
+    notice: document.getElementById('setMessageDialogNotice'),
+    close: document.getElementById('closeSetMessageDialog'),
+    form: document.getElementById('dashboardSetMessageForm'),
+    messageName: document.getElementById('dashboardMessageName'),
+    fields: document.getElementById('dashboardMessageFields'),
+    preview: document.getElementById('dashboardExpectedPreview'),
+    reviewSummary: document.getElementById('dashboardReviewSummary'),
+    cancel: document.getElementById('cancelSetMessage'),
+    review: document.getElementById('reviewSetMessage'),
+    confirm: document.getElementById('confirmDashboardSetMessage')
+  },
+  getStatus: (printerId) => state.statuses[printerId],
+  onStatus: (status) => {
+    mergeStatus(status);
+    render();
+  }
+});
 
 const state = {
   printers: {},
@@ -143,7 +167,16 @@ function createCard(printer) {
     ]),
     createReadback(printer, status),
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
-    el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View printer')
+    el('div', { className: 'viewer-card-actions' }, [
+      canOperatePrinter(printer.id) ? el('button', {
+        className: 'primary',
+        type: 'button',
+        disabled: !printer.enabled ? 'disabled' : null,
+        dataset: { action: 'set-message', printerId: printer.id },
+        text: 'Set message'
+      }) : null,
+      el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View details')
+    ])
   ]);
 }
 
@@ -201,7 +234,14 @@ async function loadInitialData() {
 }
 
 elements.grid.addEventListener('click', (event) => {
-  if (event.target.closest('a')) return;
+  const setButton = event.target.closest('[data-action="set-message"]');
+  if (setButton) {
+    event.stopPropagation();
+    const printer = state.printers[setButton.dataset.printerId];
+    if (printer) messageDialog.open(printer);
+    return;
+  }
+  if (event.target.closest('a, button')) return;
   const card = event.target.closest('[data-href]');
   if (card) window.location.href = card.dataset.href;
 });

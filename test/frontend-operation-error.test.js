@@ -40,3 +40,16 @@ test('traffic-light printer state helper is shared by dashboard and printer page
   assert.ok(dashboard.includes('trafficLightMarkup(coder.decodedStatus'));
   assert.ok(printerPage.includes('trafficLightMarkup(decodedStatus'));
 });
+
+test('assigned operators can review and confirm a dashboard message change', async () => {
+  const dashboard = await readFile('public/js/viewer-dashboard.js', 'utf8');
+  const dialog = await readFile('public/js/operator-message-dialog.js', 'utf8');
+
+  assert.ok(dashboard.includes('canOperatePrinter(printer.id)'));
+  assert.ok(dashboard.includes("dataset: { action: 'set-message', printerId: printer.id }"));
+  assert.ok(dialog.includes("/preview`"));
+  assert.ok(dialog.includes("/set`"));
+  assert.ok(dialog.includes('expectedRevision: status.revision'));
+  assert.ok(dialog.includes('/api/printer/current-message?printerId='));
+  assert.ok(dialog.includes('Message change sent, but readback failed:'));
+});

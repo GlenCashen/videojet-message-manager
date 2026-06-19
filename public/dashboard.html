@@ -12,8 +12,8 @@
   <main class="viewer-shell">
     <header class="viewer-header">
       <div>
-        <h1>Live printer dashboard</h1>
-        <p class="muted">Current communication, alarm state, selected messages, and active faults.</p>
+        <h1>Printer operations</h1>
+        <p class="muted">Live status for your assigned printers, with message changes available without leaving the dashboard.</p>
       </div>
       <div class="header-badges">
         <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
@@ -31,6 +31,45 @@
         <p class="muted">Loading available printers...</p>
       </article>
     </section>
+
+    <dialog id="setMessageDialog" class="message-dialog" aria-labelledby="setMessageDialogTitle">
+      <div class="message-dialog-shell">
+        <header class="message-dialog-header">
+          <div>
+            <p class="breadcrumb">Set printer message</p>
+            <h2 id="setMessageDialogTitle">Loading printer...</h2>
+            <p id="setMessageDialogSubtitle" class="muted"></p>
+          </div>
+          <button id="closeSetMessageDialog" class="ghost dialog-close" type="button" aria-label="Close set message dialog">Close</button>
+        </header>
+
+        <p id="setMessageDialogNotice" class="notice hidden" aria-live="polite"></p>
+
+        <form id="dashboardSetMessageForm" class="message-dialog-layout">
+          <div class="message-dialog-fields">
+            <label for="dashboardMessageName">Message
+              <select id="dashboardMessageName"></select>
+            </label>
+            <div id="dashboardMessageFields" class="message-fields"></div>
+          </div>
+
+          <section class="message-dialog-preview" aria-labelledby="dashboardPreviewTitle">
+            <div>
+              <h3 id="dashboardPreviewTitle">Expected print</h3>
+              <p class="muted">Review this exact output before sending.</p>
+            </div>
+            <pre id="dashboardExpectedPreview">Select a message and complete its required fields.</pre>
+            <div id="dashboardReviewSummary" class="review-content hidden"></div>
+          </section>
+
+          <div class="message-dialog-actions">
+            <button id="cancelSetMessage" class="secondary" type="button">Cancel</button>
+            <button id="reviewSetMessage" class="primary" type="submit">Review message</button>
+            <button id="confirmDashboardSetMessage" class="primary hidden" type="button">Confirm and send</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
   </main>
   <script type="module" src="/js/viewer-dashboard.js"></script>
 </body>
