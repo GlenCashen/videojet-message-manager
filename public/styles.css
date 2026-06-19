@@ -825,6 +825,33 @@ summary:focus-visible {
 .checkbox-line input,
 .mode-toggle input { width: auto; }
 
+.emulator-fault-picker {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.emulator-fault-picker legend {
+  padding: 0 6px;
+  font-weight: 850;
+}
+
+.emulator-fault-picker p { margin: 0 0 12px; }
+
+.fault-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 14px;
+}
+
+.fault-option {
+  align-items: flex-start;
+  padding: 7px;
+  border-radius: 6px;
+  background: var(--panel-3);
+}
+
 .notice {
   margin: 0 0 16px;
   border-radius: 8px;
@@ -1212,6 +1239,7 @@ body.server-disconnected .dashboard-panel {
   .assignment-row,
   .message-fields,
   .operator-layout { grid-template-columns: 1fr; }
+  .fault-option-grid { grid-template-columns: 1fr; }
   .operator-side-column { position: static; }
   .wide { grid-column: auto; }
   .actions,

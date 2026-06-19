@@ -76,6 +76,18 @@ async function loadEmulator() {
 function applyEmulatorState(emulator) {
   elements.emulatorMessage.value = emulator.selectedMessage;
   elements.emulatorStatus.value = emulator.status;
+  elements.emulatorAlarm.value = emulator.alarm || 'none';
+  const activeFaults = new Set(emulator.activeFaultCodes || []);
+  elements.emulatorFaults.replaceChildren(...(emulator.availableFaults || []).map((fault) => {
+    const label = document.createElement('label');
+    label.className = 'checkbox-line fault-option';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.faultCode = fault.code;
+    input.checked = activeFaults.has(fault.code);
+    label.append(input, document.createTextNode(fault.label));
+    return label;
+  }));
   elements.emulatorDelay.value = emulator.responseDelayMs;
   elements.emulatorEnabled.checked = emulator.enabled;
   elements.failNextCommand.checked = emulator.failNextCommand;
@@ -87,7 +99,9 @@ async function saveEmulator() {
   try {
     await postJson('/api/emulator', {
       selectedMessage: elements.emulatorMessage.value,
-      status: elements.emulatorStatus.value.trim(),
+      faultCodes: [...elements.emulatorFaults.querySelectorAll('input[data-fault-code]:checked')]
+        .map((input) => input.dataset.faultCode),
+      alarm: elements.emulatorAlarm.value,
       responseDelayMs: Number(elements.emulatorDelay.value),
       enabled: elements.emulatorEnabled.checked,
       failNextCommand: elements.failNextCommand.checked

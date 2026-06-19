@@ -123,11 +123,15 @@ test('fault history API records activation and clear from emulator checks', asyn
 
   try {
     await waitForServer(baseUrl, child, output);
-    await fetch(`${baseUrl}/api/emulator`, {
+    const configuredResponse = await fetch(`${baseUrl}/api/emulator`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: '4000004' })
+      body: JSON.stringify({ faultCodes: ['GUTTER_FAULT'], alarm: 'red' })
     });
+    const configured = await configuredResponse.json();
+    assert.equal(configured.status, '4000004');
+    assert.deepEqual(configured.activeFaultCodes, ['GUTTER_FAULT']);
+    assert.equal(configured.alarm, 'red');
     const check = await fetch(`${baseUrl}/api/printers/coder-2/check`, { method: 'POST' });
     const checkResult = await check.json();
     assert.equal(check.ok, true, JSON.stringify(checkResult));
@@ -140,7 +144,7 @@ test('fault history API records activation and clear from emulator checks', asyn
     await fetch(`${baseUrl}/api/emulator`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: '0000001' })
+      body: JSON.stringify({ faultCodes: [], alarm: 'green' })
     });
     const clearCheck = await fetch(`${baseUrl}/api/printers/coder-2/check`, { method: 'POST' });
     assert.equal(clearCheck.ok, true);

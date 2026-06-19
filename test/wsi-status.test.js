@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeStatus } from '../server/wsi-status.js';
+import { decodeStatus, encodeStatus } from '../server/wsi-status.js';
 
 test('decodes traffic-light statuses without faults', () => {
   assert.equal(decodeStatus('0000001').alarm.label, 'Green');
@@ -57,4 +57,23 @@ test('rejects malformed status values safely', () => {
     assert.equal(decoded.alarm, null);
     assert.equal(decoded.hasFaults, false);
   }
+});
+
+test('encodes named emulator faults into the WSI status mask', () => {
+  const raw = encodeStatus({
+    faultCodes: ['GUTTER_FAULT', 'PUMP_FAULT', 'DATE_TIME_NOT_SET'],
+    alarm: 'red'
+  });
+  assert.equal(raw, '4100014');
+  assert.deepEqual(decodeStatus(raw).activeFaults.map((fault) => fault.code), [
+    'GUTTER_FAULT',
+    'PUMP_FAULT',
+    'DATE_TIME_NOT_SET'
+  ]);
+  assert.equal(decodeStatus(raw).alarm.primary, 'red');
+});
+
+test('rejects unknown emulator fault and alarm names', () => {
+  assert.throws(() => encodeStatus({ faultCodes: ['NOT_A_FAULT'] }), /Unknown fault code/);
+  assert.throws(() => encodeStatus({ alarm: 'purple' }), /Unknown alarm state/);
 });

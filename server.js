@@ -57,6 +57,7 @@ import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-r
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { WsiClient } from './server/wsi-client.js';
 import { assertPacketResponse, failureMessage } from './server/wsi-response.js';
+import { decodeStatus, encodeStatus, faultDefinitions } from './server/wsi-status.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -593,6 +594,7 @@ const emulator = {
 };
 
 function emulatorSnapshot() {
+  const decoded = decodeStatus(emulator.status);
   return {
     host: EMULATOR_HOST,
     port: EMULATOR_PORT,
@@ -600,6 +602,9 @@ function emulatorSnapshot() {
     availableMessages: emulator.availableMessages,
     userFields: emulator.userFields,
     status: emulator.status,
+    alarm: decoded.alarm?.primary || 'none',
+    activeFaultCodes: decoded.activeFaults.map((fault) => fault.code),
+    availableFaults: faultDefinitions().filter((fault) => fault.code !== 'RESERVED_FAULT_BIT'),
     printCounter: emulator.printCounter,
     productCounter: emulator.productCounter,
     responseDelayMs: emulator.responseDelayMs,
@@ -1311,6 +1316,16 @@ app.post('/api/emulator', (req, res) => {
     emulator.selectedMessage = body.selectedMessage;
   }
   if (typeof body.status === 'string' && /^[0-9A-F]{7}$/i.test(body.status)) emulator.status = body.status.toUpperCase();
+  if (body.faultCodes !== undefined || body.alarm !== undefined) {
+    try {
+      emulator.status = encodeStatus({
+        faultCodes: body.faultCodes ?? emulatorSnapshot().activeFaultCodes,
+        alarm: body.alarm ?? emulatorSnapshot().alarm
+      });
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+  }
   if (Number.isInteger(body.responseDelayMs) && body.responseDelayMs >= 0 && body.responseDelayMs <= 10000) {
     emulator.responseDelayMs = body.responseDelayMs;
   }

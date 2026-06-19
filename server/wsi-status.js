@@ -37,6 +37,35 @@ const FAULT_MAP = [
   ]
 ];
 
+const ALARM_MASKS = { none: 0, green: 1, amber: 2, red: 4, alarm: 8 };
+
+function faultDefinitions() {
+  return FAULT_MAP.flatMap((faults, byteIndex) => faults.map(([bit, code, label]) => ({
+    code,
+    label,
+    byte: byteIndex + 1,
+    bit
+  })));
+}
+
+function encodeStatus({ faultCodes = [], alarm = 'amber' } = {}) {
+  if (!Array.isArray(faultCodes)) throw new Error('faultCodes must be an array.');
+  if (!(alarm in ALARM_MASKS)) throw new Error(`Unknown alarm state: ${alarm}.`);
+
+  const definitions = faultDefinitions();
+  const selected = new Set(faultCodes);
+  const known = new Set(definitions.map((fault) => fault.code));
+  for (const code of selected) {
+    if (!known.has(code)) throw new Error(`Unknown fault code: ${code}.`);
+  }
+
+  const faultMask = FAULT_MAP.map((faults) => faults.reduce(
+    (mask, [bit, code]) => selected.has(code) ? mask | bit : mask,
+    0
+  ).toString(16).toUpperCase()).join('');
+  return `${faultMask}${ALARM_MASKS[alarm].toString(16).toUpperCase()}`;
+}
+
 function invalidStatus(raw) {
   return {
     valid: false,
@@ -121,4 +150,4 @@ function assertValidStatus(input) {
   return decoded;
 }
 
-export { FAULT_MAP, assertValidStatus, decodeStatus };
+export { ALARM_MASKS, FAULT_MAP, assertValidStatus, decodeStatus, encodeStatus, faultDefinitions };

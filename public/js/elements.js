@@ -58,6 +58,8 @@ const elements = {
   emulatorPanel: $('emulatorPanel'),
   emulatorMessage: $('emulatorMessage'),
   emulatorStatus: $('emulatorStatus'),
+  emulatorAlarm: $('emulatorAlarm'),
+  emulatorFaults: $('emulatorFaults'),
   emulatorDelay: $('emulatorDelay'),
   emulatorEnabled: $('emulatorEnabled'),
   failNextCommand: $('failNextCommand'),

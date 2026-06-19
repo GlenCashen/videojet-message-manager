@@ -201,8 +201,22 @@
                 <option>12 MONTH</option>
               </select>
             </label>
-            <label for="emulatorStatus">Simulated status
-              <input id="emulatorStatus" value="0000002" maxlength="7">
+            <label for="emulatorAlarm">Traffic-light state
+              <select id="emulatorAlarm">
+                <option value="none">None</option>
+                <option value="green">Green</option>
+                <option value="amber" selected>Amber</option>
+                <option value="red">Red</option>
+                <option value="alarm">Alarm active</option>
+              </select>
+            </label>
+            <fieldset class="wide emulator-fault-picker">
+              <legend>Active printer faults</legend>
+              <p class="muted">Select one or more faults for the emulator to return from command E.</p>
+              <div id="emulatorFaults" class="fault-option-grid"></div>
+            </fieldset>
+            <label for="emulatorStatus">Generated WSI status
+              <input id="emulatorStatus" value="0000002" maxlength="7" readonly>
             </label>
             <label for="emulatorDelay">Response delay (ms)
               <input id="emulatorDelay" type="number" value="40" min="0" max="10000">
