@@ -37,7 +37,9 @@ function listAuditEvents(query = {}, db = getDb()) {
   for (const [key, column] of [
     ['printerId', 'printer_id'],
     ['actorUserId', 'actor_user_id'],
-    ['action', 'action']
+    ['action', 'action'],
+    ['targetType', 'target_type'],
+    ['targetId', 'target_id']
   ]) {
     if (query[key]) {
       clauses.push(`${column} = @${key}`);

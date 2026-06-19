@@ -4,6 +4,7 @@ import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
 import { canOperatePrinter, currentSession, loadSession } from './session.js';
 import { createOperatorMessageDialog } from './operator-message-dialog.js';
+import { createOperatorReleaseQueue } from './operator-release-queue.js';
 import {
   faultCountLabel,
   formatAge,
@@ -52,6 +53,30 @@ const state = {
   serverConnected: false,
   lastServerEventAt: Date.now()
 };
+
+const releaseQueue = createOperatorReleaseQueue({
+  elements: {
+    list: document.getElementById('operatorReleaseList'),
+    notice: document.getElementById('operatorReleaseNotice'),
+    refresh: document.getElementById('refreshOperatorReleases'),
+    dialog: document.getElementById('operatorReleaseDialog'),
+    title: document.getElementById('operatorReleaseDialogTitle'),
+    subtitle: document.getElementById('operatorReleaseDialogSubtitle'),
+    close: document.getElementById('closeOperatorReleaseDialog'),
+    dialogNotice: document.getElementById('operatorReleaseDialogNotice'),
+    facts: document.getElementById('operatorReleaseFacts'),
+    preview: document.getElementById('operatorReleasePreview'),
+    confirmation: document.getElementById('operatorReleaseConfirmation'),
+    confirmCheck: document.getElementById('operatorReleaseConfirmationCheck'),
+    failureField: document.getElementById('operatorPrintFailureField'),
+    failureReason: document.getElementById('operatorPrintFailureReason'),
+    cancel: document.getElementById('cancelOperatorRelease'),
+    send: document.getElementById('sendOperatorRelease'),
+    report: document.getElementById('reportOperatorPrintFailure'),
+    verify: document.getElementById('verifyOperatorPrint')
+  },
+  getPrinter: (printerId) => state.printers[printerId]
+});
 
 function mergeStatus(status) {
   const id = status.printerId || status.id;
@@ -134,6 +159,7 @@ function createCard(printer) {
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';
   const lightState = printerState(status.decodedStatus);
+  const manualMessageChangeAllowed = currentSession()?.user?.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role));
 
   return el('article', {
     className: cardClass(status),
@@ -168,7 +194,7 @@ function createCard(printer) {
     createReadback(printer, status),
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
     el('div', { className: 'viewer-card-actions' }, [
-      canOperatePrinter(printer.id) ? el('button', {
+      canOperatePrinter(printer.id) && manualMessageChangeAllowed ? el('button', {
         className: 'primary',
         type: 'button',
         disabled: !printer.enabled ? 'disabled' : null,
@@ -230,6 +256,7 @@ async function loadInitialData() {
     ]);
     applyFleet(printers);
     for (const status of statuses) mergeStatus(status);
+    await releaseQueue.load();
     setNotice(elements.message);
     render();
   } catch (error) {
@@ -275,7 +302,8 @@ subscribeToPrinterEvents({
     markConnected();
     mergeStatus(status);
     render();
-  }
+  },
+  onBatchReleaseExecution: () => releaseQueue.refresh()
 });
 
 setInterval(() => {

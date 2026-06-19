@@ -73,11 +73,18 @@ import {
 } from './server/repositories/product-master-repository.js';
 import {
   approveBatchRelease,
+  beginBatchReleaseTarget,
+  claimBatchReleaseReview,
   createBatchRelease,
+  finishBatchReleaseTarget,
   getBatchRelease,
   listBatchReleases,
+  recoverInterruptedBatchReleaseTargets,
   rejectBatchRelease,
-  submitBatchRelease
+  releaseBatchReleaseReview,
+  submitBatchRelease,
+  updateBatchRelease,
+  verifyBatchReleaseTarget
 } from './server/repositories/batch-release-repository.js';
 import { WsiClient } from './server/wsi-client.js';
 import { assertPacketResponse, failureMessage } from './server/wsi-response.js';
@@ -113,6 +120,10 @@ const auth = createSessionManager({
   secure: process.env.NODE_ENV === 'production'
 });
 await importJsonToSqlite();
+const recoveredReleaseExecutions = recoverInterruptedBatchReleaseTargets();
+if (recoveredReleaseExecutions) {
+  console.warn(`${recoveredReleaseExecutions} interrupted release execution(s) require operator attention.`);
+}
 const startupPrinters = await readPrinters();
 const bootstrap = await ensureBootstrapAdmin({ printers: startupPrinters, enableDevIdentity: ENABLE_DEV_IDENTITY });
 if (!ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
@@ -190,7 +201,21 @@ const emulatorManager = new EmulatorManager({
   delay,
   onError: (message) => console.error(message)
 });
-await emulatorManager.sync(startupPrinters);
+async function syncEmulatorManager(printers, knownMessages = null) {
+  await emulatorManager.sync(printers);
+  const messages = knownMessages || await loadMessages(undefined, { printers });
+  for (const printer of printers.filter((item) => item.mode === 'emulator')) {
+    const assigned = messages.filter((message) => message.enabled && message.printerAssignments?.some((assignment) => assignment.enabled && assignment.printerId === printer.id));
+    emulatorManager.configurePrinter(printer.id, {
+      messageNames: assigned.flatMap((message) => message.printerAssignments
+        .filter((assignment) => assignment.enabled && assignment.printerId === printer.id)
+        .map((assignment) => assignment.printerMessageName)),
+      fieldNames: assigned.flatMap((message) => message.fields.map((field) => field.printerFieldName))
+    });
+  }
+}
+
+await syncEmulatorManager(startupPrinters);
 let persistedPrinterState = await loadPrinterState();
 const faultHistory = await createFaultHistoryStore({ filePath: FAULT_HISTORY_PATH, limit: FAULT_HISTORY_LIMIT });
 
@@ -325,6 +350,7 @@ function canReceiveEvent(user, type, payload) {
   if (['logs-snapshot', 'log-entry'].includes(type)) return canViewAudit(user) || canAccessDiagnostics(user);
   if (['emulator-snapshot', 'stream-error'].includes(type)) return canAccessDiagnostics(user);
   if (type === 'messages-updated') return canEditMessages(user);
+  if (type === 'batch-release-presence') return getCapabilities(user).viewBatchReleases;
 
   const printerId = payload?.printerId || payload?.id;
   if (printerId) return canViewPrinter(user, printerId);
@@ -894,6 +920,7 @@ app.post('/api/messages', async (req, res) => {
       return res.status(409).json({ ok: false, error: `Message ${req.body.id} already exists.` });
     }
     const saved = await saveMessages([...messages, req.body], undefined, { printers });
+    await syncEmulatorManager(printers, saved);
     const message = saved.find((item) => item.id === req.body.id);
     broadcast('messages-updated', { messages: saved });
     res.status(201).json({ ok: true, message });
@@ -933,6 +960,7 @@ app.put('/api/messages/:id', async (req, res) => {
     };
     messages[index] = updated;
     const saved = await saveMessages(messages, undefined, { printers });
+    await syncEmulatorManager(printers, saved);
     broadcast('messages-updated', { messages: saved });
     res.json({ ok: true, message: saved[index] });
   } catch (error) {
@@ -999,10 +1027,18 @@ function visibleBatchRelease(user, release) {
   const capabilities = getCapabilities(user);
   if (!capabilities.viewBatchReleases) return null;
   if (!user.roles?.includes('operator') || capabilities.viewAllPrinters) return release;
-  if (release.status !== 'released') return null;
+  if (!['released', 'applying', 'awaiting_print_check', 'completed', 'failed'].includes(release.status)) return null;
   const assigned = new Set(user.printerIds || []);
   const printerIds = release.printerIds.filter((id) => assigned.has(id));
-  return printerIds.length ? { ...release, printerIds } : null;
+  const executionTargets = (release.executionTargets || []).filter((target) => assigned.has(target.printerId));
+  return printerIds.length ? { ...release, printerIds, executionTargets } : null;
+}
+
+function auditActor(user) {
+  return {
+    actor: user.username,
+    actorUserId: user.developmentIdentity ? null : (user.id || null)
+  };
 }
 
 app.get('/api/product-masters', (req, res) => {
@@ -1022,7 +1058,7 @@ app.post('/api/product-masters', async (req, res) => {
     if (!getCapabilities(user).manageProductMasters) return forbidden(res, 'You do not have permission to manage product masters.');
     const input = await validateProductMasterInput(req.body);
     const master = createProductMaster(input, user);
-    addLog({ action: 'product-master-created', actor: user.username, targetId: master.id, productCode: master.productCode, ok: true });
+    addLog({ action: 'product-master-created', ...auditActor(user), targetType: 'product-master', targetId: master.id, details: { productCode: master.productCode, version: master.currentVersion, ok: true } });
     res.status(201).json({ ok: true, master });
   } catch (error) {
     res.status(error.statusCode || (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 409 : 400)).json({ ok: false, error: error.message });
@@ -1038,7 +1074,7 @@ app.put('/api/product-masters/:id', async (req, res) => {
     if (!current) return res.status(404).json({ ok: false, error: 'Product master was not found.' });
     const input = await validateProductMasterInput({ ...req.body, specification: req.body?.specification || current.specification });
     const master = updateProductMaster(req.params.id, input, user);
-    addLog({ action: 'product-master-version-created', actor: user.username, targetId: master.id, version: master.currentVersion, ok: true });
+    addLog({ action: 'product-master-version-created', ...auditActor(user), targetType: 'product-master', targetId: master.id, details: { productCode: master.productCode, version: master.currentVersion, ok: true } });
     res.json({ ok: true, master });
   } catch (error) {
     res.status(error.statusCode || 400).json({ ok: false, error: error.message });
@@ -1065,8 +1101,76 @@ app.post('/api/batch-releases', (req, res) => {
     if (!user) return;
     if (!getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to create batch releases.');
     const release = createBatchRelease(req.body || {}, user);
-    addLog({ action: 'batch-release-created', actor: user.username, targetId: release.id, productMasterId: release.productMasterId, ok: true });
+    addLog({ action: 'batch-release-created', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { productMasterId: release.productMasterId, brewSheetProduct: release.brewSheetProduct, status: release.status, ok: true } });
     res.status(201).json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
+app.put('/api/batch-releases/:id', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to edit batch releases.');
+    const before = getBatchRelease(req.params.id);
+    if (!before) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    const release = updateBatchRelease(req.params.id, req.body || {}, user);
+    addLog({
+      action: 'batch-release-updated', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
+      details: {
+        previousStatus: before.status,
+        status: release.status,
+        brewSheetProduct: release.brewSheetProduct,
+        brewNumber: release.brewNumber,
+        batchNumber: release.batchNumber,
+        plannedProductionAt: release.plannedProductionAt,
+        printerIds: release.printerIds,
+        ok: true
+      }
+    });
+    res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/batch-releases/:id/audit', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).viewBatchReleases) return forbidden(res, 'You do not have permission to view batch releases.');
+    const release = visibleBatchRelease(user, getBatchRelease(req.params.id));
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    res.json(listAuditEvents({ targetType: 'batch-release', targetId: release.id, limit: req.query.limit || 100 }));
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/review-claim', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to review batch releases.');
+    const release = claimBatchReleaseReview(req.params.id, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: release.reviewClaim });
+    res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message, reviewClaim: error.reviewClaim || null });
+  }
+});
+
+app.delete('/api/batch-releases/:id/review-claim', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to review batch releases.');
+    const release = releaseBatchReleaseReview(req.params.id, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: release.reviewClaim });
+    res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 400).json({ ok: false, error: error.message });
   }
@@ -1079,7 +1183,7 @@ app.post('/api/batch-releases/:id/submit', (req, res) => {
     if (!getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to submit batch releases.');
     const release = submitBatchRelease(req.params.id, user);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
-    addLog({ action: 'batch-release-submitted', actor: user.username, targetId: release.id, ok: true });
+    addLog({ action: 'batch-release-submitted', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, ok: true } });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });
@@ -1093,7 +1197,8 @@ app.post('/api/batch-releases/:id/approve', (req, res) => {
     if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to approve batch releases.');
     const release = approveBatchRelease(req.params.id, user);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
-    addLog({ action: 'batch-release-approved', actor: user.username, targetId: release.id, runCode: release.runCode, ok: true });
+    addLog({ action: 'batch-release-approved', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, runCode: release.runCode, ok: true } });
+    broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: null, status: release.status });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });
@@ -1107,8 +1212,124 @@ app.post('/api/batch-releases/:id/reject', (req, res) => {
     if (!getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to review batch releases.');
     const release = rejectBatchRelease(req.params.id, req.body?.reason, user);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
-    addLog({ action: 'batch-release-rejected', actor: user.username, targetId: release.id, reason: release.rejectionReason, ok: true });
+    addLog({ action: 'batch-release-rejected', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, reason: release.rejectionReason, ok: true } });
+    broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: null, status: release.status });
     res.json({ ok: true, release });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+async function releaseExecutionContext(release, printerId, user) {
+  if (!canOperatePrinter(user, printerId)) {
+    const error = new Error('You do not have permission to operate this printer.');
+    error.statusCode = 403;
+    throw error;
+  }
+  const target = release.executionTargets?.find((item) => item.printerId === printerId);
+  if (!target) {
+    const error = new Error('This printer is not assigned to the release.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const printers = await readPrinters();
+  const printer = printers.find((item) => item.id === printerId);
+  if (!printer) throw new Error(`Printer ${printerId} was not found.`);
+  if (!printer.enabled) {
+    const error = new Error(`${printer.name} is disabled.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  if (!release.expectedOutput?.messageId) throw new Error('The approved release has no executable message payload.');
+  const messages = await loadMessages(undefined, { printers });
+  const message = getMessageForPrinter(messages, release.expectedOutput.messageId, printerId);
+  const preview = renderPreview(message, release.expectedOutput.fields || {}, { productionDate: release.plannedProductionAt });
+  if (preview.rendered !== release.expectedOutput.rendered) {
+    const error = new Error('The stored message definition no longer matches the approved release. Return it for a new review.');
+    error.statusCode = 409;
+    throw error;
+  }
+  return { printer, target, message };
+}
+
+app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) => {
+  let began = false;
+  let user;
+  try {
+    user = requireUser(req, res);
+    if (!user) return;
+    const release = getBatchRelease(req.params.id);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    const { printer } = await releaseExecutionContext(release, req.params.printerId, user);
+    if (stateChangingOperations.has(printer.id)) {
+      const error = new Error('A message update is already in progress on this printer.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    beginBatchReleaseTarget(release.id, printer.id, user);
+    began = true;
+    stateChangingOperations.add(printer.id);
+    addLog({
+      action: 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
+      printerId: printer.id, details: { printerId: printer.id, brewSheetProduct: release.brewSheetProduct, ok: true }
+    });
+    broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: 'applying' });
+
+    const result = await setPrinterMessage(printer, {
+      messageId: release.expectedOutput.messageId,
+      fields: release.expectedOutput.fields || {},
+      productionDate: release.plannedProductionAt
+    });
+    insertMessageUpdateEvent(result, user);
+    if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
+    const updated = finishBatchReleaseTarget(release.id, printer.id, result);
+    addLog({
+      action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-application-failed',
+      ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id,
+      details: { printerId: printer.id, operationId: result.operationId, selectedMessage: result.selectedMessage, status: updated.status, ok: result.ok && result.messageMatches !== false }
+    });
+    broadcast('printer-status', result);
+    broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: updated.status });
+    res.status(result.ok && result.messageMatches !== false ? 200 : 409).json({ ok: result.ok && result.messageMatches !== false, release: visibleBatchRelease(user, updated), result });
+  } catch (error) {
+    const failure = error instanceof MessageUpdateError && error.result
+      ? { ...error.result, ok: false, error: error.message, checkedAt: new Date().toISOString() }
+      : { ok: false, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() };
+    if (began) {
+      const updated = finishBatchReleaseTarget(req.params.id, req.params.printerId, failure);
+      insertMessageUpdateEvent(failure, user || {});
+      addLog({
+        action: 'batch-release-application-failed', ...(user ? auditActor(user) : {}), targetType: 'batch-release',
+        targetId: req.params.id, printerId: req.params.printerId,
+        details: { printerId: req.params.printerId, error: error.message, status: updated.status, ok: false }
+      });
+      broadcast('batch-release-execution', { releaseId: req.params.id, printerId: req.params.printerId, status: updated.status });
+    }
+    res.status(error.statusCode || (began ? 502 : 409)).json({ ...failure, release: began && user ? visibleBatchRelease(user, getBatchRelease(req.params.id)) : undefined });
+  } finally {
+    stateChangingOperations.delete(req.params.printerId);
+  }
+});
+
+app.post('/api/batch-releases/:id/targets/:printerId/print-check', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canOperatePrinter(user, req.params.printerId)) return forbidden(res, 'You do not have permission to operate this printer.');
+    const release = verifyBatchReleaseTarget(req.params.id, req.params.printerId, {
+      passed: req.body?.passed === true,
+      reason: req.body?.reason
+    }, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    const passed = req.body?.passed === true;
+    addLog({
+      action: passed ? 'batch-release-print-verified' : 'batch-release-print-failed', ...auditActor(user),
+      targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId,
+      details: { printerId: req.params.printerId, reason: passed ? null : String(req.body?.reason || '').trim(), status: release.status, ok: passed }
+    });
+    broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
+    res.json({ ok: true, release: visibleBatchRelease(user, release) });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });
   }
@@ -1393,7 +1614,7 @@ app.post('/api/printers', async (req, res) => {
     if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
     const printer = await createPrinter(req.body || {});
     const printers = await readPrinters();
-    await emulatorManager.sync(printers);
+    await syncEmulatorManager(printers);
     syncStatusPrinters(printers);
     const clientPrinter = printerForClient(printer);
     addLog({ action: 'printer-created', actor: user.username, printerId: printer.id, ok: true });
@@ -1589,7 +1810,7 @@ app.put('/api/printers/:id', async (req, res) => {
     if (!user) return;
     if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
     const printers = await updatePrinter(req.params.id, req.body || {});
-    await emulatorManager.sync(printers);
+    await syncEmulatorManager(printers);
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
     readbackCapabilities.clear(req.params.id);
@@ -1651,7 +1872,7 @@ app.delete('/api/printers/:id', async (req, res) => {
     if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
     const printer = await deletePrinter(req.params.id);
     const printers = await readPrinters();
-    await emulatorManager.sync(printers);
+    await syncEmulatorManager(printers);
     syncStatusPrinters(printers);
     readbackCapabilities.clear(req.params.id);
     addLog({ action: 'printer-archived', actor: user.username, printerId: req.params.id, ok: true });
@@ -1667,6 +1888,10 @@ app.post('/api/printers/:id/set', async (req, res) => {
   try {
     const user = requireUser(req, res);
     if (!user) return;
+    const privilegedManualSet = user.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role));
+    if (user.roles?.includes('operator') && !privilegedManualSet) {
+      return forbidden(res, 'Operators must use an approved production release to change a printer message.');
+    }
     const printers = await readPrinters();
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
@@ -1934,7 +2159,7 @@ app.post('/api/set', async (req, res) => {
 const monitor = new Monitor({
   readPrinters: async () => {
     const printers = await readPrinters();
-    await emulatorManager.sync(printers);
+    await syncEmulatorManager(printers);
     syncStatusPrinters(printers);
     return printers;
   },

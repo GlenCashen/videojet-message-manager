@@ -3,7 +3,7 @@ import { setupEditor, startEdit } from './js/editor.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { applyLogEntry, loadLogs, renderLogs, setupLogs } from './js/logs.js';
 import { loadMessageConfig, setupMessageConfig } from './js/message-config.js';
-import { loadReleaseWorkflow, setupReleaseWorkflow } from './js/release-workflow.js';
+import { applyReleasePresence, loadReleaseWorkflow, setupReleaseWorkflow } from './js/release-workflow.js';
 import { renderNavigation } from './js/navigation.js';
 import { hasCapability, loadSession } from './js/session.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
@@ -140,6 +140,11 @@ function setupEventStream() {
     onLogEntry: (payload) => {
       markServerConnected();
       if (canLoadLogs()) applyLogEntry(payload);
+    },
+
+    onBatchReleasePresence: (payload) => {
+      markServerConnected();
+      applyReleasePresence(payload);
     },
 
     onEmulatorSnapshot: (payload) => {

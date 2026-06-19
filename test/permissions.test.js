@@ -217,6 +217,13 @@ test('operator APIs are filtered to assigned printers', async () => {
     });
     assert.equal(deniedSet.response.status, 403);
 
+    const assignedDirectSet = await jsonFetch(`${baseUrl}/api/printers/coder-2/set`, {
+      method: 'POST',
+      body: { messageId: '12-month', fields: { brew: 'BR1246', batch: 'B260617A' } }
+    });
+    assert.equal(assignedDirectSet.response.status, 403);
+    assert.match(assignedDirectSet.data.error, /approved production release/i);
+
     const check = await jsonFetch(`${baseUrl}/api/printers/coder-2/check`, { method: 'POST' });
     assert.equal(check.response.ok, true);
   });

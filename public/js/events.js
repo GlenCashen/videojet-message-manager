@@ -93,6 +93,16 @@ function subscribeToPrinterEvents(handlers = {}) {
     handlers.onLogEntry?.(message.payload);
   });
 
+  source.addEventListener('batch-release-presence', (event) => {
+    const message = JSON.parse(event.data);
+    handlers.onBatchReleasePresence?.(message.payload);
+  });
+
+  source.addEventListener('batch-release-execution', (event) => {
+    const message = JSON.parse(event.data);
+    handlers.onBatchReleaseExecution?.(message.payload);
+  });
+
   source.addEventListener('emulator-snapshot', (event) => {
     const message = JSON.parse(event.data);
     handlers.onEmulatorSnapshot?.(message.payload);

@@ -123,6 +123,20 @@ test('QA, planner and packaging leader complete release approval without contact
     });
     assert.equal(submitted.data.release.status, 'pending_review');
 
+    const claimed = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/review-claim`, {
+      method: 'POST', role: 'qa', body: {}
+    });
+    assert.equal(claimed.response.ok, true, JSON.stringify(claimed.data));
+    assert.ok(claimed.data.release.reviewClaim);
+    const competingClaim = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/review-claim`, {
+      method: 'POST', role: 'packaging_leader', body: {}
+    });
+    assert.equal(competingClaim.response.status, 409);
+
+    await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/review-claim`, {
+      method: 'DELETE', role: 'qa'
+    });
+
     await jsonFetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST', role: 'admin' });
     const approved = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/approve`, {
       method: 'POST', role: 'packaging_leader', body: {}
@@ -131,6 +145,56 @@ test('QA, planner and packaging leader complete release approval without contact
     assert.equal(approved.data.release.runCode, 'T0050');
     assert.equal(approved.data.release.expectedOutput.rendered, 'T0050TBUNDRC-50\nBBD: 18/09/2027 04:32:08');
     assert.deepEqual((await jsonFetch(`${baseUrl}/api/debug/wsi-counters`, { role: 'admin' })).data, {});
+
+    const applied = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/apply`, {
+      method: 'POST', role: 'operator', body: {}
+    });
+    assert.equal(applied.response.ok, true, JSON.stringify(applied.data));
+    assert.equal(applied.data.release.executionTargets[0].status, 'awaiting_print_check');
+    const printChecked = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/print-check`, {
+      method: 'POST', role: 'operator', body: { passed: true }
+    });
+    assert.equal(printChecked.response.ok, true, JSON.stringify(printChecked.data));
+    assert.equal(printChecked.data.release.status, 'completed');
+
+    const rejectedDraft = await jsonFetch(`${baseUrl}/api/batch-releases`, {
+      method: 'POST', role: 'planner', body: {
+        productMasterId: masterResult.data.master.id,
+        brewSheetProduct: 'TBUNDRC-51',
+        brewNumber: 'WRONG',
+        batchNumber: 'FV28',
+        plannedProductionAt: '2026-06-19T04:32:08.000Z',
+        printerIds: ['coder-1']
+      }
+    });
+    const rejectedId = rejectedDraft.data.release.id;
+    await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/submit`, { method: 'POST', role: 'planner', body: {} });
+    await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/reject`, { method: 'POST', role: 'qa', body: { reason: 'Brew number does not match' } });
+    const directResubmit = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/submit`, { method: 'POST', role: 'planner', body: {} });
+    assert.equal(directResubmit.response.status, 409);
+    const corrected = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}`, {
+      method: 'PUT', role: 'planner', body: {
+        brewSheetProduct: 'TBUNDRC-51',
+        brewNumber: 'H0478',
+        batchNumber: 'FV28',
+        plannedProductionAt: '2026-06-19T04:32:08.000Z',
+        printerIds: ['coder-1'],
+        notes: 'Corrected after QA review'
+      }
+    });
+    assert.equal(corrected.data.release.status, 'draft');
+    assert.equal(corrected.data.release.brewNumber, 'H0478');
+
+    const audit = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/audit`, { role: 'qa' });
+    assert.equal(audit.response.ok, true, JSON.stringify(audit.data));
+    assert.deepEqual(new Set(audit.data.map((event) => event.action)), new Set([
+      'batch-release-created', 'batch-release-submitted', 'batch-release-rejected', 'batch-release-updated'
+    ]));
+    assert.ok(audit.data.every((event) => event.targetType === 'batch-release' && event.targetId === rejectedId));
+
+    const globalAudit = await jsonFetch(`${baseUrl}/api/logs?targetType=batch-release&targetId=${rejectedId}`, { role: 'qa' });
+    assert.equal(globalAudit.response.ok, true);
+    assert.ok(globalAudit.data.some((event) => event.action === 'batch-release-updated'));
   } finally {
     const exitPromise = child.exitCode === null ? new Promise((resolve) => child.once('exit', resolve)) : Promise.resolve();
     child.kill();

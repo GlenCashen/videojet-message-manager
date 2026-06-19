@@ -71,6 +71,15 @@ class EmulatorManager {
     };
   }
 
+  configurePrinter(printerId, { messageNames = [], fieldNames = [] } = {}) {
+    const state = this.state(printerId);
+    state.availableMessages = [...new Set(['9 MONTH', '12 MONTH', ...messageNames.filter(Boolean)])];
+    for (const fieldName of fieldNames.filter(Boolean)) {
+      if (!(fieldName in state.userFields)) state.userFields[fieldName] = '';
+    }
+    if (!state.availableMessages.includes(state.selectedMessage)) state.selectedMessage = state.availableMessages[0];
+  }
+
   update(printerId, body = {}) {
     const state = this.state(printerId);
     if (typeof body.selectedMessage === 'string' && state.availableMessages.includes(body.selectedMessage)) {

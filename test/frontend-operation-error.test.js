@@ -41,12 +41,12 @@ test('traffic-light printer state helper is shared by dashboard and printer page
   assert.ok(printerPage.includes('trafficLightMarkup(decodedStatus'));
 });
 
-test('assigned operators can review and confirm a dashboard message change', async () => {
+test('manual message changes retain guarded review but operator-only accounts use releases', async () => {
   const dashboard = await readFile('public/js/viewer-dashboard.js', 'utf8');
   const dialog = await readFile('public/js/operator-message-dialog.js', 'utf8');
 
   assert.ok(dashboard.includes('canOperatePrinter(printer.id)'));
-  assert.ok(dashboard.includes("dataset: { action: 'set-message', printerId: printer.id }"));
+  assert.ok(dashboard.includes('manualMessageChangeAllowed'));
   assert.ok(dialog.includes("/preview`"));
   assert.ok(dialog.includes("/set`"));
   assert.ok(dialog.includes('expectedRevision: status.revision'));
@@ -63,7 +63,21 @@ test('production releases require an independent review and expose no direct ope
   assert.ok(editorHtml.includes('Approve and reserve run'));
   assert.ok(releases.includes('releaseApprovalCheck'));
   assert.ok(releases.includes("mode === 'approve'"));
+  assert.ok(releases.includes('/review-claim'));
+  assert.ok(releases.includes('reviewHeartbeat'));
+  assert.ok(releases.includes('is reviewing this release now'));
   assert.equal(dashboardHtml.includes('Accept and send'), false);
+});
+
+test('operator dashboard exposes approved release send and first-print verification', async () => {
+  const dashboard = await readFile('public/dashboard.html', 'utf8');
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+  assert.ok(dashboard.includes('id="operatorReleaseList"'));
+  assert.ok(dashboard.includes('id="operatorReleaseConfirmationCheck"'));
+  assert.ok(dashboard.includes('id="verifyOperatorPrint"'));
+  assert.ok(queue.includes('/apply`'));
+  assert.ok(queue.includes('/print-check`'));
+  assert.ok(dashboard.includes('First print verified'));
 });
 
 test('new messages define fields that product masters infer', async () => {

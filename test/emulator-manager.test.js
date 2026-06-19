@@ -25,6 +25,7 @@ test('each configured emulator has isolated state and its own listener', async (
   const manager = new EmulatorManager();
   t.after(() => manager.close());
   await manager.sync(printers);
+  manager.configurePrinter('coder-a', { messageNames: ['TBUNDRC'], fieldNames: ['RUN'] });
   manager.update('coder-a', { selectedMessage: '12 MONTH', faultCodes: ['GUTTER_FAULT'], alarm: 'red' });
 
   assert.equal(manager.snapshot('coder-a').selectedMessage, '12 MONTH');
@@ -37,4 +38,7 @@ test('each configured emulator has isolated state and its own listener', async (
   const second = await client.sendCommand({ printerId: 'coder-b', ip: '127.0.0.1', port: secondPort, command: 'Q' });
   assert.equal(first.value, '12 MONTH');
   assert.equal(second.value, '9 MONTH');
+  assert.equal((await client.sendCommand({ printerId: 'coder-a', ip: '127.0.0.1', port: firstPort, command: 'URUN\nT0050' })).kind, 'ack');
+  assert.equal((await client.sendCommand({ printerId: 'coder-a', ip: '127.0.0.1', port: firstPort, command: 'MTBUNDRC' })).kind, 'ack');
+  assert.equal(manager.snapshot('coder-a').selectedMessage, 'TBUNDRC');
 });

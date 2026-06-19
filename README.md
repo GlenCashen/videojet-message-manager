@@ -95,16 +95,26 @@ Production coding is prepared through controlled releases. QA owns versioned pro
 
 Approval atomically reserves the next run number for that product only. For example, `TBUNDRC` and `SMGOLD` maintain independent sequences. Cancelled or failed approvals never reuse an already reserved number. Every release stays pinned to the product-master version used when the draft was created.
 
-The current release workflow deliberately stops at `released`; it does not send WSI commands. The legacy message-job creation and execution endpoints return HTTP 410. Operator confirmation, printer execution and first-print verification will be added as a separate guarded stage.
+Opening an independent review creates a renewable 45-second review claim. Other reviewers see who is active and cannot approve or reject the same release until that claim is released or expires.
+
+Approved releases enter the assigned operators' dashboard queue. Each printer target requires an operator confirmation before the approved payload is sent, followed by printer readback and an explicit first-print check. Targets complete independently and failures remain available for controlled retry. The legacy message-job creation and execution endpoints return HTTP 410.
+
+If the server restarts during a send, the target is recovered as `failed`/attention required instead of remaining permanently locked. The operator must confirm the printer state before choosing a controlled retry.
 
 - `GET /api/product-masters` - list product specifications
 - `POST /api/product-masters` - QA/Admin create a versioned master
 - `PUT /api/product-masters/:id` - create the next immutable master version
 - `GET /api/batch-releases` - list releases visible to the current role
 - `POST /api/batch-releases` - create a draft
+- `PUT /api/batch-releases/:id` - edit a draft or correct a rejected release
+- `GET /api/batch-releases/:id/audit` - view the permanent audit history for one release
+- `POST /api/batch-releases/:id/review-claim` - claim or renew an active independent review
+- `DELETE /api/batch-releases/:id/review-claim` - release the current user's review claim
 - `POST /api/batch-releases/:id/submit` - submit for independent review
 - `POST /api/batch-releases/:id/approve` - approve and reserve the product run
 - `POST /api/batch-releases/:id/reject` - return with a required reason
+- `POST /api/batch-releases/:id/targets/:printerId/apply` - send an approved target to its assigned printer
+- `POST /api/batch-releases/:id/targets/:printerId/print-check` - record the operator's first-print verification
 
 ## First run
 

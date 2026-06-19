@@ -26,6 +26,8 @@ const nodes = {
   masterFieldMappings: document.getElementById('masterFieldMappings'),
   masterPrinters: document.getElementById('masterPrinters'),
   releaseSection: document.getElementById('batchReleaseSection'),
+  releaseTitle: document.getElementById('batchReleaseTitle'),
+  releaseHelp: document.getElementById('batchReleaseHelp'),
   releaseForm: document.getElementById('batchReleaseForm'),
   releaseMaster: document.getElementById('releaseProductMaster'),
   releaseBrewProduct: document.getElementById('releaseBrewProduct'),
@@ -34,6 +36,8 @@ const nodes = {
   releaseProductionAt: document.getElementById('releaseProductionAt'),
   releasePrinters: document.getElementById('releasePrinters'),
   releaseNotes: document.getElementById('releaseNotes'),
+  saveRelease: document.getElementById('saveBatchRelease'),
+  cancelReleaseEdit: document.getElementById('cancelBatchReleaseEdit'),
   list: document.getElementById('batchReleaseList'),
   dialog: document.getElementById('releaseReviewDialog'),
   dialogTitle: document.getElementById('releaseReviewDialogTitle'),
@@ -48,7 +52,10 @@ const nodes = {
   confirmDialog: document.getElementById('confirmReleaseReview')
 };
 
-const state = { masters: [], releases: [], printers: [], messages: [], review: null };
+const state = {
+  masters: [], releases: [], printers: [], messages: [], review: null, reviewHeartbeat: null,
+  presenceSweep: null, editingReleaseId: null, openAuditId: null, audits: new Map()
+};
 
 function selectedMaster() {
   return state.masters.find((master) => master.id === nodes.releaseMaster.value) || null;
@@ -134,20 +141,60 @@ function canApprove(release) {
   return release.createdByUsername.toLowerCase() !== String(session?.user?.username || '').toLowerCase();
 }
 
+function reviewClaimMine(release) {
+  const claim = release.reviewClaim;
+  const user = currentSession()?.user;
+  if (!claim || !user) return false;
+  if (claim.claimedByUserId && user.id) return claim.claimedByUserId === user.id;
+  return claim.claimedByUsername.toLowerCase() === String(user.username || '').toLowerCase();
+}
+
 function releaseActions(release) {
   const actions = [];
   if (hasCapability('createBatchReleases') && ['draft', 'rejected'].includes(release.status)) {
+    actions.push(el('button', { className: 'ghost bordered', type: 'button', dataset: { releaseAction: 'edit', releaseId: release.id }, text: 'Edit' }));
+  }
+  if (hasCapability('createBatchReleases') && release.status === 'draft') {
     actions.push(el('button', { className: 'secondary', type: 'button', dataset: { releaseAction: 'submit', releaseId: release.id }, text: 'Submit for review' }));
   }
   if (hasCapability('reviewBatchReleases') && release.status === 'pending_review') {
+    const claimedByOther = release.reviewClaim && !reviewClaimMine(release);
     actions.push(el('button', {
-      className: 'primary', type: 'button', disabled: canApprove(release) ? null : 'disabled',
-      title: canApprove(release) ? null : 'A different person must approve this release.',
+      className: 'primary', type: 'button', disabled: canApprove(release) && !claimedByOther ? null : 'disabled',
+      title: claimedByOther ? `${release.reviewClaim.claimedByUsername} is reviewing this release.` : (canApprove(release) ? null : 'A different person must approve this release.'),
       dataset: { releaseAction: 'review', releaseId: release.id }, text: 'Open independent review'
     }));
-    actions.push(el('button', { className: 'ghost bordered', type: 'button', dataset: { releaseAction: 'reject', releaseId: release.id }, text: 'Reject' }));
+    actions.push(el('button', {
+      className: 'ghost bordered', type: 'button', disabled: claimedByOther ? 'disabled' : null,
+      title: claimedByOther ? `${release.reviewClaim.claimedByUsername} is reviewing this release.` : null,
+      dataset: { releaseAction: 'reject', releaseId: release.id }, text: 'Reject'
+    }));
   }
+  actions.push(el('button', { className: 'ghost bordered', type: 'button', dataset: { releaseAction: 'history', releaseId: release.id }, text: state.openAuditId === release.id ? 'Hide history' : 'History' }));
   return actions.length ? el('div', { className: 'actions release-row-actions' }, actions) : null;
+}
+
+function auditLabel(action) {
+  return String(action || 'event').replace(/^batch-release-/, '').replaceAll('-', ' ');
+}
+
+function releaseAudit(release) {
+  if (state.openAuditId !== release.id) return null;
+  const events = state.audits.get(release.id);
+  if (!events) return el('section', { className: 'release-audit' }, [el('p', { className: 'muted', text: 'Loading release history...' })]);
+  if (!events.length) return el('section', { className: 'release-audit' }, [el('p', { className: 'muted', text: 'No recorded changes for this release.' })]);
+  return el('section', { className: 'release-audit' }, [
+    el('h5', { text: 'Release history' }),
+    el('ol', { className: 'release-audit-list' }, events.map((event) => el('li', {}, [
+      el('span', { className: 'release-audit-marker' }),
+      el('div', {}, [
+        el('strong', { text: auditLabel(event.action) }),
+        el('p', { text: `${event.actorUsername || 'System'} · ${new Date(event.occurredAt).toLocaleString()}` }),
+        event.details?.reason ? el('small', { text: `Reason: ${event.details.reason}` }) : null,
+        event.details?.previousStatus ? el('small', { text: `${event.details.previousStatus.replaceAll('_', ' ')} → ${event.details.status.replaceAll('_', ' ')}` }) : null
+      ])
+    ])))
+  ]);
 }
 
 function renderReleases() {
@@ -183,11 +230,16 @@ function renderReleases() {
           fact('Printers', release.printerIds.map((id) => state.printers.find((printer) => printer.id === id)?.name || id).join(', '))
         ]),
         release.expectedOutput ? el('pre', { className: 'release-output', text: release.expectedOutput.rendered }) : null,
+        release.reviewClaim ? el('p', {
+          className: `release-presence ${reviewClaimMine(release) ? 'mine' : ''}`,
+          text: reviewClaimMine(release) ? 'You are reviewing this release now' : `${release.reviewClaim.claimedByUsername} is reviewing this release now`
+        }) : null,
         release.rejectionReason ? el('p', { className: 'release-rejection', text: `Rejected: ${release.rejectionReason}` }) : null,
         el('div', { className: 'release-row-footer' }, [
           el('small', { text: `Created by ${release.createdByUsername} · Pinned master version ${release.productMasterVersion || '?'}` }),
           releaseActions(release)
-        ])
+        ]),
+        releaseAudit(release)
       ])
     ]));
   }
@@ -223,9 +275,10 @@ async function createMaster(event) {
 async function createRelease(event) {
   event.preventDefault();
   const printerIds = [...nodes.releasePrinters.querySelectorAll('[data-release-printer]:checked')].map((input) => input.value);
-  setNotice(nodes.notice, 'Saving draft release...');
+  const editing = Boolean(state.editingReleaseId);
+  setNotice(nodes.notice, editing ? 'Saving release changes...' : 'Saving draft release...');
   try {
-    const data = await apiJson('/api/batch-releases', { method: 'POST', body: {
+    const data = await apiJson(editing ? `/api/batch-releases/${encodeURIComponent(state.editingReleaseId)}` : '/api/batch-releases', { method: editing ? 'PUT' : 'POST', body: {
       productMasterId: nodes.releaseMaster.value,
       brewSheetProduct: nodes.releaseBrewProduct.value,
       brewNumber: nodes.releaseBrewNumber.value,
@@ -234,17 +287,91 @@ async function createRelease(event) {
       printerIds,
       notes: nodes.releaseNotes.value
     }});
-    state.releases.unshift(data.release);
-    renderReleases();
-    nodes.releaseForm.reset();
-    setDefaultProductionTime(); renderMasterOptions();
+    await loadReleaseWorkflow();
+    resetReleaseForm();
     nodes.formWorkspace.classList.add('hidden');
-    setNotice(nodes.notice, 'Draft saved. Submit it when the brew-sheet values are ready for independent review.', 'success');
+    setNotice(nodes.notice, editing ? 'Changes saved as a draft. It can now be submitted for review again.' : 'Draft saved. Submit it when the brew-sheet values are ready for independent review.', 'success');
   } catch (error) { setNotice(nodes.notice, normalizeError(error), 'error'); }
 }
 
-function openReview(release, mode) {
+function localDateTime(value) {
+  const date = new Date(value);
+  return new Date(date.valueOf() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function resetReleaseForm() {
+  state.editingReleaseId = null;
+  nodes.releaseForm.reset();
+  nodes.releaseMaster.disabled = false;
+  nodes.releaseTitle.textContent = 'New batch release';
+  nodes.releaseHelp.textContent = 'Run numbers are reserved only after independent approval.';
+  nodes.saveRelease.textContent = 'Save draft';
+  nodes.cancelReleaseEdit.classList.add('hidden');
+  setDefaultProductionTime();
+  renderMasterOptions();
+}
+
+function editRelease(release) {
+  state.editingReleaseId = release.id;
+  nodes.formWorkspace.classList.remove('hidden');
+  nodes.masterSection.classList.add('hidden');
+  nodes.releaseSection.classList.remove('hidden');
+  nodes.releaseTitle.textContent = release.status === 'rejected' ? 'Correct rejected release' : 'Edit draft release';
+  nodes.releaseHelp.textContent = release.status === 'rejected'
+    ? `Review feedback: ${release.rejectionReason}`
+    : 'Update the draft values before submitting for independent review.';
+  nodes.releaseMaster.value = release.productMasterId;
+  nodes.releaseMaster.disabled = true;
+  nodes.releaseBrewProduct.value = release.brewSheetProduct;
+  nodes.releaseBrewNumber.value = release.brewNumber || '';
+  nodes.releaseBatchNumber.value = release.batchNumber || '';
+  nodes.releaseProductionAt.value = localDateTime(release.plannedProductionAt);
+  nodes.releaseNotes.value = release.notes || '';
+  renderReleasePrinters();
+  for (const input of nodes.releasePrinters.querySelectorAll('[data-release-printer]')) input.checked = release.printerIds.includes(input.value);
+  nodes.saveRelease.textContent = 'Save changes';
+  nodes.cancelReleaseEdit.classList.remove('hidden');
+  nodes.releaseBrewProduct.focus();
+  nodes.releaseSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function toggleReleaseAudit(release) {
+  if (state.openAuditId === release.id) {
+    state.openAuditId = null;
+    renderReleases();
+    return;
+  }
+  state.openAuditId = release.id;
+  renderReleases();
+  try {
+    state.audits.set(release.id, await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/audit`));
+  } catch (error) {
+    state.audits.set(release.id, [{ action: 'history-error', actorUsername: normalizeError(error), occurredAt: new Date().toISOString(), details: {} }]);
+  }
+  renderReleases();
+}
+
+async function openReview(release, mode) {
+  try {
+    const result = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/review-claim`, { method: 'POST', body: {} });
+    Object.assign(release, result.release);
+  } catch (error) {
+    if (error.data?.reviewClaim) release.reviewClaim = error.data.reviewClaim;
+    renderReleases();
+    setNotice(nodes.notice, normalizeError(error), 'error');
+    return;
+  }
   state.review = { release, mode };
+  window.clearInterval(state.reviewHeartbeat);
+  state.reviewHeartbeat = window.setInterval(async () => {
+    try {
+      const result = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/review-claim`, { method: 'POST', body: {}, timeoutMs: 10000 });
+      Object.assign(release, result.release);
+      renderReleases();
+    } catch (error) {
+      setNotice(nodes.dialogNotice, `Review presence could not be renewed: ${normalizeError(error)}`, 'error');
+    }
+  }, 15000);
   const master = state.masters.find((item) => item.id === release.productMasterId);
   nodes.dialogTitle.textContent = mode === 'approve' ? 'Independent release review' : 'Reject production release';
   clear(nodes.dialogBody);
@@ -263,6 +390,20 @@ function openReview(release, mode) {
   nodes.confirmDialog.className = mode === 'approve' ? 'primary' : 'danger';
   setNotice(nodes.dialogNotice);
   nodes.dialog.showModal();
+  renderReleases();
+}
+
+function stopReviewClaim(releaseOnServer = true) {
+  window.clearInterval(state.reviewHeartbeat);
+  state.reviewHeartbeat = null;
+  const release = state.review?.release;
+  state.review = null;
+  if (!release) return;
+  release.reviewClaim = null;
+  renderReleases();
+  if (releaseOnServer) {
+    apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/review-claim`, { method: 'DELETE' }).catch(() => {});
+  }
 }
 
 async function performReview() {
@@ -273,6 +414,7 @@ async function performReview() {
   nodes.confirmDialog.disabled = true;
   try {
     await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/${mode}`, { method: 'POST', body: mode === 'reject' ? { reason: nodes.rejectionReason.value } : {} });
+    stopReviewClaim(false);
     nodes.dialog.close();
     await loadReleaseWorkflow();
     setNotice(nodes.notice, mode === 'approve' ? 'Release approved and product run reserved.' : 'Release returned with a rejection reason.', 'success');
@@ -283,6 +425,8 @@ async function performReview() {
 async function handleReleaseAction(button) {
   const release = state.releases.find((item) => item.id === button.dataset.releaseId);
   if (!release) return;
+  if (button.dataset.releaseAction === 'edit') return editRelease(release);
+  if (button.dataset.releaseAction === 'history') return toggleReleaseAudit(release);
   if (button.dataset.releaseAction === 'review') return openReview(release, 'approve');
   if (button.dataset.releaseAction === 'reject') return openReview(release, 'reject');
   button.disabled = true;
@@ -299,6 +443,21 @@ function setDefaultProductionTime() {
   next.setMinutes(0, 0, 0);
   const local = new Date(next.valueOf() - next.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   nodes.releaseProductionAt.value = local;
+}
+
+function applyReleasePresence(payload) {
+  const release = state.releases.find((item) => item.id === payload?.releaseId);
+  if (!release) return;
+  release.reviewClaim = payload.reviewClaim || null;
+  if (payload.status) release.status = payload.status;
+  if (state.review?.release.id === release.id && release.reviewClaim && !reviewClaimMine(release)) {
+    const claimedBy = release.reviewClaim.claimedByUsername;
+    stopReviewClaim(false);
+    if (nodes.dialog.open) nodes.dialog.close();
+    setNotice(nodes.notice, `${claimedBy} is now reviewing this release.`, 'error');
+    return;
+  }
+  renderReleases();
 }
 
 async function loadReleaseWorkflow() {
@@ -329,18 +488,35 @@ function setupReleaseWorkflow() {
     nodes.masterProductCode.focus();
   });
   nodes.openRelease.addEventListener('click', () => {
+    resetReleaseForm();
     nodes.formWorkspace.classList.remove('hidden');
     nodes.masterSection.classList.add('hidden');
     nodes.releaseSection.classList.remove('hidden');
     nodes.releaseMaster.focus();
   });
+  nodes.cancelReleaseEdit.addEventListener('click', () => {
+    resetReleaseForm();
+    nodes.formWorkspace.classList.add('hidden');
+  });
   nodes.refresh.addEventListener('click', async (event) => { event.preventDefault(); try { await loadReleaseWorkflow(); setNotice(nodes.notice); } catch (error) { setNotice(nodes.notice, normalizeError(error), 'error'); } });
   nodes.list.addEventListener('click', (event) => { const button = event.target.closest('[data-release-action]'); if (button) handleReleaseAction(button); });
-  nodes.closeDialog.addEventListener('click', () => nodes.dialog.close());
-  nodes.cancelDialog.addEventListener('click', () => nodes.dialog.close());
+  nodes.closeDialog.addEventListener('click', () => { stopReviewClaim(); nodes.dialog.close(); });
+  nodes.cancelDialog.addEventListener('click', () => { stopReviewClaim(); nodes.dialog.close(); });
+  nodes.dialog.addEventListener('cancel', () => stopReviewClaim());
   nodes.confirmDialog.addEventListener('click', performReview);
   window.addEventListener('messages-saved', () => loadReleaseWorkflow().catch((error) => setNotice(nodes.notice, normalizeError(error), 'error')));
+  window.clearInterval(state.presenceSweep);
+  state.presenceSweep = window.setInterval(() => {
+    let changed = false;
+    for (const release of state.releases) {
+      if (release.reviewClaim && new Date(release.reviewClaim.expiresAt).valueOf() <= Date.now()) {
+        release.reviewClaim = null;
+        changed = true;
+      }
+    }
+    if (changed) renderReleases();
+  }, 5000);
   setDefaultProductionTime();
 }
 
-export { loadReleaseWorkflow, setupReleaseWorkflow };
+export { applyReleasePresence, loadReleaseWorkflow, setupReleaseWorkflow };

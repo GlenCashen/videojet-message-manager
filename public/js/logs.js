@@ -19,14 +19,27 @@ function renderLogs(logs) {
   }
 
   for (const log of cachedLogs) {
+    const details = log.details || {};
+    const succeeded = details.ok ?? log.ok;
+    const target = log.targetType
+      ? `${log.targetType}${log.targetId ? ` · ${log.targetId.slice(0, 8)}` : ''}`
+      : (log.printerId || details.printerId || '');
+    const detail = details.reason
+      || details.runCode
+      || details.brewSheetProduct
+      || log.selectedMessage
+      || log.message
+      || log.expectedMessage
+      || log.fieldValue
+      || '';
     const row = el('tr');
-    addCell(row, formatDate(log.time));
+    addCell(row, formatDate(log.occurredAt || log.time));
     addCell(row, log.action || '');
-    addCell(row, log.printerId || '');
-    addCell(row, log.selectedMessage || log.message || log.expectedMessage || '');
-    addCell(row, log.fieldValue || '');
-    addCell(row, log.status || '');
-    addCell(row, log.ok ? 'OK' : log.error || 'Failed', log.ok ? 'result-ok' : 'result-bad');
+    addCell(row, log.actorUsername || log.actor || 'System');
+    addCell(row, target);
+    addCell(row, detail);
+    addCell(row, details.status || log.status || '');
+    addCell(row, succeeded === false ? details.error || log.error || 'Failed' : 'OK', succeeded === false ? 'result-bad' : 'result-ok');
     elements.logBody.appendChild(row);
   }
 }

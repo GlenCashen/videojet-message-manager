@@ -207,7 +207,7 @@
 
           <section id="batchReleaseSection" class="sub-panel" aria-labelledby="batchReleaseTitle">
             <h3 id="batchReleaseTitle">New batch release</h3>
-            <p class="muted">Run numbers are reserved only after independent approval.</p>
+            <p id="batchReleaseHelp" class="muted">Run numbers are reserved only after independent approval.</p>
             <form id="batchReleaseForm" class="message-job-builder">
               <label>Product master<select id="releaseProductMaster" required></select></label>
               <label>Brew-sheet product<input id="releaseBrewProduct" placeholder="TBUNDRC-50" maxlength="50" required></label>
@@ -216,7 +216,10 @@
               <label>Planned production<input id="releaseProductionAt" type="datetime-local" required></label>
               <fieldset id="releasePrinters" class="message-job-target-picker wide"><legend>Target printers</legend></fieldset>
               <label class="wide">Notes<textarea id="releaseNotes" rows="3" maxlength="1000"></textarea></label>
-              <div class="actions wide"><button class="secondary" type="submit">Save draft</button></div>
+              <div class="actions wide">
+                <button id="cancelBatchReleaseEdit" class="ghost bordered hidden" type="button">Cancel edit</button>
+                <button id="saveBatchRelease" class="secondary" type="submit">Save draft</button>
+              </div>
             </form>
           </section>
         </div>
@@ -427,9 +430,9 @@
               <tr>
                 <th>Time</th>
                 <th>Action</th>
-                <th>Coder</th>
-                <th>Message</th>
-                <th>Field value</th>
+                <th>Actor</th>
+                <th>Target</th>
+                <th>Details</th>
                 <th>Status</th>
                 <th>Result</th>
               </tr>
