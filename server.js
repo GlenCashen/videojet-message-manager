@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readPrinters, updatePrinter } from './printer-store.js';
 import { createSessionManager } from './server/auth.js';
 import { CoderQueue } from './server/coder-queue.js';
+import { requestCurrentMessage } from './server/current-message.js';
 import { databaseStatus } from './server/db.js';
 import { importJsonToSqlite } from './server/migrate-json-to-sqlite.js';
 import {
@@ -973,6 +974,83 @@ app.get('/api/printers/status', async (_req, res) => {
     res.json(statusCache.all().filter((status) => visibleIds.has(status.printerId)));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/printer/current-message', async (req, res) => {
+  let printer = null;
+  let target = null;
+  const checkedAt = () => new Date().toISOString();
+
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const printers = await readPrinters();
+    const visible = visiblePrinters(user, printers);
+    printer = req.query.printerId
+      ? printers.find((item) => item.id === req.query.printerId)
+      : visible.find((item) => item.enabled) || visible[0];
+
+    if (!printer) {
+      return res.status(404).json({ ok: false, printer: null, error: 'No accessible printer was found.', rawCode: null, checkedAt: checkedAt() });
+    }
+    if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
+
+    target = printerTarget(printer);
+    const address = `${target.ip}:${target.port}`;
+    addLog({
+      action: 'current-message-request-start',
+      printerId: printer.id,
+      targetHost: target.ip,
+      targetPort: target.port,
+      mode: printer.mode,
+      ok: true
+    });
+
+    if (!printer.enabled) {
+      const error = new Error(`${printer.name} is disabled.`);
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const readback = await coderQueue.run(
+      printer.id,
+      { operation: 'current-message-readback' },
+      () => requestCurrentMessage(wsiClient, { printerId: printer.id, ...target })
+    );
+    const result = { ok: true, printer: address, ...readback, checkedAt: checkedAt() };
+    addLog({
+      action: 'current-message-request-success',
+      printerId: printer.id,
+      targetHost: target.ip,
+      targetPort: target.port,
+      currentMessage: result.currentMessage,
+      rawCode: result.rawCode,
+      rawResponseHex: result.rawResponseHex,
+      ok: true
+    });
+    res.json(result);
+  } catch (error) {
+    const address = target ? `${target.ip}:${target.port}` : null;
+    const result = {
+      ok: false,
+      printer: address,
+      error: error.message || 'Current-message readback failed.',
+      rawCode: error.rawCode || null,
+      checkedAt: checkedAt()
+    };
+    if (error.rawResponseHex) result.rawResponseHex = error.rawResponseHex;
+    addLog({
+      action: 'current-message-request-failure',
+      printerId: printer?.id || null,
+      targetHost: target?.ip || null,
+      targetPort: target?.port || null,
+      error: result.error,
+      rawCode: result.rawCode,
+      rawResponseHex: result.rawResponseHex || null,
+      ok: false
+    });
+    res.status(error.statusCode || 502).json(result);
   }
 });
 

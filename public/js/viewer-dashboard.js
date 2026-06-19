@@ -24,6 +24,7 @@ const state = {
   printers: {},
   order: [],
   statuses: {},
+  readbacks: {},
   serverConnected: false,
   lastServerEventAt: Date.now()
 };
@@ -46,6 +47,50 @@ function cardClass(status) {
   const alarm = status?.decodedStatus?.alarm?.primary;
   const alarmClass = alarm ? ` alarm-${alarm}` : '';
   return `viewer-card status-${statusTone(status || {})}${alarmClass}`;
+}
+
+function expectedMessage(status) {
+  return status?.expectedOutput?.printerMessageName || null;
+}
+
+function readbackStatus(status, readback) {
+  if (readback?.loading) return 'READING';
+  if (readback?.ok === false) return 'FAILED';
+  if (!readback?.ok) return 'NOT CHECKED';
+  const expected = expectedMessage(status);
+  return expected && expected !== readback.currentMessage ? 'MISMATCH' : 'OK';
+}
+
+function createReadback(printer, status) {
+  const readback = state.readbacks[printer.id] || {};
+  const expected = expectedMessage(status);
+  const resultStatus = readbackStatus(status, readback);
+  const tone = resultStatus === 'FAILED' || resultStatus === 'MISMATCH' ? 'bad' : resultStatus === 'OK' ? 'good' : 'neutral';
+  const button = el('button', {
+    className: 'secondary',
+    type: 'button',
+    dataset: { action: 'refresh-current-message', id: printer.id }
+  }, readback.loading ? 'Refreshing...' : 'Refresh current message');
+  button.disabled = Boolean(readback.loading || !printer.enabled);
+
+  return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [
+    el('div', { className: 'readback-heading' }, [
+      el('strong', { text: 'Current printer message' }),
+      el('span', { className: `badge ${tone}`, text: resultStatus })
+    ]),
+    el('div', { className: 'readback-facts' }, [
+      el('span', { text: 'Printer address' }),
+      el('strong', { text: readback.printer || `${printer.host}:${printer.port}` }),
+      expected ? el('span', { text: 'Expected message' }) : null,
+      expected ? el('strong', { text: expected }) : null,
+      el('span', { text: 'Current printer message' }),
+      el('strong', { text: readback.currentMessage || '-' }),
+      el('span', { text: 'Last checked' }),
+      el('strong', { text: readback.checkedAt ? new Date(readback.checkedAt).toLocaleString() : 'Not checked' })
+    ]),
+    readback.error ? el('p', { className: 'card-error', text: readback.error }) : null,
+    button
+  ]);
 }
 
 function createCard(printer) {
@@ -86,9 +131,30 @@ function createCard(printer) {
       el('span', { text: 'Expected print' }),
       el('pre', { text: expectedOutputText(status) })
     ]),
+    createReadback(printer, status),
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
     el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View printer')
   ]);
+}
+
+async function refreshCurrentMessage(id) {
+  const printer = state.printers[id];
+  if (!printer) return;
+  state.readbacks[id] = { ...state.readbacks[id], loading: true, error: '' };
+  render();
+
+  try {
+    state.readbacks[id] = await apiJson(`/api/printer/current-message?printerId=${encodeURIComponent(id)}`);
+  } catch (error) {
+    state.readbacks[id] = {
+      ...(error.data || {}),
+      ok: false,
+      printer: error.data?.printer || `${printer.host}:${printer.port}`,
+      error: normalizeError(error),
+      checkedAt: error.data?.checkedAt || new Date().toISOString()
+    };
+  }
+  render();
 }
 
 function render() {
@@ -145,6 +211,11 @@ async function loadInitialData() {
 }
 
 elements.grid.addEventListener('click', (event) => {
+  const refreshButton = event.target.closest('button[data-action="refresh-current-message"]');
+  if (refreshButton) {
+    refreshCurrentMessage(refreshButton.dataset.id);
+    return;
+  }
   if (event.target.closest('a')) return;
   const card = event.target.closest('[data-href]');
   if (card) window.location.href = card.dataset.href;

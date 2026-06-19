@@ -1,14 +1,26 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-async function waitForServer(baseUrl, child) {
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '0.0.0.0', () => {
+      const { port } = server.address();
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+async function waitForServer(baseUrl, child, output = []) {
   let lastError;
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    if (child.exitCode !== null) throw new Error(`Server exited early with code ${child.exitCode}.`);
+    if (child.exitCode !== null) throw new Error(`Server exited early with code ${child.exitCode}.\n${output.join('')}`);
     try {
       const response = await fetch(`${baseUrl}/api/config`);
       if (response.ok) return;
@@ -21,8 +33,8 @@ async function waitForServer(baseUrl, child) {
 }
 
 test('preview endpoint does not issue WSI commands', async () => {
-  const port = 36080 + Math.floor(Math.random() * 1000);
-  const emulatorPort = 37080 + Math.floor(Math.random() * 1000);
+  const port = await freePort();
+  const emulatorPort = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
@@ -44,7 +56,7 @@ test('preview endpoint does not issue WSI commands', async () => {
   child.stderr.on('data', (chunk) => output.push(chunk.toString()));
 
   try {
-    await waitForServer(baseUrl, child);
+    await waitForServer(baseUrl, child, output);
     await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
     const response = await fetch(`${baseUrl}/api/messages/12-month/preview`, {
       method: 'POST',
@@ -73,8 +85,8 @@ test('preview endpoint does not issue WSI commands', async () => {
 });
 
 test('fault history API records activation and clear from emulator checks', async () => {
-  const port = 36080 + Math.floor(Math.random() * 1000);
-  const emulatorPort = 37080 + Math.floor(Math.random() * 1000);
+  const port = await freePort();
+  const emulatorPort = await freePort();
   const dir = await mkdtemp(path.join(tmpdir(), 'fault-api-'));
   const faultHistoryPath = path.join(dir, 'fault-history.json');
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -110,14 +122,15 @@ test('fault history API records activation and clear from emulator checks', asyn
   }
 
   try {
-    await waitForServer(baseUrl, child);
+    await waitForServer(baseUrl, child, output);
     await fetch(`${baseUrl}/api/emulator`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: '4000004' })
     });
     const check = await fetch(`${baseUrl}/api/printers/coder-2/check`, { method: 'POST' });
-    assert.equal(check.ok, true);
+    const checkResult = await check.json();
+    assert.equal(check.ok, true, JSON.stringify(checkResult));
 
     const activated = await waitForHistory(1);
     assert.equal(activated.activeFaults.length, 1);
@@ -146,6 +159,82 @@ test('fault history API records activation and clear from emulator checks', asyn
 
     const unknown = await fetch(`${baseUrl}/api/printers/missing/faults`);
     assert.equal(unknown.status, 404);
+  } finally {
+    const exitPromise = child.exitCode === null
+      ? new Promise((resolve) => child.once('exit', resolve))
+      : Promise.resolve();
+    child.kill();
+    await exitPromise;
+    if (child.exitCode && child.exitCode !== 0 && child.exitCode !== 1) {
+      throw new Error(output.join(''));
+    }
+  }
+});
+
+test('current-message endpoint tracks emulator selection and reports rejection safely', async () => {
+  const port = await freePort();
+  const emulatorPort = await freePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      PORT: String(port),
+      POLL_INTERVAL_MS: '0',
+      EMULATOR_PORT: String(emulatorPort),
+      DB_PATH: path.join(tmpdir(), `vmm-current-message-${port}.db`),
+      ENABLE_DEV_IDENTITY: 'true',
+      DEV_USER_ROLE: 'engineering'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  const output = [];
+  child.stdout.on('data', (chunk) => output.push(chunk.toString()));
+  child.stderr.on('data', (chunk) => output.push(chunk.toString()));
+
+  try {
+    await waitForServer(baseUrl, child, output);
+
+    const initialResponse = await fetch(`${baseUrl}/api/printer/current-message`);
+    assert.equal(initialResponse.ok, true);
+    const initial = await initialResponse.json();
+    assert.equal(initial.currentMessage, '9 MONTH');
+    assert.equal(initial.printer, `127.0.0.1:${emulatorPort}`);
+    assert.match(initial.rawResponseHex, /^02 /);
+
+    const setResponse = await fetch(`${baseUrl}/api/printers/coder-1/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messageId: '12-month',
+        fields: { brew: 'BR1246', batch: 'B260617A' }
+      })
+    });
+    const setResult = await setResponse.json();
+    assert.equal(setResponse.ok, true, JSON.stringify(setResult));
+
+    const changedResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
+    assert.equal(changedResponse.ok, true);
+    assert.equal((await changedResponse.json()).currentMessage, '12 MONTH');
+
+    await fetch(`${baseUrl}/api/emulator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ failNextCommand: true })
+    });
+    const failedResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
+    assert.equal(failedResponse.status, 502);
+    const failed = await failedResponse.json();
+    assert.equal(failed.ok, false);
+    assert.equal(failed.rawCode, '!51');
+    assert.equal(failed.rawResponseHex, '21 35 31');
+    assert.match(failed.error, /rejected/i);
+
+    const recoveredResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
+    assert.equal(recoveredResponse.ok, true);
+    assert.equal((await recoveredResponse.json()).currentMessage, '12 MONTH');
   } finally {
     const exitPromise = child.exitCode === null
       ? new Promise((resolve) => child.once('exit', resolve))

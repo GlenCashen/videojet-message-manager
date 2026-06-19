@@ -489,6 +489,40 @@ h3 { margin: 0; font-size: 1.15rem; }
   padding: 12px;
 }
 
+.current-message-readback {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+}
+
+.readback-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.readback-facts {
+  display: grid;
+  grid-template-columns: minmax(130px, .8fr) minmax(0, 1fr);
+  gap: 7px 12px;
+}
+
+.readback-facts span {
+  color: var(--muted-2);
+  font-size: .78rem;
+}
+
+.readback-facts strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.current-message-readback button { justify-self: start; }
+
 .coder-card {
   display: grid;
   grid-template-rows: auto 1fr auto auto;

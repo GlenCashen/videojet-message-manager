@@ -10,6 +10,7 @@ const { createSessionManager } = await import('../server/auth.js');
 const { insertAuditEvent, listAuditEvents } = await import('../server/repositories/audit-repository.js');
 const { upsertExpectedOutput, listExpectedOutputs } = await import('../server/repositories/expected-output-repository.js');
 const { insertFaultEvents, listFaultEvents } = await import('../server/repositories/fault-repository.js');
+const { insertMessageUpdateEvent } = await import('../server/repositories/message-update-repository.js');
 const { upsertMessage, listMessagesForPrinter } = await import('../server/repositories/message-repository.js');
 const { replacePrinters, listPrinters } = await import('../server/repositories/printer-repository.js');
 const { upsertUserRecord, getUserByUsername, replaceRoles, replacePrinterAssignments } = await import('../server/repositories/user-repository.js');
@@ -138,6 +139,33 @@ test('fault and audit repositories query by printer and paginate', () => {
     listAuditEvents({ printerId: 'coder-1', limit: 1 }, db).map((event) => event.action),
     ['MESSAGE_UPDATE']
   );
+});
+
+test('message update events use a unique event id for repeated printer updates', () => {
+  const db = getDb();
+  seedPrinters(db);
+
+  const update = {
+    id: 'coder-1',
+    printerId: 'coder-1',
+    messageId: null,
+    fields: { batch: 'ABC' },
+    ok: true,
+    messageMatches: true,
+    checkedAt: '2026-01-01T00:00:00.000Z'
+  };
+
+  insertMessageUpdateEvent(update, { id: 'dev-user', username: 'dev-engineering', developmentIdentity: true }, db);
+  insertMessageUpdateEvent(update, {}, db);
+
+  const events = db.prepare(`
+    SELECT id, printer_id
+    FROM message_update_events
+    WHERE printer_id = ?
+  `).all('coder-1');
+
+  assert.equal(events.length, 2);
+  assert.equal(new Set(events.map((event) => event.id)).size, 2);
 });
 
 test('SQLite-backed sessions survive a manager restart', () => {

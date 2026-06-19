@@ -601,6 +601,25 @@ async function confirmPrinterUpdate() {
     });
     hideReview();
     showUpdateResult(result);
+    try {
+      const readback = await apiJson(`/api/printer/current-message?printerId=${encodeURIComponent(printerId)}`);
+      applyPrinterStatus({
+        printerId,
+        selectedMessage: readback.currentMessage,
+        checkedAt: readback.checkedAt
+      });
+      if (readback.currentMessage !== result.requestedMessage) {
+        setNotice(
+          elements.message,
+          `MESSAGE MISMATCH\n\nRequested: ${result.requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
+          'error'
+        );
+      } else {
+        showUpdateResult(result);
+      }
+    } catch (readbackError) {
+      setNotice(elements.message, `Message change sent, but readback failed: ${normalizeError(readbackError)}`, 'error');
+    }
   } catch (error) {
     hideReview();
     if (error.data?.fieldResults || error.data?.selectedMessage) showUpdateResult(error.data);

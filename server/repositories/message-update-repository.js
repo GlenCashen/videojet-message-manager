@@ -19,11 +19,11 @@ function insertMessageUpdateEvent(update, actor = {}, db = getDb()) {
       @fieldsJson, @fieldResultsJson, @messageSelectionResultJson, @result, @errorCode, @errorMessage, @occurredAt
     )
   `).run({
-    id: update.id || crypto.randomUUID(),
+    id: crypto.randomUUID(),
     printerId: update.printerId || update.id,
     messageId: update.expectedOutput?.messageId || update.messageId || null,
     printerMessageName: update.requestedMessage || update.expectedMessage || update.expectedOutput?.printerMessageName || null,
-    actorUserId: actor.id || null,
+    actorUserId: actor.developmentIdentity ? null : actor.id || null,
     actorUsername: actor.username || null,
     fieldsJson: JSON.stringify(update.expectedOutput?.fields || update.fields || {}),
     fieldResultsJson: update.fieldResults ? JSON.stringify(update.fieldResults) : null,
