@@ -2,11 +2,12 @@ import express from 'express';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readPrinters, updatePrinter } from './printer-store.js';
+import { createPrinter, deletePrinter, readPrinters, updatePrinter } from './printer-store.js';
 import { createSessionManager } from './server/auth.js';
 import { CoderQueue } from './server/coder-queue.js';
 import { requestCurrentMessage } from './server/current-message.js';
-import { printerCapabilities } from './server/printer-capabilities.js';
+import { EmulatorManager } from './server/emulator-manager.js';
+import { ReadbackCapabilityRegistry } from './server/readback-capability-registry.js';
 import { databaseStatus } from './server/db.js';
 import { importJsonToSqlite } from './server/migrate-json-to-sqlite.js';
 import {
@@ -51,6 +52,7 @@ import {
   changePassword,
   createUser,
   ensureBootstrapAdmin,
+  findUserById,
   listUsers,
   updateUser
 } from './server/user-store.js';
@@ -58,7 +60,6 @@ import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-r
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { WsiClient } from './server/wsi-client.js';
 import { assertPacketResponse, failureMessage } from './server/wsi-response.js';
-import { decodeStatus, encodeStatus, faultDefinitions } from './server/wsi-status.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,6 +73,7 @@ const BETWEEN_COMMAND_DELAY_MS = Number(process.env.BETWEEN_COMMAND_DELAY_MS || 
 const BETWEEN_CODER_DELAY_MS = Number(process.env.BETWEEN_CODER_DELAY_MS || 300);
 const EMULATOR_HOST = process.env.EMULATOR_HOST || '127.0.0.1';
 const EMULATOR_PORT = Number(process.env.EMULATOR_PORT || 3100);
+const EMULATOR_PORT_OFFSET = process.env.EMULATOR_PORT ? EMULATOR_PORT - 3100 : 0;
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS || process.env.STATUS_POLL_MS || 5000);
 const STALE_AFTER_MS = Number(process.env.STALE_AFTER_MS || 15000);
 const OFFLINE_AFTER_FAILURES = Number(process.env.OFFLINE_AFTER_FAILURES || 3);
@@ -158,8 +160,16 @@ const MAX_LOG_ENTRIES = 200;
 const eventClients = new Set();
 const coderQueue = new CoderQueue();
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
+const readbackCapabilities = new ReadbackCapabilityRegistry();
 const stateChangingOperations = new Set();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const emulatorManager = new EmulatorManager({
+  host: EMULATOR_HOST,
+  portOffset: EMULATOR_PORT_OFFSET,
+  delay,
+  onError: (message) => console.error(message)
+});
+await emulatorManager.sync(startupPrinters);
 let persistedPrinterState = await loadPrinterState();
 const faultHistory = await createFaultHistoryStore({ filePath: FAULT_HISTORY_PATH, limit: FAULT_HISTORY_LIMIT });
 
@@ -226,18 +236,40 @@ function devIdentityFromRequest(req) {
   return developmentUser({ role, printerIds });
 }
 
+function realAuthenticatedUser(req) {
+  return auth.read(parseCookies(req.headers.cookie || '')[auth.cookieName]);
+}
+
+function simulatedUserFromRequest(req, realUser = realAuthenticatedUser(req)) {
+  if (!realUser?.roles?.includes('admin')) return null;
+  const cookies = parseCookies(req.headers.cookie || '');
+  return auth.readSimulation(cookies[auth.simulationCookieName]);
+}
+
 function currentUser(req) {
-  return devIdentityFromRequest(req) || auth.read(parseCookies(req.headers.cookie || '')[auth.cookieName]);
+  const developmentUser = devIdentityFromRequest(req);
+  if (developmentUser) return developmentUser;
+  const realUser = realAuthenticatedUser(req);
+  return simulatedUserFromRequest(req, realUser) || realUser;
 }
 
 function sessionPayload(req) {
   const user = currentUser(req);
+  const realUser = realAuthenticatedUser(req);
+  const simulationActive = Boolean(realUser && user && realUser.id !== user.id);
   return {
     authenticated: Boolean(user),
     user,
     capabilities: getCapabilities(user),
     devIdentityEnabled: ENABLE_DEV_IDENTITY,
     developmentIdentityActive: Boolean(user?.developmentIdentity),
+    simulationActive,
+    realUser: simulationActive ? {
+      id: realUser.id,
+      username: realUser.username,
+      displayName: realUser.displayName,
+      roles: realUser.roles
+    } : null,
     passwordChangeRequired: Boolean(user?.mustChangePassword)
   };
 }
@@ -281,7 +313,7 @@ function canReceiveEvent(user, type, payload) {
 function filterEventPayload(user, type, payload) {
   if (!canReceiveEvent(user, type, payload)) return null;
   if (type === 'status-snapshot') return payload.filter((status) => canViewPrinter(user, status.printerId || status.id));
-  if (type === 'fleet-snapshot') return visiblePrinters(user, payload);
+  if (type === 'fleet-snapshot') return visiblePrinters(user, payload).map(printerForClient);
   return payload;
 }
 
@@ -353,15 +385,6 @@ function validateAscii(value, label, maxLength) {
   }
 }
 
-function packetResponse(value) {
-  return Buffer.concat([Buffer.from([0x02]), Buffer.from(value, 'ascii'), Buffer.from([0x03])]);
-}
-
-function acknowledgement(command, ok = true) {
-  const sum = [...Buffer.from(command, 'ascii')].reduce((total, byte) => (total + byte) & 0xFF, 0);
-  return Buffer.from(`${ok ? '$' : '!'}${sum.toString(16).padStart(2, '0').toUpperCase()}`, 'ascii');
-}
-
 function printerConfig(body = {}) {
   const ip = body.ip || DEFAULT_PRINTER_IP;
   const port = Number(body.port || DEFAULT_PRINTER_PORT);
@@ -371,10 +394,48 @@ function printerConfig(body = {}) {
 }
 
 function printerTarget(printer) {
-  if (printer.mode === 'emulator') {
-    return { ip: EMULATOR_HOST, port: EMULATOR_PORT };
-  }
+  if (printer.mode === 'emulator') return emulatorManager.endpoint(printer);
   return { ip: printer.host, port: printer.port };
+}
+
+function runtimePrinterCapabilities(printer) {
+  return readbackCapabilities.resolve(printer);
+}
+
+function printerForClient(printer) {
+  return { ...printer, capabilities: runtimePrinterCapabilities(printer) };
+}
+
+async function readCurrentMessageForPrinter(printer, target, { force = false, suppressAutoFailure = false } = {}) {
+  const capabilities = runtimePrinterCapabilities(printer);
+  const isAuto1710 = printer.model === '1710' && capabilities.currentMessageReadbackMode === 'auto';
+  const shouldAttempt = capabilities.currentMessageReadback === true || readbackCapabilities.shouldProbe(printer, { force });
+  if (!shouldAttempt) return null;
+
+  try {
+    const response = await requestCurrentMessage(wsiClient, { printerId: printer.id, ...target });
+    if (isAuto1710) {
+      const wasSupported = capabilities.currentMessageReadback === true;
+      readbackCapabilities.record(printer.id, true);
+      if (!wasSupported) addLog({ action: 'current-message-capability-detected', printerId: printer.id, model: printer.model, supported: true, ok: true });
+    }
+    return response;
+  } catch (error) {
+    if (!isAuto1710) throw error;
+    readbackCapabilities.record(printer.id, false, error);
+    addLog({
+      action: 'current-message-capability-detected',
+      printerId: printer.id,
+      model: printer.model,
+      supported: false,
+      error: error.message,
+      rawCode: error.rawCode || null,
+      rawResponseHex: error.rawResponseHex || null,
+      ok: false
+    });
+    if (suppressAutoFailure) return null;
+    throw error;
+  }
 }
 
 function parseFaultQuery(query = {}) {
@@ -463,18 +524,16 @@ async function runCoderOperation(printer, operation, task) {
 
 async function refreshPrinterStatus(printer, operation = 'check') {
   const target = printerTarget(printer);
-  const capabilities = printerCapabilities(printer.model);
   return runCoderOperation(printer, operation, async (id) => {
     const startedAt = Date.now();
-    const message = capabilities.currentMessageReadback
-      ? assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
-      : null;
+    const message = await readCurrentMessageForPrinter(printer, target, { suppressAutoFailure: true });
     if (message) await delay(BETWEEN_COMMAND_DELAY_MS);
     const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
+    const capabilities = runtimePrinterCapabilities(printer);
     const cached = statusCache.applySuccess(printer.id, {
-      ...(message ? { selectedMessage: message.value } : {}),
-      messageVerification: capabilities.currentMessageReadback ? 'verified' : 'unsupported',
+      ...(message ? { selectedMessage: message.currentMessage } : {}),
+      messageVerification: message ? 'verified' : 'unsupported',
       rawStatus: status.value,
       responseTimeMs
     });
@@ -502,7 +561,6 @@ async function refreshPrinterStatus(printer, operation = 'check') {
 
 async function legacySetPrinterMessage(printer, body) {
   const target = printerTarget(printer);
-  const capabilities = printerCapabilities(printer.model);
   const { messageName, fieldName, fieldValue } = body;
   validateAscii(messageName, 'Message name', 30);
   validateAscii(fieldName, 'User field name', 30);
@@ -518,20 +576,19 @@ async function legacySetPrinterMessage(printer, body) {
     if (select.kind !== 'ack') throw new Error(failureMessage(`M${messageName}`, select));
     await delay(BETWEEN_COMMAND_DELAY_MS);
 
-    const selected = capabilities.currentMessageReadback
-      ? assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
-      : null;
+    const selected = await readCurrentMessageForPrinter(printer, target, { suppressAutoFailure: true });
     if (selected) await delay(BETWEEN_COMMAND_DELAY_MS);
     const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
+    const capabilities = runtimePrinterCapabilities(printer);
     const cached = statusCache.applySuccess(printer.id, {
-      ...(selected ? { selectedMessage: selected.value } : {}),
-      messageVerification: capabilities.currentMessageReadback ? 'verified' : 'unsupported',
+      ...(selected ? { selectedMessage: selected.currentMessage } : {}),
+      messageVerification: selected ? 'verified' : 'unsupported',
       rawStatus: status.value,
       responseTimeMs
     });
 
-    const messageMatches = selected ? selected.value === messageName : null;
+    const messageMatches = selected ? selected.currentMessage === messageName : null;
     return {
       ...cached,
       id: printer.id,
@@ -549,9 +606,9 @@ async function legacySetPrinterMessage(printer, body) {
       online: true,
       ok: messageMatches !== false,
       messageMatches,
-      verificationAvailable: capabilities.currentMessageReadback,
+      verificationAvailable: Boolean(selected),
       expectedMessage: messageName,
-      selectedMessage: selected?.value || null,
+      selectedMessage: selected?.currentMessage || null,
       fieldName,
       fieldValue,
       fieldUpdateAcknowledged: update.value,
@@ -578,7 +635,7 @@ async function setPrinterMessage(printer, body) {
     throw error;
   }
   const target = printerTarget(printer);
-  const capabilities = printerCapabilities(printer.model);
+  const capabilities = runtimePrinterCapabilities(printer);
 
   return runCoderOperation(printer, 'message-update', async (id) =>
     executeMessageUpdate({
@@ -588,115 +645,13 @@ async function setPrinterMessage(printer, body) {
       fields,
       operationId: id,
       productionDate: body.productionDate,
-      supportsCurrentMessageReadback: capabilities.currentMessageReadback,
+      supportsCurrentMessageReadback: capabilities.currentMessageReadback === true,
       sendCommand: (command) => wsiClient.sendCommand(command),
       delay: () => delay(BETWEEN_COMMAND_DELAY_MS),
       applySuccess: (status) => statusCache.applySuccess(printer.id, status)
     })
   );
 }
-
-const emulator = {
-  selectedMessage: '9 MONTH',
-  availableMessages: ['9 MONTH', '12 MONTH'],
-  userFields: { TEST: 'TEST123', BREW: 'BR1246', BATCH: 'B260617A' },
-  status: '0000002',
-  softwarePartNumber: '1.0.484.0       ',
-  printCounter: 2141608,
-  productCounter: 0,
-  responseDelayMs: 40,
-  enabled: true,
-  failNextCommand: false
-};
-
-function emulatorSnapshot() {
-  const decoded = decodeStatus(emulator.status);
-  return {
-    host: EMULATOR_HOST,
-    port: EMULATOR_PORT,
-    selectedMessage: emulator.selectedMessage,
-    availableMessages: emulator.availableMessages,
-    userFields: emulator.userFields,
-    status: emulator.status,
-    alarm: decoded.alarm?.primary || 'none',
-    activeFaultCodes: decoded.activeFaults.map((fault) => fault.code),
-    availableFaults: faultDefinitions().filter((fault) => fault.code !== 'RESERVED_FAULT_BIT'),
-    printCounter: emulator.printCounter,
-    productCounter: emulator.productCounter,
-    responseDelayMs: emulator.responseDelayMs,
-    enabled: emulator.enabled,
-    failNextCommand: emulator.failNextCommand
-  };
-}
-
-function handleEmulatorCommand(command) {
-  if (emulator.failNextCommand) {
-    emulator.failNextCommand = false;
-    return acknowledgement(command, false);
-  }
-
-  const type = command[0];
-  const data = command.slice(1);
-
-  switch (type) {
-    case 'Q': return packetResponse(emulator.selectedMessage);
-    case 'E': return packetResponse(emulator.status);
-    case 'H': return packetResponse(emulator.softwarePartNumber);
-    case 'M': {
-      if (!emulator.availableMessages.includes(data)) return acknowledgement(command, false);
-      emulator.selectedMessage = data;
-      return acknowledgement(command, true);
-    }
-    case 'U': {
-      const separator = data.indexOf('\n');
-      if (separator < 1) return acknowledgement(command, false);
-      const fieldName = data.slice(0, separator);
-      const fieldValue = data.slice(separator + 1);
-      if (!(fieldName in emulator.userFields) || fieldValue.length < 1 || fieldValue.length > 50) {
-        return acknowledgement(command, false);
-      }
-      emulator.userFields[fieldName] = fieldValue;
-      return acknowledgement(command, true);
-    }
-    case 'D': {
-      if (!(data in emulator.userFields)) return acknowledgement(command, false);
-      emulator.userFields[data] = '';
-      return acknowledgement(command, true);
-    }
-    case 'G': {
-      const value = data.toUpperCase() === 'A' ? emulator.printCounter : emulator.productCounter;
-      return packetResponse(String(value).padStart(10, '0'));
-    }
-    case 'O': return acknowledgement(command, data === '0' || data === '1');
-    default: return acknowledgement(command, false);
-  }
-}
-
-const emulatorServer = net.createServer((socket) => {
-  let buffer = Buffer.alloc(0);
-  socket.on('data', async (chunk) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    const start = buffer.indexOf(0x02);
-    const end = buffer.indexOf(0x03, start + 1);
-    if (start < 0 || end < 0) return;
-
-    const command = buffer.subarray(start + 1, end).toString('ascii');
-    await delay(emulator.responseDelayMs);
-    if (!emulator.enabled) {
-      socket.destroy();
-      return;
-    }
-    socket.end(handleEmulatorCommand(command));
-  });
-});
-
-emulatorServer.on('error', (error) => {
-  console.error(`WSI emulator failed on ${EMULATOR_HOST}:${EMULATOR_PORT}: ${error.message}`);
-});
-
-emulatorServer.listen(EMULATOR_PORT, EMULATOR_HOST, () => {
-  console.log(`WSI emulator listening on ${EMULATOR_HOST}:${EMULATOR_PORT}`);
-});
 
 app.get('/api/config', (_req, res) => {
   res.json({
@@ -727,7 +682,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ ok: false, code: 'INVALID_LOGIN', error: 'Username or password is incorrect.' });
     }
     const token = auth.create(user);
-    res.setHeader('Set-Cookie', auth.cookie(token));
+    res.setHeader('Set-Cookie', [auth.cookie(token), auth.clearSimulationCookie()]);
     res.json({
       ok: true,
       authenticated: true,
@@ -744,13 +699,13 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   const cookies = parseCookies(req.headers.cookie || '');
   auth.destroy(cookies[auth.cookieName]);
-  res.setHeader('Set-Cookie', auth.clearCookie());
+  res.setHeader('Set-Cookie', [auth.clearCookie(), auth.clearSimulationCookie()]);
   res.json({ ok: true, redirectTo: '/login' });
 });
 
 app.post('/api/auth/change-password', async (req, res) => {
   try {
-    const user = currentUser(req);
+    const user = realAuthenticatedUser(req);
     if (!user || user.developmentIdentity) {
       return res.status(401).json({ ok: false, code: 'UNAUTHENTICATED', error: 'No authenticated user is available.' });
     }
@@ -761,7 +716,7 @@ app.post('/api/auth/change-password', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie || '');
     auth.destroy(cookies[auth.cookieName]);
     const token = auth.create(updated);
-    res.setHeader('Set-Cookie', auth.cookie(token));
+    res.setHeader('Set-Cookie', [auth.cookie(token), auth.clearSimulationCookie()]);
     res.json({ ok: true, user: updated, capabilities: getCapabilities(updated), redirectTo: '/dashboard' });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
@@ -786,6 +741,30 @@ app.post('/api/dev/session', async (req, res) => {
     `devPrinterIds=${encodeURIComponent(printerIds.join(','))}; Path=/; SameSite=Lax`
   ]);
   res.json({ ok: true });
+});
+
+app.post('/api/admin/simulate-user', async (req, res) => {
+  try {
+    const admin = realAuthenticatedUser(req);
+    if (!admin?.roles?.includes('admin')) return forbidden(res, 'A real admin session is required to simulate a user.');
+    const target = await findUserById(req.body?.userId);
+    if (!target || !target.enabled) return res.status(404).json({ ok: false, error: 'The selected enabled user was not found.' });
+    if (target.mustChangePassword) return res.status(409).json({ ok: false, error: 'Set the user password before starting simulation.' });
+    if (target.id === admin.id) return res.status(400).json({ ok: false, error: 'Select a different user to simulate.' });
+    res.setHeader('Set-Cookie', auth.simulationCookie(target.id));
+    addLog({ action: 'user-simulation-started', actor: admin.username, targetId: target.id, username: target.username, ok: true });
+    res.json({ ok: true, user: target, redirectTo: '/dashboard' });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.delete('/api/admin/simulate-user', (req, res) => {
+  const admin = realAuthenticatedUser(req);
+  if (!admin?.roles?.includes('admin')) return forbidden(res, 'A real admin session is required to stop simulation.');
+  res.setHeader('Set-Cookie', auth.clearSimulationCookie());
+  addLog({ action: 'user-simulation-stopped', actor: admin.username, ok: true });
+  res.json({ ok: true, redirectTo: '/editor#users' });
 });
 
 app.get('/api/logs', (req, res) => {
@@ -835,11 +814,35 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
-app.get('/api/emulator', (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
-  res.json(emulatorSnapshot());
+async function emulatorPrinterForRequest(req) {
+  const printerId = req.query?.printerId || req.body?.printerId;
+  const printers = await readPrinters();
+  const printer = printerId
+    ? printers.find((item) => item.id === printerId)
+    : printers.find((item) => item.mode === 'emulator');
+  if (!printer) {
+    const error = new Error(printerId ? `Printer ${printerId} was not found.` : 'No emulator printer is configured.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (printer.mode !== 'emulator') {
+    const error = new Error(`${printer.name} is not configured as an emulator.`);
+    error.statusCode = 409;
+    throw error;
+  }
+  return printer;
+}
+
+app.get('/api/emulator', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
+    const printer = await emulatorPrinterForRequest(req);
+    res.json(emulatorManager.snapshot(printer.id));
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
 });
 
 app.get('/api/messages', async (req, res) => {
@@ -963,12 +966,13 @@ app.get('/api/events', async (req, res) => {
   req.on('close', () => eventClients.delete(client));
   sendEvent(res, 'connected', { connected: true });
   if (canViewAudit(user) || canAccessDiagnostics(user)) sendEvent(res, 'logs-snapshot', commandLog);
-  if (canAccessDiagnostics(user)) sendEvent(res, 'emulator-snapshot', emulatorSnapshot());
   try {
     const printers = await readPrinters();
+    const firstEmulator = printers.find((printer) => printer.mode === 'emulator');
+    if (canAccessDiagnostics(user) && firstEmulator) sendEvent(res, 'emulator-snapshot', emulatorManager.snapshot(firstEmulator.id));
     syncStatusPrinters(printers);
     sendEvent(res, 'status-snapshot', statusCache.all().filter((status) => canViewPrinter(user, status.printerId)));
-    sendEvent(res, 'fleet-snapshot', visiblePrinters(user, printers));
+    sendEvent(res, 'fleet-snapshot', visiblePrinters(user, printers).map(printerForClient));
   } catch (error) {
     if (canAccessDiagnostics(user)) sendEvent(res, 'stream-error', { error: error.message });
   }
@@ -980,9 +984,27 @@ app.get('/api/printers', async (_req, res) => {
     if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
-    res.json(visiblePrinters(user, printers));
+    res.json(visiblePrinters(user, printers).map(printerForClient));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/printers', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
+    const printer = await createPrinter(req.body || {});
+    const printers = await readPrinters();
+    await emulatorManager.sync(printers);
+    syncStatusPrinters(printers);
+    const clientPrinter = printerForClient(printer);
+    addLog({ action: 'printer-created', actor: user.username, printerId: printer.id, ok: true });
+    broadcast('fleet-snapshot', printers);
+    res.status(201).json({ ok: true, printer: clientPrinter });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 
@@ -1019,7 +1041,7 @@ app.get('/api/printer/current-message', async (req, res) => {
     if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
 
     target = printerTarget(printer);
-    const capabilities = printerCapabilities(printer.model);
+    const capabilities = runtimePrinterCapabilities(printer);
     const address = `${target.ip}:${target.port}`;
     addLog({
       action: 'current-message-request-start',
@@ -1035,8 +1057,8 @@ app.get('/api/printer/current-message', async (req, res) => {
       error.statusCode = 409;
       throw error;
     }
-    if (!capabilities.currentMessageReadback) {
-      const error = new Error(`Current-message readback is unavailable on Videojet ${printer.model} printers.`);
+    if (capabilities.currentMessageReadbackMode === 'disabled') {
+      const error = new Error(`Current-message readback is disabled for ${printer.name}.`);
       error.statusCode = 409;
       error.reasonCode = 'CURRENT_MESSAGE_READBACK_UNSUPPORTED';
       throw error;
@@ -1045,7 +1067,7 @@ app.get('/api/printer/current-message', async (req, res) => {
     const readback = await coderQueue.run(
       printer.id,
       { operation: 'current-message-readback' },
-      () => requestCurrentMessage(wsiClient, { printerId: printer.id, ...target })
+      () => readCurrentMessageForPrinter(printer, target, { force: true })
     );
     const result = { ok: true, printer: address, ...readback, checkedAt: checkedAt() };
     addLog({
@@ -1144,7 +1166,7 @@ app.get('/api/printers/:id', async (req, res) => {
     const printer = printers.find((item) => item.id === req.params.id);
     if (!printer) return res.status(404).json({ ok: false, error: `Printer ${req.params.id} was not found.` });
     if (!canViewPrinter(user, printer.id)) return forbidden(res, 'You do not have permission to view this printer.');
-    res.json(printer);
+    res.json(printerForClient(printer));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -1171,11 +1193,14 @@ app.put('/api/printers/:id', async (req, res) => {
     if (!user) return;
     if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
     const printers = await updatePrinter(req.params.id, req.body || {});
+    await emulatorManager.sync(printers);
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
-    broadcast('printer-config', printer);
+    readbackCapabilities.clear(req.params.id);
+    const clientPrinter = printerForClient(printer);
+    broadcast('printer-config', clientPrinter);
     broadcast('status-snapshot', statusCache.all());
-    res.json({ ok: true, printer });
+    res.json({ ok: true, printer: clientPrinter });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
   }
@@ -1220,6 +1245,25 @@ app.post('/api/printers/:id/check', async (req, res) => {
     });
     broadcast('printer-status', cached);
     res.status(502).json(result);
+  }
+});
+
+app.delete('/api/printers/:id', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canConfigurePrinters(user)) return forbidden(res, 'You do not have permission to configure printers.');
+    const printer = await deletePrinter(req.params.id);
+    const printers = await readPrinters();
+    await emulatorManager.sync(printers);
+    syncStatusPrinters(printers);
+    readbackCapabilities.clear(req.params.id);
+    addLog({ action: 'printer-archived', actor: user.username, printerId: req.params.id, ok: true });
+    broadcast('fleet-snapshot', printers);
+    broadcast('status-snapshot', statusCache.all());
+    res.json({ ok: true, printer: printerForClient(printer) });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 
@@ -1330,55 +1374,32 @@ app.post('/api/printers/check-all', async (req, res) => {
   res.json({ ok: results.every((result) => result.ok), results });
 });
 
-app.post('/api/emulator', (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
-  const body = req.body || {};
-  if (typeof body.selectedMessage === 'string' && emulator.availableMessages.includes(body.selectedMessage)) {
-    emulator.selectedMessage = body.selectedMessage;
+app.post('/api/emulator', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
+    const printer = await emulatorPrinterForRequest(req);
+    const snapshot = emulatorManager.update(printer.id, req.body || {});
+    broadcast('emulator-snapshot', snapshot);
+    res.json(snapshot);
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
   }
-  if (typeof body.status === 'string' && /^[0-9A-F]{7}$/i.test(body.status)) emulator.status = body.status.toUpperCase();
-  if (body.faultCodes !== undefined || body.alarm !== undefined) {
-    try {
-      emulator.status = encodeStatus({
-        faultCodes: body.faultCodes ?? emulatorSnapshot().activeFaultCodes,
-        alarm: body.alarm ?? emulatorSnapshot().alarm
-      });
-    } catch (error) {
-      return res.status(400).json({ ok: false, error: error.message });
-    }
-  }
-  if (Number.isInteger(body.responseDelayMs) && body.responseDelayMs >= 0 && body.responseDelayMs <= 10000) {
-    emulator.responseDelayMs = body.responseDelayMs;
-  }
-  if (typeof body.enabled === 'boolean') emulator.enabled = body.enabled;
-  if (typeof body.failNextCommand === 'boolean') emulator.failNextCommand = body.failNextCommand;
-  if (body.userFields && typeof body.userFields === 'object' && !Array.isArray(body.userFields)) {
-    for (const [name, value] of Object.entries(body.userFields)) {
-      if (/^[\x20-\x7E]{1,30}$/.test(name) && typeof value === 'string' && value.length <= 50) {
-        emulator.userFields[name] = value;
-      }
-    }
-  }
-  const snapshot = emulatorSnapshot();
-  broadcast('emulator-snapshot', snapshot);
-  res.json(snapshot);
 });
 
-app.post('/api/emulator/reset', (req, res) => {
-  const user = requireUser(req, res);
-  if (!user) return;
-  if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
-  emulator.selectedMessage = '9 MONTH';
-  emulator.userFields = { TEST: 'TEST123', BREW: 'BR1246', BATCH: 'B260617A' };
-  emulator.status = '0000002';
-  emulator.responseDelayMs = 40;
-  emulator.enabled = true;
-  emulator.failNextCommand = false;
-  const snapshot = emulatorSnapshot();
-  broadcast('emulator-snapshot', snapshot);
-  res.json(snapshot);
+app.post('/api/emulator/reset', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canAccessDiagnostics(user)) return forbidden(res, 'You do not have permission to access diagnostics.');
+    const printer = await emulatorPrinterForRequest(req);
+    const snapshot = emulatorManager.reset(printer.id);
+    broadcast('emulator-snapshot', snapshot);
+    res.json(snapshot);
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
 });
 
 app.post('/api/check', async (req, res) => {
@@ -1517,6 +1538,7 @@ app.post('/api/set', async (req, res) => {
 const monitor = new Monitor({
   readPrinters: async () => {
     const printers = await readPrinters();
+    await emulatorManager.sync(printers);
     syncStatusPrinters(printers);
     return printers;
   },

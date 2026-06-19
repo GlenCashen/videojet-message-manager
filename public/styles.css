@@ -162,6 +162,18 @@ h3 { margin: 0; font-size: 1.15rem; }
   background: rgba(23, 29, 39, .82);
 }
 
+.simulation-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 184, 65, .55);
+  border-radius: 8px;
+  background: rgba(245, 184, 65, .14);
+  color: #ffe0a1;
+  font-weight: 850;
+}
+
 .top-nav,
 .dev-switcher {
   display: flex;
@@ -359,13 +371,13 @@ h3 { margin: 0; font-size: 1.15rem; }
 
 .coder-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 14px;
 }
 
 .viewer-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   gap: 18px;
 }
 
@@ -864,6 +876,7 @@ button:disabled {
 }
 
 .primary { background: var(--accent); color: #06111a; }
+.danger-button { border-color: rgba(239, 68, 68, .55); color: #ffd0d0; }
 .secondary { background: #273241; color: #edf4ff; border: 1px solid var(--line-strong); }
 .ghost { background: transparent; color: #d5e2f4; padding-inline: 8px; }
 .bordered { border: 1px solid var(--line-strong); }
@@ -1310,8 +1323,6 @@ body.server-disconnected .dashboard-panel {
 }
 
 @media (max-width: 1040px) {
-  .coder-grid { grid-template-columns: 1fr; }
-  .viewer-grid { grid-template-columns: 1fr; }
   .coder-card { min-height: auto; }
   .status-grid { grid-template-columns: repeat(2, 1fr); }
 }
@@ -1329,6 +1340,7 @@ body.server-disconnected .dashboard-panel {
     flex-direction: column;
     align-items: stretch;
   }
+  .simulation-banner { flex-direction: column; align-items: stretch; }
   .grid,
   .status-grid,
   .message-config-layout,

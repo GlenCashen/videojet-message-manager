@@ -35,7 +35,7 @@ function responseDetails(command, response) {
 function rejectionHint(commandType) {
   if (commandType === 'M') return 'Confirm that the requested message exists on the printer.';
   if (commandType === 'U' || commandType === 'D') return 'Confirm that the named user field exists and the supplied data is valid.';
-  if (commandType === 'Q') return 'The manual lists Q as supported on 1510/1610-family printers and unsupported on 1710/1610 DH variants.';
+  if (commandType === 'Q') return 'The supplied command table does not confirm Q for every 1710 firmware variant; use per-printer auto-detection or an explicit override.';
   return 'Confirm that this command is supported by the printer variant and valid in its current state.';
 }
 

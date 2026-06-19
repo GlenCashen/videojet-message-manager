@@ -53,3 +53,38 @@ test('assigned operators can review and confirm a dashboard message change', asy
   assert.ok(dialog.includes('/api/printer/current-message?printerId='));
   assert.ok(dialog.includes('Message change sent, but readback failed:'));
 });
+
+test('printer editor persists the current-message readback override', async () => {
+  const html = await readFile('public/index.html', 'utf8');
+  const editor = await readFile('public/js/editor.js', 'utf8');
+
+  assert.ok(html.includes('id="printerReadbackMode"'));
+  assert.ok(html.includes('value="auto"'));
+  assert.ok(html.includes('value="enabled"'));
+  assert.ok(html.includes('value="disabled"'));
+  assert.ok(editor.includes("printer.readbackMode || 'auto'"));
+  assert.ok(editor.includes('readbackMode: elements.printerReadbackMode.value'));
+});
+
+test('printer editor exposes create and archive controls without a three-printer limit', async () => {
+  const html = await readFile('public/index.html', 'utf8');
+  const editor = await readFile('public/js/editor.js', 'utf8');
+  const dashboard = await readFile('public/js/dashboard.js', 'utf8');
+
+  assert.ok(html.includes('id="newPrinterButton"'));
+  assert.ok(html.includes('id="deletePrinterButton"'));
+  assert.ok(editor.includes("method: existing ? 'PUT' : 'POST'"));
+  assert.ok(editor.includes("method: 'DELETE'"));
+  assert.equal(dashboard.includes('Only three coders are supported'), false);
+});
+
+test('admin user simulation has start and return controls', async () => {
+  const html = await readFile('public/index.html', 'utf8');
+  const users = await readFile('public/js/user-management.js', 'utf8');
+  const navigation = await readFile('public/js/navigation.js', 'utf8');
+
+  assert.ok(html.includes('id="simulateUserButton"'));
+  assert.ok(users.includes("'/api/admin/simulate-user'"));
+  assert.ok(navigation.includes("method: 'DELETE'"));
+  assert.ok(navigation.includes('Return to admin'));
+});

@@ -7,6 +7,7 @@ const elements = {
   editorSubnav: $('editorSubnav'),
   editorBreadcrumb: $('editorBreadcrumb'),
   checkAllButton: $('checkAllButton'),
+  newPrinterButton: $('newPrinterButton'),
   dashboardMessage: $('dashboardMessage'),
   coderGrid: $('coderGrid'),
   editorPanel: $('editorPanel'),
@@ -19,9 +20,11 @@ const elements = {
   printerPort: $('printerPort'),
   printerMode: $('printerMode'),
   printerModel: $('printerModel'),
+  printerReadbackMode: $('printerReadbackMode'),
   printerEnabled: $('printerEnabled'),
   savePrinterButton: $('savePrinterButton'),
   cancelEditButton: $('cancelEditButton'),
+  deletePrinterButton: $('deletePrinterButton'),
   editorMessage: $('editorMessage'),
   refreshMessagesButton: $('refreshMessagesButton'),
   messageConfigPanel: $('messageConfigPanel'),
@@ -82,6 +85,7 @@ const elements = {
   userEnabled: $('userEnabled'),
   userMustChangePassword: $('userMustChangePassword'),
   newUserButton: $('newUserButton'),
+  simulateUserButton: $('simulateUserButton'),
   saveUserButton: $('saveUserButton')
 };
 

@@ -345,7 +345,7 @@ function renderCoderCards() {
       clear(elements.coderGrid);
       elements.coderGrid.appendChild(el('article', { className: 'coder-card empty' }, [
         el('h3', { text: 'No coders configured' }),
-        el('p', { className: 'muted', text: 'Add up to three coders in data/printers.json.' })
+        el('p', { className: 'muted', text: 'Use Add printer to configure the first coder.' })
       ]));
     }
     return;
@@ -409,8 +409,6 @@ async function loadStatuses() {
 
 function applyFleetSnapshot(printers) {
   if (!Array.isArray(printers)) throw new Error('Printer configuration response was not an array.');
-  if (printers.length > 3) throw new Error('Only three coders are supported.');
-
   const nextIds = printers.map((printer) => printer.id);
   for (const printer of printers) setCoderFromConfig(printer);
   for (const id of Object.keys(state.coders)) {

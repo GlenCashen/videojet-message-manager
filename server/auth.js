@@ -4,6 +4,7 @@ import { getSetting, setSetting } from './repositories/settings-repository.js';
 import { getUserById } from './repositories/user-repository.js';
 
 const COOKIE_NAME = 'vmm_session';
+const SIMULATION_COOKIE_NAME = 'vmm_simulated_user';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const SESSION_SECRET_SETTING = 'session_cookie_secret';
 
@@ -87,7 +88,51 @@ function createSessionManager({ secret, secure = false } = {}) {
     });
   }
 
-  return { cookie, clearCookie, create, destroy, read, cookieName: COOKIE_NAME };
+  function simulationCookie(userId) {
+    const value = `${base64Url(userId)}.${sign(`simulate:${userId}`, sessionSecret)}`;
+    return serializeCookie(SIMULATION_COOKIE_NAME, value, {
+      httpOnly: true,
+      sameSite: 'Lax',
+      maxAge: Math.floor(SESSION_TTL_MS / 1000),
+      secure
+    });
+  }
+
+  function readSimulation(cookieValue) {
+    if (!cookieValue || !cookieValue.includes('.')) return null;
+    const [encodedId, signature] = cookieValue.split('.');
+    let userId;
+    try {
+      userId = Buffer.from(encodedId, 'base64url').toString('utf8');
+    } catch (_error) {
+      return null;
+    }
+    if (!userId || signature !== sign(`simulate:${userId}`, sessionSecret)) return null;
+    const user = getUserById(userId);
+    return user?.enabled ? user : null;
+  }
+
+  function clearSimulationCookie() {
+    return serializeCookie(SIMULATION_COOKIE_NAME, '', {
+      httpOnly: true,
+      sameSite: 'Lax',
+      maxAge: 0,
+      secure
+    });
+  }
+
+  return {
+    cookie,
+    clearCookie,
+    clearSimulationCookie,
+    create,
+    destroy,
+    read,
+    readSimulation,
+    simulationCookie,
+    cookieName: COOKIE_NAME,
+    simulationCookieName: SIMULATION_COOKIE_NAME
+  };
 }
 
-export { COOKIE_NAME, createSessionManager };
+export { COOKIE_NAME, SIMULATION_COOKIE_NAME, createSessionManager };

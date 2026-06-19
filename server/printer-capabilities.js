@@ -4,10 +4,18 @@ const MODEL_CAPABILITIES = {
     commandErrorResponse: true
   },
   '1710': {
-    currentMessageReadback: false,
+    currentMessageReadback: null,
     commandErrorResponse: false
   }
 };
+
+function normalizeReadbackMode(mode) {
+  const value = String(mode || 'auto').trim().toLowerCase();
+  if (!['auto', 'enabled', 'disabled'].includes(value)) {
+    throw new Error('Current-message readback mode must be auto, enabled or disabled.');
+  }
+  return value;
+}
 
 function normalizePrinterModel(model) {
   const value = String(model || '1620').trim();
@@ -15,9 +23,16 @@ function normalizePrinterModel(model) {
   return value;
 }
 
-function printerCapabilities(model) {
+function printerCapabilities(model, readbackMode = 'auto') {
   const normalized = normalizePrinterModel(model);
-  return { ...MODEL_CAPABILITIES[normalized] };
+  const mode = normalizeReadbackMode(readbackMode);
+  const configured = mode === 'enabled' ? true : mode === 'disabled' ? false : MODEL_CAPABILITIES[normalized].currentMessageReadback;
+  return {
+    ...MODEL_CAPABILITIES[normalized],
+    currentMessageReadback: configured,
+    currentMessageReadbackMode: mode,
+    currentMessageReadbackDetection: mode === 'auto' && configured === null ? 'unknown' : 'configured'
+  };
 }
 
-export { MODEL_CAPABILITIES, normalizePrinterModel, printerCapabilities };
+export { MODEL_CAPABILITIES, normalizePrinterModel, normalizeReadbackMode, printerCapabilities };

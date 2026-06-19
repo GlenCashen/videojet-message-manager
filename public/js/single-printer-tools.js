@@ -69,11 +69,17 @@ async function setSinglePrinter() {
 }
 
 async function loadEmulator() {
-  const emulator = await apiJson('/api/emulator');
+  const printerId = elements.devPrinterId.value;
+  if (!printerId) return;
+  const emulator = await apiJson(`/api/emulator?printerId=${encodeURIComponent(printerId)}`);
   applyEmulatorState(emulator);
 }
 
 function applyEmulatorState(emulator) {
+  if (emulator.printerId && emulator.printerId !== elements.devPrinterId.value) return;
+  elements.ip.value = emulator.host;
+  elements.port.value = emulator.port;
+  elements.modeHelp.textContent = `${emulator.printerName || emulator.printerId} emulator at ${emulator.host}:${emulator.port}`;
   elements.emulatorMessage.value = emulator.selectedMessage;
   elements.emulatorStatus.value = emulator.status;
   elements.emulatorAlarm.value = emulator.alarm || 'none';
@@ -98,6 +104,7 @@ async function saveEmulator() {
   showSinglePrinterError('');
   try {
     await postJson('/api/emulator', {
+      printerId: elements.devPrinterId.value,
       selectedMessage: elements.emulatorMessage.value,
       faultCodes: [...elements.emulatorFaults.querySelectorAll('input[data-fault-code]:checked')]
         .map((input) => input.dataset.faultCode),
@@ -115,7 +122,7 @@ async function saveEmulator() {
 async function resetEmulator() {
   showSinglePrinterError('');
   try {
-    await postJson('/api/emulator/reset', {});
+    await postJson('/api/emulator/reset', { printerId: elements.devPrinterId.value });
     await loadEmulator();
   } catch (error) {
     showSinglePrinterError(normalizeError(error));
@@ -125,12 +132,10 @@ async function resetEmulator() {
 function setMode(useEmulator) {
   if (useEmulator) {
     state.realPrinter = { ip: elements.ip.value.trim(), port: Number(elements.port.value) || 3100 };
-    elements.ip.value = state.config.emulatorIp;
-    elements.port.value = state.config.emulatorPort;
     elements.ip.disabled = true;
     elements.port.disabled = true;
     elements.emulatorPanel.classList.remove('hidden');
-    elements.modeHelp.textContent = `Local emulator at ${state.config.emulatorIp}:${state.config.emulatorPort}`;
+    elements.modeHelp.textContent = 'Loading selected printer emulator...';
     loadEmulator().catch((error) => showSinglePrinterError(normalizeError(error)));
   } else {
     elements.ip.disabled = false;
@@ -172,6 +177,9 @@ function setupSinglePrinterTools(callbacks) {
   elements.useEmulator.addEventListener('change', () => setMode(elements.useEmulator.checked));
   elements.saveEmulator.addEventListener('click', saveEmulator);
   elements.resetEmulator.addEventListener('click', resetEmulator);
+  elements.devPrinterId.addEventListener('change', () => {
+    if (elements.useEmulator.checked) loadEmulator().catch((error) => showSinglePrinterError(normalizeError(error)));
+  });
 }
 
 export { applyEmulatorState, loadConfig, setupSinglePrinterTools };

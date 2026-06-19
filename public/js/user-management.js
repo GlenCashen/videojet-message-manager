@@ -1,6 +1,7 @@
 import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { elements } from './elements.js';
+import { currentSession } from './session.js';
 
 const ROLES = ['viewer', 'operator', 'qa', 'engineering', 'admin'];
 let users = [];
@@ -59,8 +60,24 @@ function populateForm(user) {
   elements.userPrinterIds.value = user?.printerIds?.join(',') || '';
   elements.userEnabled.checked = user?.enabled ?? true;
   elements.userMustChangePassword.checked = user?.mustChangePassword ?? true;
+  const session = currentSession();
+  elements.simulateUserButton.disabled = !user?.id || !user.enabled || user.mustChangePassword || user.id === session?.user?.id;
   for (const input of roleInputs()) input.checked = user?.roles?.includes(input.value) || (!user && input.value === 'viewer');
   renderList();
+}
+
+async function simulateSelectedUser() {
+  const user = selectedUser();
+  if (!user) return;
+  elements.simulateUserButton.disabled = true;
+  setNotice(elements.userMessage, `Starting simulation for ${user.displayName}...`);
+  try {
+    const result = await apiJson('/api/admin/simulate-user', { method: 'POST', body: { userId: user.id } });
+    window.location.href = result.redirectTo || '/dashboard';
+  } catch (error) {
+    setNotice(elements.userMessage, normalizeError(error), 'error');
+    elements.simulateUserButton.disabled = false;
+  }
 }
 
 function collectUser() {
@@ -117,6 +134,7 @@ function setupUserManagement() {
     if (user) populateForm(user);
   });
   elements.newUserButton.addEventListener('click', () => populateForm(null));
+  elements.simulateUserButton.addEventListener('click', simulateSelectedUser);
   elements.userForm.addEventListener('submit', saveUser);
   elements.refreshUsersButton.addEventListener('click', (event) => {
     event.preventDefault();

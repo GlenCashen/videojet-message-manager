@@ -103,7 +103,7 @@ function createReadback(printer, status) {
   else if (isStale(status)) syncMessage = `Data is stale. Automatic polling continues. ${status.lastError || ''}`.trim();
   else if (status.consecutiveFailures > 0) syncMessage = `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
   else if (readbackUnsupported(printer, status)) {
-    syncMessage = `Videojet ${printer.model || '1710'} does not support current-message readback. Status and faults are still polling normally.`;
+    syncMessage = `Current-message readback is unavailable on this Videojet ${printer.model || '1710'}. Status and faults are still polling normally.`;
   }
 
   return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [

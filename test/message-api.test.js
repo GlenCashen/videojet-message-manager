@@ -126,7 +126,7 @@ test('fault history API records activation and clear from emulator checks', asyn
     const configuredResponse = await fetch(`${baseUrl}/api/emulator`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ faultCodes: ['GUTTER_FAULT'], alarm: 'red' })
+      body: JSON.stringify({ printerId: 'coder-2', faultCodes: ['GUTTER_FAULT'], alarm: 'red' })
     });
     const configured = await configuredResponse.json();
     assert.equal(configured.status, '4000004');
@@ -144,7 +144,7 @@ test('fault history API records activation and clear from emulator checks', asyn
     await fetch(`${baseUrl}/api/emulator`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ faultCodes: [], alarm: 'green' })
+      body: JSON.stringify({ printerId: 'coder-2', faultCodes: [], alarm: 'green' })
     });
     const clearCheck = await fetch(`${baseUrl}/api/printers/coder-2/check`, { method: 'POST' });
     assert.equal(clearCheck.ok, true);
@@ -251,19 +251,52 @@ test('current-message endpoint tracks emulator selection and reports rejection s
       body: JSON.stringify({ model: '1710' })
     });
     assert.equal(modelResponse.ok, true);
-    assert.equal((await modelResponse.json()).printer.capabilities.currentMessageReadback, false);
+    assert.equal((await modelResponse.json()).printer.capabilities.currentMessageReadback, null);
+
+    await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
+    await fetch(`${baseUrl}/api/emulator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ failNextCommand: true })
+    });
+    const probeFailureCheck = await fetch(`${baseUrl}/api/printers/coder-1/check`, { method: 'POST' });
+    assert.equal(probeFailureCheck.ok, true);
+    const probeFailureResult = await probeFailureCheck.json();
+    assert.equal(probeFailureResult.messageVerification, 'unsupported');
+    assert.equal(probeFailureResult.capabilities.currentMessageReadback, false);
+    let counters = await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json();
+    assert.equal(counters['coder-1'].Q, 1);
+    assert.equal(counters['coder-1'].E, 1);
+
+    await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
+    const detectedResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
+    assert.equal(detectedResponse.ok, true);
+    assert.equal((await detectedResponse.json()).currentMessage, '12 MONTH');
+
+    const checkResponse = await fetch(`${baseUrl}/api/printers/coder-1/check`, { method: 'POST' });
+    assert.equal(checkResponse.ok, true);
+    const checkResult = await checkResponse.json();
+    assert.equal(checkResult.messageVerification, 'verified');
+    assert.equal(checkResult.capabilities.currentMessageReadback, true);
+
+    counters = await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json();
+    assert.equal(counters['coder-1'].Q, 2);
+    assert.equal(counters['coder-1'].E, 1);
+
+    const disabledResponse = await fetch(`${baseUrl}/api/printers/coder-1`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ readbackMode: 'disabled' })
+    });
+    assert.equal(disabledResponse.ok, true);
+    assert.equal((await disabledResponse.json()).printer.capabilities.currentMessageReadback, false);
 
     await fetch(`${baseUrl}/api/debug/wsi-counters/reset`, { method: 'POST' });
     const unsupportedResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
     assert.equal(unsupportedResponse.status, 409);
     assert.equal((await unsupportedResponse.json()).reasonCode, 'CURRENT_MESSAGE_READBACK_UNSUPPORTED');
-
-    const checkResponse = await fetch(`${baseUrl}/api/printers/coder-1/check`, { method: 'POST' });
-    assert.equal(checkResponse.ok, true);
-    const checkResult = await checkResponse.json();
-    assert.equal(checkResult.messageVerification, 'unsupported');
-
-    const counters = await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json();
+    assert.equal((await fetch(`${baseUrl}/api/printers/coder-1/check`, { method: 'POST' })).ok, true);
+    counters = await (await fetch(`${baseUrl}/api/debug/wsi-counters`)).json();
     assert.equal(counters['coder-1'].Q, 0);
     assert.equal(counters['coder-1'].E, 1);
   } finally {

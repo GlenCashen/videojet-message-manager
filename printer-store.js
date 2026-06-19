@@ -1,4 +1,6 @@
 import {
+  createPrinter as createPrinterRecord,
+  deletePrinter as deletePrinterRecord,
   listPrinters,
   replacePrinters,
   updatePrinter as updatePrinterRecord,
@@ -17,4 +19,12 @@ async function updatePrinter(id, changes) {
   return updatePrinterRecord(id, changes);
 }
 
-export { readPrinters, writePrinters, updatePrinter, validatePrinter };
+async function createPrinter(printer) {
+  return createPrinterRecord(printer);
+}
+
+async function deletePrinter(id) {
+  return deletePrinterRecord(id);
+}
+
+export { createPrinter, deletePrinter, readPrinters, writePrinters, updatePrinter, validatePrinter };

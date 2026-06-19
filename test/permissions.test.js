@@ -252,6 +252,25 @@ test('privileged roles expose editor, audit, diagnostics and admin capabilities'
       body: { name: 'Missing', location: '', host: '127.0.0.1', port: 3100, enabled: true, mode: 'emulator' }
     });
     assert.notEqual(configureAttempt.response.status, 403);
+
+    const created = await jsonFetch(`${baseUrl}/api/printers`, {
+      method: 'POST',
+      body: {
+        id: 'coder-4',
+        name: 'Fourth Coder',
+        location: 'Line 4',
+        host: '127.0.0.1',
+        port: 3103,
+        model: '1620',
+        readbackMode: 'auto',
+        enabled: true,
+        mode: 'emulator'
+      }
+    });
+    assert.equal(created.response.status, 201, JSON.stringify(created.data));
+    assert.equal((await jsonFetch(`${baseUrl}/api/printers`)).data.length, 4);
+    assert.equal((await jsonFetch(`${baseUrl}/api/printers/coder-4`, { method: 'DELETE' })).response.ok, true);
+    assert.equal((await jsonFetch(`${baseUrl}/api/printers`)).data.length, 3);
   });
 
   await withServer({ role: 'admin' }, async (baseUrl) => {

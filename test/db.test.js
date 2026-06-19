@@ -5,14 +5,14 @@ import test from 'node:test';
 
 process.env.DB_PATH = path.join(os.tmpdir(), `vmm-db-${process.pid}-${Date.now()}.db`);
 
-const { closeDatabase, databaseStatus, getDb, runMigrations, schemaVersion } = await import('../server/db.js');
+const { closeDatabase, databaseStatus, getDb, openDatabase, runMigrations, schemaVersion } = await import('../server/db.js');
 const { createSessionManager } = await import('../server/auth.js');
 const { insertAuditEvent, listAuditEvents } = await import('../server/repositories/audit-repository.js');
 const { upsertExpectedOutput, listExpectedOutputs } = await import('../server/repositories/expected-output-repository.js');
 const { insertFaultEvents, listFaultEvents } = await import('../server/repositories/fault-repository.js');
 const { insertMessageUpdateEvent } = await import('../server/repositories/message-update-repository.js');
 const { upsertMessage, listMessagesForPrinter } = await import('../server/repositories/message-repository.js');
-const { replacePrinters, listPrinters } = await import('../server/repositories/printer-repository.js');
+const { deletePrinter, replacePrinters, listPrinters } = await import('../server/repositories/printer-repository.js');
 const { upsertUserRecord, getUserByUsername, replaceRoles, replacePrinterAssignments } = await import('../server/repositories/user-repository.js');
 
 test.after(() => closeDatabase());
@@ -41,6 +41,7 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
+  assert.equal(status.schemaVersion, 5);
 });
 
 test('foreign keys reject orphaned assignments', () => {
@@ -52,6 +53,29 @@ test('foreign keys reject orphaned assignments', () => {
       VALUES ('missing-user', 'missing-printer', '2026-01-01T00:00:00.000Z')
     `).run();
   }, /FOREIGN KEY/);
+});
+
+test('supports fleets larger than three and archives printers without deleting audit history', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const printers = Array.from({ length: 4 }, (_, index) => ({
+    id: `fleet-${index + 1}`,
+    name: `Fleet Coder ${index + 1}`,
+    location: 'Test line',
+    host: '127.0.0.1',
+    port: 3200 + index,
+    mode: 'emulator',
+    enabled: true
+  }));
+  replacePrinters(printers, db);
+  assert.equal(printers.every((printer) => listPrinters(db).some((item) => item.id === printer.id)), true);
+
+  insertAuditEvent({ action: 'archive-test', printerId: 'fleet-4', ok: true }, db);
+  deletePrinter('fleet-4', db);
+  assert.equal(listPrinters(db).some((printer) => printer.id === 'fleet-4'), false);
+  assert.ok(db.prepare('SELECT deleted_at FROM printers WHERE id = ?').get('fleet-4').deleted_at);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM audit_events WHERE printer_id = ?').get('fleet-4').count, 1);
+  db.close();
 });
 
 test('repositories persist printers, users, messages and expected output', () => {

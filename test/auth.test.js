@@ -114,6 +114,8 @@ test('bootstrap admin, login, password change and logout flow works', async () =
       },
       devIdentityEnabled: false,
       developmentIdentityActive: false,
+      simulationActive: false,
+      realUser: null,
       passwordChangeRequired: false
     });
 
@@ -170,7 +172,7 @@ test('bootstrap admin, login, password change and logout flow works', async () =
         roles: ['operator'],
         printerIds: ['*'],
         enabled: true,
-        mustChangePassword: true
+        mustChangePassword: false
       }
     });
     assert.equal(wildcardUser.response.status, 400);
@@ -186,11 +188,32 @@ test('bootstrap admin, login, password change and logout flow works', async () =
         roles: ['operator'],
         printerIds: ['coder-1'],
         enabled: true,
-        mustChangePassword: true
+        mustChangePassword: false
       }
     });
     assert.equal(created.response.status, 201);
     assert.deepEqual(created.data.user.printerIds, ['coder-1']);
+
+    const simulate = await jsonFetch(`${baseUrl}/api/admin/simulate-user`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+      body: { userId: created.data.user.id }
+    });
+    assert.equal(simulate.response.ok, true);
+    const simulationCookie = sessionCookie(simulate.response);
+    const simulatedCookies = `${cookie}; ${simulationCookie}`;
+    const simulatedSession = await jsonFetch(`${baseUrl}/api/session`, { headers: { Cookie: simulatedCookies } });
+    assert.equal(simulatedSession.data.simulationActive, true);
+    assert.equal(simulatedSession.data.user.username, 'lineop');
+    assert.equal(simulatedSession.data.realUser.username, 'admin');
+    assert.equal(simulatedSession.data.capabilities.manageUsers, false);
+    assert.equal((await jsonFetch(`${baseUrl}/api/users`, { headers: { Cookie: simulatedCookies } })).response.status, 403);
+
+    const stopSimulation = await jsonFetch(`${baseUrl}/api/admin/simulate-user`, {
+      method: 'DELETE',
+      headers: { Cookie: simulatedCookies }
+    });
+    assert.equal(stopSimulation.response.ok, true);
 
     const logout = await jsonFetch(`${baseUrl}/api/auth/logout`, {
       method: 'POST',

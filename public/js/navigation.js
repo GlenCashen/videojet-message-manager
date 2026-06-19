@@ -31,7 +31,23 @@ function renderNavigation(container, { active = window.location.pathname } = {})
   container.appendChild(el('span', { className: 'nav-identity', text: identity }));
 
   if (session?.developmentIdentityActive) container.appendChild(createDevSwitcher(session));
-  else if (session?.authenticated) container.appendChild(createLogoutButton());
+  else if (session?.authenticated) {
+    if (session.simulationActive) container.appendChild(createSimulationBanner(session));
+    container.appendChild(createLogoutButton());
+  }
+}
+
+function createSimulationBanner(session) {
+  const button = el('button', { type: 'button', className: 'secondary' }, 'Return to admin');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const result = await apiJson('/api/admin/simulate-user', { method: 'DELETE' });
+    window.location.href = result.redirectTo || '/editor#users';
+  });
+  return el('div', { className: 'simulation-banner', 'aria-live': 'polite' }, [
+    el('span', { text: `Simulating ${session.user.displayName} as ${session.realUser.displayName}` }),
+    button
+  ]);
 }
 
 function accessSummary(session) {

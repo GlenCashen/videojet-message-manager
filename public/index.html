@@ -37,7 +37,10 @@
           <h2 id="dashboardTitle">Printers</h2>
           <p id="dashboardHelp" class="muted">Open coders, check live state, and edit connection settings.</p>
         </div>
-        <button id="checkAllButton" class="secondary" type="button">Refresh now</button>
+        <div class="actions">
+          <button id="newPrinterButton" class="primary" type="button">Add printer</button>
+          <button id="checkAllButton" class="secondary" type="button">Refresh now</button>
+        </div>
       </div>
       <p id="dashboardMessage" class="notice hidden" aria-live="polite"></p>
       <div id="coderGrid" class="coder-grid" aria-live="polite">
@@ -54,10 +57,15 @@
           <h2 id="editorTitle">Coder configuration</h2>
           <p id="editorSubtitle" class="muted">Edit coder connection details.</p>
         </div>
-        <button id="cancelEditButton" class="ghost" type="button">Cancel</button>
+        <div class="actions">
+          <button id="deletePrinterButton" class="secondary danger-button hidden" type="button">Delete printer</button>
+          <button id="cancelEditButton" class="ghost" type="button">Cancel</button>
+        </div>
       </div>
       <form id="printerForm" class="grid editor-grid">
-        <input id="printerId" type="hidden">
+        <label for="printerId">Printer ID
+          <input id="printerId" name="id" maxlength="50" pattern="[A-Za-z0-9-]+" required autocomplete="off">
+        </label>
         <label for="printerName">Name
           <input id="printerName" name="name" maxlength="80" required autocomplete="off">
         </label>
@@ -80,6 +88,13 @@
           <select id="printerModel" name="model">
             <option value="1620">Videojet 1620</option>
             <option value="1710">Videojet 1710</option>
+          </select>
+        </label>
+        <label for="printerReadbackMode">Current-message readback
+          <select id="printerReadbackMode" name="readbackMode">
+            <option value="auto">Auto-detect</option>
+            <option value="enabled">Enabled - force Q every poll</option>
+            <option value="disabled">Disabled (override)</option>
           </select>
         </label>
         <label class="checkbox-line" for="printerEnabled">
@@ -292,6 +307,7 @@
             </label>
             <div class="actions wide">
               <button id="newUserButton" class="secondary" type="button">New user</button>
+              <button id="simulateUserButton" class="secondary" type="button">Simulate user</button>
               <button id="saveUserButton" class="primary" type="submit">Save user</button>
             </div>
           </form>

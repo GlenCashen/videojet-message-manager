@@ -2,7 +2,11 @@
 
 This proof of concept can connect to Videojet 1620 and 1710 printers over WSI Simple Protocol or to a built-in local emulator.
 
-Set the correct model for every printer in the editor. A 1620 is polled with `Q` and `E`; a 1710 is polled with `E` only because the supplied protocol marks current-message command `Q` unsupported on the 1710. Message changes on a 1710 are acknowledgement-based and require a physical print check.
+There is no fixed printer-count limit. Emulator-mode printers each use independent in-memory state and a separate local TCP listener based on the printer's configured port. Printer deletion archives the configuration and removes active assignments while retaining historical audit, fault, and message-update records.
+
+Admins can select an enabled user in Editor > Users and choose **Simulate user**. The application applies that user's permissions and printer assignments until **Return to admin** is selected; the original signed-in admin session is preserved throughout.
+
+Set the correct model for every printer in the editor. A 1620 uses `Q` and `E`. A 1710 defaults to auto-detection: the server safely probes `Q`, remembers whether that printer accepts it, and continues `E` status polling if readback fails. The editor also provides explicit enabled and disabled overrides. A physical print check remains required after every message change.
 
 ## Run
 
@@ -78,7 +82,7 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
-    "schemaVersion": 3
+    "schemaVersion": 5
   }
 }
 ```
