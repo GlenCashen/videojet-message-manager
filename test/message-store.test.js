@@ -203,7 +203,7 @@ test('stops on field ACK failure', async () => {
       message,
       sendCommand: async ({ command }) => {
         commands.push(command);
-        if (command.startsWith('UBATCH')) return response('nack', '!00');
+        if (command.startsWith('UBATCH')) return response('nack', '!7A');
         if (command === 'Q') return response('packet', '12 MONTH');
         if (command === 'E') return response('packet', '0000002');
         return response('ack');
@@ -215,15 +215,12 @@ test('stops on field ACK failure', async () => {
       assert.equal(error.communicationSucceeded, true);
       assert.equal(error.result.printerOnline, true);
       assert.equal(error.result.messageSelection, 'Not attempted');
-      assert.deepEqual(error.result.fieldResults, [
-        { key: 'brew', printerFieldName: 'BREW', acknowledged: true },
-        {
-          key: 'batch',
-          printerFieldName: 'BATCH',
-          acknowledged: false,
-          error: 'Printer rejected field update'
-        }
-      ]);
+      assert.deepEqual(error.result.fieldResults[0], { key: 'brew', printerFieldName: 'BREW', acknowledged: true });
+      assert.equal(error.result.fieldResults[1].key, 'batch');
+      assert.equal(error.result.fieldResults[1].printerFieldName, 'BATCH');
+      assert.equal(error.result.fieldResults[1].acknowledged, false);
+      assert.match(error.result.fieldResults[1].error, /7A is the command checksum, not an error number/i);
+      assert.match(error.result.fieldResults[1].error, /named user field exists/i);
       assert.equal(error.result.status.online, true);
       assert.equal(error.result.selectedMessage, '12 MONTH');
       return true;

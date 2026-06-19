@@ -56,6 +56,7 @@ import {
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { WsiClient } from './server/wsi-client.js';
+import { assertPacketResponse, failureMessage } from './server/wsi-response.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -462,9 +463,9 @@ async function refreshPrinterStatus(printer, operation = 'check') {
   const target = printerTarget(printer);
   return runCoderOperation(printer, operation, async (id) => {
     const startedAt = Date.now();
-    const message = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    const message = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
     await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
     const cached = statusCache.applySuccess(printer.id, {
       selectedMessage: message.value,
@@ -501,16 +502,16 @@ async function legacySetPrinterMessage(printer, body) {
   return runCoderOperation(printer, 'message-update', async (id) => {
     const startedAt = Date.now();
     const update = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: `U${fieldName}\n${fieldValue}` });
-    if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
+    if (update.kind !== 'ack') throw new Error(failureMessage(`U${fieldName}\n${fieldValue}`, update));
     await delay(BETWEEN_COMMAND_DELAY_MS);
 
     const select = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: `M${messageName}` });
-    if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
+    if (select.kind !== 'ack') throw new Error(failureMessage(`M${messageName}`, select));
     await delay(BETWEEN_COMMAND_DELAY_MS);
 
-    const selected = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    const selected = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
     await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
     const cached = statusCache.applySuccess(printer.id, {
       selectedMessage: selected.value,
@@ -1039,6 +1040,12 @@ app.get('/api/printer/current-message', async (req, res) => {
       rawCode: error.rawCode || null,
       checkedAt: checkedAt()
     };
+    if (error.reasonCode) result.reasonCode = error.reasonCode;
+    if (error.command) result.command = error.command;
+    if (error.commandName) result.commandName = error.commandName;
+    if (error.responseChecksum) result.responseChecksum = error.responseChecksum;
+    if (error.expectedChecksum) result.expectedChecksum = error.expectedChecksum;
+    if (typeof error.checksumMatches === 'boolean') result.checksumMatches = error.checksumMatches;
     if (error.rawResponseHex) result.rawResponseHex = error.rawResponseHex;
     addLog({
       action: 'current-message-request-failure',
@@ -1357,9 +1364,9 @@ app.post('/api/check', async (req, res) => {
 
     const { ip, port } = printerConfig(req.body);
     const { message, status } = await coderQueue.run(`unsafe:${ip}:${port}`, { operation: 'unsafe-check' }, async () => {
-      const message = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' });
+      const message = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' }));
       await delay(BETWEEN_COMMAND_DELAY_MS);
-      const status = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' });
+      const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' }));
       return { message, status };
     });
     addLog({ action: 'check', ip, port, ok: true, message: message.value, status: status.value });
@@ -1436,16 +1443,16 @@ app.post('/api/set', async (req, res) => {
 
     const { update, select, selected, status } = await coderQueue.run(`unsafe:${ip}:${port}`, { operation: 'unsafe-set' }, async () => {
       const update = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: `U${fieldName}\n${fieldValue}` });
-      if (update.kind !== 'ack') throw new Error(`User-field update was not acknowledged: ${update.value}`);
+      if (update.kind !== 'ack') throw new Error(failureMessage(`U${fieldName}\n${fieldValue}`, update));
       await delay(BETWEEN_COMMAND_DELAY_MS);
 
       const select = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: `M${messageName}` });
-      if (select.kind !== 'ack') throw new Error(`Message selection was not acknowledged: ${select.value}`);
+      if (select.kind !== 'ack') throw new Error(failureMessage(`M${messageName}`, select));
       await delay(BETWEEN_COMMAND_DELAY_MS);
 
-      const selected = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' });
+      const selected = assertPacketResponse('Q', await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'Q' }));
       await delay(BETWEEN_COMMAND_DELAY_MS);
-      const status = await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' });
+      const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: `unsafe:${ip}:${port}`, ip, port, command: 'E' }));
       return { update, select, selected, status };
     });
     const messageMatches = selected.value === messageName;

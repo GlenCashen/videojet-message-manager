@@ -230,7 +230,12 @@ test('current-message endpoint tracks emulator selection and reports rejection s
     assert.equal(failed.ok, false);
     assert.equal(failed.rawCode, '!51');
     assert.equal(failed.rawResponseHex, '21 35 31');
+    assert.equal(failed.command, 'Q');
+    assert.equal(failed.responseChecksum, '51');
+    assert.equal(failed.expectedChecksum, '51');
+    assert.equal(failed.checksumMatches, true);
     assert.match(failed.error, /rejected/i);
+    assert.match(failed.error, /not an error number/i);
 
     const recoveredResponse = await fetch(`${baseUrl}/api/printer/current-message?printerId=coder-1`);
     assert.equal(recoveredResponse.ok, true);

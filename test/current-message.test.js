@@ -24,6 +24,10 @@ test('current-message readback exposes a printer rejection safely', async () => 
 
   await assert.rejects(
     requestCurrentMessage(client, { printerId: 'coder-1', ip: '127.0.0.1', port: 3100 }),
-    (error) => error.code === 'WSI_PROTOCOL_ERROR' && error.rawCode === '!51' && error.rawResponseHex === '21 35 31'
+    (error) => error.code === 'WSI_PROTOCOL_ERROR' &&
+      error.rawCode === '!51' &&
+      error.rawResponseHex === '21 35 31' &&
+      error.checksumMatches === true &&
+      /not an error number/i.test(error.message)
   );
 });

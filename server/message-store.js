@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listMessages, replaceMessages } from './repositories/message-repository.js';
+import { assertPacketResponse, failureMessage } from './wsi-response.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -359,9 +360,9 @@ async function refreshStateAfterRejection({
   startedAt
 }) {
   try {
-    const selected = await sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    const selected = assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
     await delay();
-    const status = await sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    const status = assertPacketResponse('E', await sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const cached = applySuccess({
       selectedMessage: selected.value,
       rawStatus: status.value,
@@ -441,12 +442,14 @@ async function executeMessageUpdate({
     try {
       const update = await sendCommand({ printerId: printer.id, ...target, command: `U${field.printerFieldName}\n${normalized[field.key]}` });
       if (update.kind !== 'ack') {
+        const command = `U${field.printerFieldName}\n${normalized[field.key]}`;
+        const rejectionError = failureMessage(command, update);
         if (update.kind === 'nack') {
           fieldResults.push({
             key: field.key,
             printerFieldName: field.printerFieldName,
             acknowledged: false,
-            error: 'Printer rejected field update'
+            error: rejectionError
           });
           await refreshStateAfterRejection({
             base,
@@ -454,7 +457,7 @@ async function executeMessageUpdate({
             messageSelection: 'Not attempted',
             failedStep: 'field-update',
             code: 'FIELD_UPDATE_REJECTED',
-            error: 'Printer rejected field update',
+            error: rejectionError,
             printer,
             target,
             sendCommand,
@@ -515,6 +518,7 @@ async function executeMessageUpdate({
     }), { code, communicationSucceeded: false });
   }
   if (select.kind !== 'ack') {
+    const rejectionError = failureMessage(`M${message.printerMessageName}`, select);
     if (select.kind === 'nack') {
       await refreshStateAfterRejection({
         base,
@@ -522,7 +526,7 @@ async function executeMessageUpdate({
         messageSelection: 'Failed',
         failedStep: 'message-selection',
         code: 'MESSAGE_SELECTION_REJECTED',
-        error: 'Printer rejected message selection',
+        error: rejectionError,
         printer,
         target,
         sendCommand,
@@ -536,7 +540,7 @@ async function executeMessageUpdate({
       code: 'WSI_PROTOCOL_ERROR',
       communicationSucceeded: false,
       printerOnline: null,
-      error: `Message selection was not acknowledged: ${select.value}`,
+      error: rejectionError,
       failedStep: 'message-selection'
     }), { code: 'WSI_PROTOCOL_ERROR', communicationSucceeded: false });
   }
@@ -545,9 +549,9 @@ async function executeMessageUpdate({
   let selected;
   let status;
   try {
-    selected = await sendCommand({ printerId: printer.id, ...target, command: 'Q' });
+    selected = assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }));
     await delay();
-    status = await sendCommand({ printerId: printer.id, ...target, command: 'E' });
+    status = assertPacketResponse('E', await sendCommand({ printerId: printer.id, ...target, command: 'E' }));
   } catch (error) {
     const code = transportFailureCode(error);
     throw new MessageUpdateError('Message verification failed', failureResult(base, fieldResults, 'Acknowledged', {
