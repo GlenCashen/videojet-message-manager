@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-function randomPort(base = 20180) {
+function randomPort(base = 32080) {
   return base + Math.floor(Math.random() * 1000);
 }
 
@@ -17,7 +17,7 @@ async function tempDbPath(prefix = 'vmm-auth-') {
 
 function startServer(extraEnv = {}) {
   const port = randomPort();
-  const emulatorPort = randomPort(21180);
+  const emulatorPort = randomPort(33080);
   const dbPath = extraEnv.DB_PATH || path.join(tmpdir(), `vmm-auth-${port}.db`);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
@@ -62,8 +62,11 @@ async function withServer(extraEnv, run) {
     await waitForServer(server.baseUrl, server.child);
     await run(server.baseUrl);
   } finally {
+    const exitPromise = server.child.exitCode === null
+      ? new Promise((resolve) => server.child.once('exit', resolve))
+      : Promise.resolve();
     server.child.kill();
-    await new Promise((resolve) => server.child.once('exit', resolve));
+    await exitPromise;
     if (server.child.exitCode && server.child.exitCode !== 0 && server.child.exitCode !== 1) {
       throw new Error(server.output.join(''));
     }

@@ -4,12 +4,13 @@ import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
 import { currentSession, loadSession } from './session.js';
 import {
-  alarmSummary,
   faultCountLabel,
   isStale,
+  printerState,
   setLiveBadge,
   statusLabel,
-  statusTone
+  statusTone,
+  trafficLightMarkup
 } from './status-ui.js';
 
 const elements = {
@@ -37,8 +38,8 @@ function communicationText(status) {
   return statusLabel(status || {});
 }
 
-function alarmText(status) {
-  return alarmSummary(status?.decodedStatus);
+function expectedOutputText(status) {
+  return status?.expectedOutput?.rendered || 'No expected output recorded';
 }
 
 function cardClass(status) {
@@ -53,6 +54,7 @@ function createCard(printer) {
   const title = offline ? 'Last known printer status' : 'Printer status';
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';
+  const lightState = printerState(status.decodedStatus);
 
   return el('article', {
     className: cardClass(status),
@@ -66,8 +68,9 @@ function createCard(printer) {
       el('span', { className: 'viewer-comm', text: communicationText(status) })
     ]),
     el('div', { className: 'viewer-status' }, [
-      el('span', { text: title }),
-      el('strong', { text: alarmText(status) })
+      el('span', { text: offline || isStale(status) ? `Last known ${title.toLowerCase()}` : title }),
+      trafficLightMarkup(status.decodedStatus, { stale: offline || isStale(status) }),
+      el('strong', { text: lightState.label })
     ]),
     el('div', { className: 'viewer-facts' }, [
       el('div', {}, [
@@ -78,6 +81,10 @@ function createCard(printer) {
         el('span', { text: faultLabel }),
         el('strong', { text: faultCountLabel(status.decodedStatus) })
       ])
+    ]),
+    el('div', { className: 'viewer-expected' }, [
+      el('span', { text: 'Expected print' }),
+      el('pre', { text: expectedOutputText(status) })
     ]),
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
     el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View printer')

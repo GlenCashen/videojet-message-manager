@@ -2,9 +2,15 @@ import { canViewPrinter, currentSession, hasCapability, switchDevelopmentRole } 
 import { el, setNotice } from './dom.js';
 import { apiJson } from './api.js';
 
+function isActiveTopLink(href, activePath) {
+  if (href === '/editor') return activePath === '/editor' || activePath.startsWith('/editor/');
+  if (href === '/dashboard') return activePath === '/dashboard';
+  return activePath === href;
+}
+
 function navLink(href, label, activePath) {
   return el('a', {
-    className: activePath === href ? 'nav-link active' : 'nav-link',
+    className: isActiveTopLink(href, activePath) ? 'nav-link active' : 'nav-link',
     href
   }, label);
 }
@@ -15,9 +21,7 @@ function renderNavigation(container, { active = window.location.pathname } = {})
   container.textContent = '';
 
   const links = [navLink('/dashboard', 'Dashboard', active)];
-  if (session?.user?.roles?.includes('operator')) links.push(navLink('/dashboard#my-printers', 'My printers', active));
   if (hasCapability('viewEditor')) links.push(navLink('/editor', 'Editor', active));
-  if (hasCapability('manageUsers')) links.push(navLink('/editor#users', 'Users', active));
 
   container.appendChild(el('nav', { className: 'top-nav', 'aria-label': 'Main navigation' }, links));
 

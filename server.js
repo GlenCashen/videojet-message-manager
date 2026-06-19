@@ -126,6 +126,17 @@ app.get('/editor', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/editor/:section', (req, res) => {
+  const user = currentUser(req);
+  if (!user) return redirectToLogin(req, res);
+  if (user.mustChangePassword) return res.redirect('/change-password');
+  if (!canViewEditor(user)) return res.status(403).send('You do not have permission to view the editor.');
+  if (req.params.section === 'users' && !canManageUsers(user)) {
+    return res.status(403).send('You do not have permission to manage users.');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/printers/:printerId', async (req, res) => {
   const user = currentUser(req);
   if (!user) return redirectToLogin(req, res);

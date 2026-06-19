@@ -12,9 +12,11 @@ import {
   formatAge,
   isStale,
   isVisibleBusy,
+  printerState,
   statusLabel,
   statusTimestamp,
-  statusTone
+  statusTone,
+  trafficLightMarkup
 } from './status-ui.js';
 
 let dashboardCallbacks = {
@@ -128,6 +130,7 @@ function cardValues(coder) {
   const visibleBusy = isVisibleBusy(coder);
   const timestamp = statusTimestamp(coder);
 
+  const printerLight = printerState(coder.decodedStatus);
   return {
     href: printerHref(printer.id),
     statusText: coder.checking ? 'Checking' : statusLabel(coder),
@@ -148,6 +151,8 @@ function cardValues(coder) {
     enabled: printer.enabled ? 'Enabled' : 'Disabled',
     connectionState: coder.state || 'not-checked',
     alarm: alarmSummary(coder.decodedStatus),
+    printerState: printerLight.label,
+    printerStateSuffix: isStale(coder) ? 'Last known printer state' : 'Printer state',
     rawStatus: coder.rawStatus || coder.status,
     lastSuccessDate: formatDate(coder.lastSuccessfulAt),
     lastAttemptDate: formatDate(timestamp),
@@ -161,6 +166,12 @@ function cardValues(coder) {
       coder.checking ||
       state.checkingAll
   };
+}
+
+function updateTrafficLight(container, coder) {
+  if (!container) return;
+  clear(container);
+  container.appendChild(trafficLightMarkup(coder.decodedStatus, { stale: isStale(coder) || coder.state === 'offline' }));
 }
 
 function updateFaultList(card, coder) {
@@ -206,6 +217,7 @@ function updateCoderCard(card, coder) {
     if (!['href', 'commandDisabled', 'faultLines'].includes(field)) setField(card, field, value);
   }
   updateFaultList(card, coder);
+  updateTrafficLight(card.querySelector('[data-field="trafficLight"]'), coder);
 
   const checkButton = card.querySelector('button[data-action="check"]');
   if (checkButton) {
@@ -275,7 +287,13 @@ function createCoderCard(coder) {
     ]),
     el('div', { className: 'operator-metrics' }, [
       metric('selectedMessage', 'Selected message', values.selectedMessage),
-      metric('alarm', values.alarmHeading, values.alarm),
+      el('div', { className: 'status-metric traffic-status' }, [
+        el('span', { text: values.printerStateSuffix, dataset: { field: 'printerStateSuffix' } }),
+        el('div', { className: 'traffic-light-slot', dataset: { field: 'trafficLight' } }, [
+          trafficLightMarkup(coder.decodedStatus, { stale: isStale(coder) || coder.state === 'offline' })
+        ]),
+        el('strong', { text: values.printerState, dataset: { field: 'printerState' } })
+      ]),
       el('div', { className: 'status-metric expected-print' }, [
         el('span', { text: values.expectedOutputLabel, dataset: { field: 'expectedOutputLabel' } }),
         el('pre', { text: values.expectedOutput, dataset: { field: 'expectedOutput' } })

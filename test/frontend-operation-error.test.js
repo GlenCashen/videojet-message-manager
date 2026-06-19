@@ -18,3 +18,25 @@ test('message update catch path does not synthesize printer offline state', asyn
   assert.ok(confirmBlock.includes('showUpdateResult(error.data)'));
   assert.equal(confirmBlock.includes('online: false'), false);
 });
+
+test('top navigation does not expose Users as a top-level link', async () => {
+  const navigation = await readFile('public/js/navigation.js', 'utf8');
+  assert.equal(navigation.includes("navLink('/editor#users', 'Users'"), false);
+  assert.equal(navigation.includes("navLink('/dashboard#my-printers'"), false);
+});
+
+test('printer page does not force dashboard active nav state', async () => {
+  const page = await readFile('public/printer-page.js', 'utf8');
+  assert.equal(page.includes("renderNavigation(elements.nav, { active: '/dashboard' })"), false);
+  assert.ok(page.includes('renderNavigation(elements.nav, { active: window.location.pathname })'));
+});
+
+test('traffic-light printer state helper is shared by dashboard and printer page', async () => {
+  const statusUi = await readFile('public/js/status-ui.js', 'utf8');
+  const dashboard = await readFile('public/js/dashboard.js', 'utf8');
+  const printerPage = await readFile('public/printer-page.js', 'utf8');
+
+  assert.ok(statusUi.includes('function trafficLightMarkup'));
+  assert.ok(dashboard.includes('trafficLightMarkup(coder.decodedStatus'));
+  assert.ok(printerPage.includes('trafficLightMarkup(decodedStatus'));
+});

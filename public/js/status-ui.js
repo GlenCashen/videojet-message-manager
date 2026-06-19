@@ -1,4 +1,5 @@
 const STALE_AFTER_MS = 45000;
+const TRAFFIC_LIGHTS = ['green', 'amber', 'red'];
 
 function isVisibleBusy(status) {
   return Boolean(status?.busy) && status.currentOperation !== 'poll';
@@ -70,6 +71,47 @@ function alarmSummary(decodedStatus) {
   return decodedStatus.alarm?.label || 'No alarm';
 }
 
+function printerState(decodedStatus) {
+  if (!decodedStatus?.valid) {
+    return {
+      key: 'unknown',
+      label: decodedStatus?.error || 'Unknown'
+    };
+  }
+  const primary = decodedStatus.alarm?.primary;
+  if (TRAFFIC_LIGHTS.includes(primary)) {
+    return {
+      key: primary,
+      label: decodedStatus.alarm.label
+    };
+  }
+  return {
+    key: 'none',
+    label: decodedStatus.alarm?.label || 'None'
+  };
+}
+
+function trafficLightMarkup(decodedStatus, { stale = false } = {}) {
+  const state = printerState(decodedStatus);
+  const nodes = TRAFFIC_LIGHTS.map((light) => {
+    const active = state.key === light;
+    const label = `${light[0].toUpperCase()}${light.slice(1)} ${active ? 'active' : 'inactive'}`;
+    const span = document.createElement('span');
+    span.className = `traffic-light traffic-${light}${active ? ' active' : ''}`;
+    span.setAttribute('aria-label', label);
+    span.setAttribute('title', label);
+    span.appendChild(document.createElement('span'));
+    return span;
+  });
+
+  const wrapper = document.createElement('div');
+  wrapper.className = `traffic-light-group state-${state.key}${stale ? ' is-stale' : ''}`;
+  wrapper.setAttribute('role', 'img');
+  wrapper.setAttribute('aria-label', `Printer state ${state.label}${stale ? ', last known state' : ''}`);
+  for (const node of nodes) wrapper.appendChild(node);
+  return wrapper;
+}
+
 function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return '-';
   const seconds = Math.floor(ms / 1000);
@@ -135,8 +177,10 @@ export {
   formatAge,
   isStale,
   isVisibleBusy,
+  printerState,
   setLiveBadge,
   statusLabel,
   statusTimestamp,
-  statusTone
+  statusTone,
+  trafficLightMarkup
 };

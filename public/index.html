@@ -12,8 +12,8 @@
   <main class="shell">
     <header class="app-header">
       <div>
-        <p class="eyebrow">Videojet 1620 WSI Simple Protocol</p>
-        <h1>Videojet Message Manager</h1>
+        <p id="editorBreadcrumb" class="breadcrumb">Editor / Overview</p>
+        <h1>Editor</h1>
         <p id="fleetSummary" class="muted">Loading coder summary...</p>
       </div>
       <div class="header-badges">
@@ -29,12 +29,13 @@
     </header>
 
     <div id="topNavigation" class="nav-shell"></div>
+    <nav id="editorSubnav" class="sub-nav" aria-label="Editor sections"></nav>
 
     <section class="panel dashboard-panel" aria-labelledby="dashboardTitle">
       <div class="section-heading">
         <div>
-          <h2 id="dashboardTitle">Coder overview</h2>
-          <p id="dashboardHelp" class="muted">Live status, selected messages, and active printer faults.</p>
+          <h2 id="dashboardTitle">Printers</h2>
+          <p id="dashboardHelp" class="muted">Open coders, check live state, and edit connection settings.</p>
         </div>
         <button id="checkAllButton" class="secondary" type="button">Refresh now</button>
       </div>
@@ -90,7 +91,7 @@
       <details>
         <summary>
           <span>
-            <strong id="messageConfigTitle">Message configuration</strong>
+            <strong id="messageConfigTitle">Messages</strong>
             <span class="muted">Edit logical messages and assign stored names to coders</span>
           </span>
           <button id="refreshMessagesButton" class="ghost" type="button">Refresh</button>
@@ -128,11 +129,23 @@
       </details>
     </section>
 
+    <section id="faultHistoryPanel" class="panel fault-history-editor-panel" aria-labelledby="editorFaultTitle">
+      <details>
+        <summary>
+          <span>
+            <strong id="editorFaultTitle">Fault history</strong>
+            <span class="muted">Open a coder page to review current faults and recent transitions</span>
+          </span>
+        </summary>
+        <p class="muted">Fault history is stored per coder. Use the printer cards above to open the relevant coder and review active faults, recent clears, durations, and diagnostics.</p>
+      </details>
+    </section>
+
     <section id="devPanel" class="panel dev-panel" aria-labelledby="devTitle">
       <details>
         <summary>
           <span>
-            <strong id="devTitle">Development tools and single-printer test</strong>
+            <strong id="devTitle">Diagnostics</strong>
             <span class="muted">Emulator controls, direct check, set and verify</span>
           </span>
         </summary>
@@ -270,8 +283,8 @@
       <details>
         <summary>
           <span>
-            <strong id="logTitle">Command log</strong>
-            <span class="muted">Recent WSI commands and dashboard checks</span>
+            <strong id="logTitle">Audit</strong>
+            <span class="muted">Recent WSI commands, dashboard checks and audit events</span>
           </span>
           <button id="refreshLogs" class="ghost" type="button">Refresh</button>
         </summary>

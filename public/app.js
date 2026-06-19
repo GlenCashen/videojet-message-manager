@@ -8,7 +8,7 @@ import { hasCapability, loadSession } from './js/session.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
 import { state } from './js/state.js';
 import { setLiveBadge } from './js/status-ui.js';
-import { normalizeError, setNotice } from './js/dom.js';
+import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { elements } from './js/elements.js';
 import { loadUsers, setupUserManagement } from './js/user-management.js';
 
@@ -19,9 +19,61 @@ function canLoadLogs() {
 function applyCapabilityLayout() {
   elements.editorPanel.classList.toggle('hidden', true);
   elements.messageConfigPanel?.classList.toggle('hidden', !hasCapability('editMessages'));
+  elements.faultHistoryPanel?.classList.toggle('hidden', !hasCapability('viewFaultHistory'));
   elements.devPanel?.classList.toggle('hidden', !hasCapability('accessDiagnostics'));
   elements.logPanel?.classList.toggle('hidden', !canLoadLogs());
   elements.userPanel?.classList.toggle('hidden', !hasCapability('manageUsers'));
+}
+
+function editorSections() {
+  return [
+    { id: 'overview', label: 'Overview', href: '/editor', visible: true, panel: null },
+    { id: 'printers', label: 'Printers', href: '/editor#printers', visible: true, panel: document.querySelector('.dashboard-panel') },
+    { id: 'messages', label: 'Messages', href: '/editor#messages', visible: hasCapability('editMessages'), panel: elements.messageConfigPanel },
+    { id: 'users', label: 'Users', href: '/editor/users', visible: hasCapability('manageUsers'), panel: elements.userPanel },
+    { id: 'faults', label: 'Fault history', href: '/editor/faults', visible: hasCapability('viewFaultHistory'), panel: elements.faultHistoryPanel },
+    { id: 'audit', label: 'Audit', href: '/editor#audit', visible: canLoadLogs(), panel: elements.logPanel },
+    { id: 'diagnostics', label: 'Diagnostics', href: '/editor#diagnostics', visible: hasCapability('accessDiagnostics'), panel: elements.devPanel }
+  ].filter((section) => section.visible);
+}
+
+function currentEditorSection() {
+  const pathPart = window.location.pathname.split('/')[2];
+  if (pathPart === 'users') return 'users';
+  if (pathPart === 'faults') return 'faults';
+  const hash = window.location.hash.replace('#', '');
+  if (hash) return hash;
+  return 'overview';
+}
+
+function setDetailsOpen(panel, open) {
+  const details = panel?.querySelector('details');
+  if (details) details.open = open;
+}
+
+function renderEditorSubnav() {
+  if (!elements.editorSubnav) return;
+  const activeSection = currentEditorSection();
+  clear(elements.editorSubnav);
+  const sections = editorSections();
+  for (const section of sections) {
+    elements.editorSubnav.appendChild(el('a', {
+      href: section.href,
+      className: section.id === activeSection ? 'sub-nav-link active' : 'sub-nav-link',
+      text: section.label
+    }));
+  }
+  const active = sections.find((section) => section.id === activeSection) || sections[0];
+  if (elements.editorBreadcrumb) elements.editorBreadcrumb.textContent = `Editor / ${active.label}`;
+}
+
+function applyEditorSectionContext({ scroll = false } = {}) {
+  const activeSection = currentEditorSection();
+  for (const section of editorSections()) setDetailsOpen(section.panel, section.id === activeSection);
+  renderEditorSubnav();
+
+  const activePanel = editorSections().find((section) => section.id === activeSection)?.panel;
+  if (scroll && activePanel) activePanel.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function safeLoadLogs() {
@@ -124,6 +176,13 @@ async function start() {
     }
 
     applyCapabilityLayout();
+    renderEditorSubnav();
+    elements.editorSubnav?.addEventListener('click', (event) => {
+      const link = event.target.closest('a[href^="/editor#"]');
+      if (!link) return;
+      window.setTimeout(() => applyEditorSectionContext({ scroll: true }), 0);
+    });
+    window.addEventListener('hashchange', () => applyEditorSectionContext({ scroll: true }));
     setupDashboard({ loadLogs: safeLoadLogs, startEdit: safeStartEdit });
     if (hasCapability('configurePrinters')) setupEditor({ loadPrinters });
     if (canLoadLogs()) setupLogs();
@@ -139,6 +198,7 @@ async function start() {
       hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve(),
       hasCapability('manageUsers') ? loadUsers() : Promise.resolve()
     ]);
+    applyEditorSectionContext({ scroll: currentEditorSection() !== 'overview' });
   } catch (error) {
     setNotice(elements.dashboardMessage, normalizeError(error), 'error');
   }

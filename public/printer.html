@@ -12,7 +12,7 @@
   <main class="shell operator-shell">
     <header class="app-header">
       <div>
-        <p class="eyebrow">Videojet 1620 operator page</p>
+        <p id="printerBreadcrumb" class="breadcrumb">Dashboard / Coder</p>
         <h1 id="printerTitle">Coder</h1>
         <p id="printerSubtitle" class="muted">Loading coder...</p>
       </div>
@@ -22,99 +22,127 @@
           <span>CONNECTING</span>
         </div>
 
-        <a class="secondary button-link" href="/">Back to dashboard</a>
+        <a class="secondary button-link" href="/dashboard">Back</a>
       </div>
     </header>
     <div id="topNavigation" class="nav-shell"></div>
 
-    <section class="panel operator-panel" aria-labelledby="statusTitle">
-      <div class="section-heading">
-        <div>
-          <h2 id="statusTitle">Current coder status</h2>
-          <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
-        </div>
-        <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
-      </div>
-      <p id="operatorMessage" class="notice hidden" aria-live="polite"></p>
-      <div id="operatorStatus" class="operator-status status-unknown">
-        <div class="operator-state">
-          <span id="operatorStatusLight" class="status-light large" aria-hidden="true"></span>
-          <div>
-            <p class="muted">Printer communication</p>
-            <strong id="operatorConnection">Not checked</strong>
+    <p id="operatorMessage" class="notice hidden" aria-live="polite"></p>
+
+    <div class="operator-layout">
+      <div class="operator-main-column">
+        <section id="operatorControlsPanel" class="panel operator-panel primary-workflow" aria-labelledby="sendTitle">
+          <div class="section-heading compact-heading">
+            <div>
+              <h2 id="sendTitle">Set printer message</h2>
+              <p class="muted">Queued per coder so only one WSI command sequence runs at a time.</p>
+            </div>
           </div>
-        </div>
-        <div class="operator-metrics">
-          <div class="status-metric"><span>Selected message</span><strong id="operatorSelectedMessage">-</strong></div>
-          <div class="status-metric"><span>Printer status</span><strong id="operatorAlarmStatus">-</strong></div>
-          <div class="status-metric"><span>Active faults</span><strong id="operatorFaults">-</strong></div>
-          <div class="status-metric"><span>Last successful update</span><strong id="operatorCheckedAt">No update yet</strong></div>
-          <div class="status-metric"><span>Data source</span><strong id="operatorDataSource">Last known status</strong></div>
-          <div class="status-metric"><span>Access</span><strong id="operatorAccessLevel">Loading</strong></div>
-        </div>
-        <section class="expected-output-panel wide" aria-labelledby="storedExpectedTitle">
-          <h3 id="storedExpectedTitle">Expected printed message</h3>
+          <form id="operatorSetForm" class="grid">
+            <label for="operatorMessageName">Message
+              <select id="operatorMessageName"></select>
+            </label>
+            <div id="messageFields" class="wide message-fields"></div>
+            <section class="wide preview-panel print-preview" aria-labelledby="previewTitle">
+              <h3 id="previewTitle">Live expected print preview</h3>
+              <p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p>
+            </section>
+            <div class="actions wide">
+              <button id="operatorSetButton" class="primary" type="submit">Set message</button>
+            </div>
+          </form>
+          <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle">
+            <h3 id="reviewTitle">Apply to coder?</h3>
+            <div id="reviewContent" class="review-content"></div>
+            <div class="actions">
+              <button id="cancelReviewButton" class="secondary" type="button">Cancel</button>
+              <button id="confirmSetButton" class="primary" type="button">Confirm set message</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel operator-panel expected-output-panel" aria-labelledby="storedExpectedTitle">
+          <div class="section-heading compact-heading">
+            <div>
+              <h2 id="storedExpectedTitle">Expected printed message</h2>
+              <p id="operatorExpectedSource" class="muted">Set a message to record expected output.</p>
+            </div>
+          </div>
           <pre id="operatorExpectedOutput">No expected output recorded</pre>
-          <p id="operatorExpectedSource" class="muted">Set a message to record expected output.</p>
         </section>
-        <details class="diagnostics wide">
-          <summary>Diagnostics</summary>
-          <div class="operator-diagnostics">
-            <div class="detail"><span>Raw status</span><strong id="operatorPrinterStatus">-</strong></div>
-            <div class="detail"><span>Host</span><strong id="operatorHost">-</strong></div>
-            <div class="detail"><span>Mode</span><strong id="operatorMode">-</strong></div>
+
+        <section class="panel operator-panel" aria-labelledby="faultTitle">
+          <div class="section-heading compact-heading">
+            <div>
+              <h2 id="faultTitle">Active faults</h2>
+              <p class="muted">Current fault bits reported by the printer.</p>
+            </div>
           </div>
-        </details>
-      </div>
-    </section>
-
-    <section class="panel operator-panel" aria-labelledby="faultTitle">
-      <div class="section-heading">
-        <div>
-          <h2 id="faultTitle">Active faults</h2>
-          <p class="muted">Current fault bits reported by the printer.</p>
-        </div>
-      </div>
-      <div id="activeFaultPanel" class="fault-panel">
-        <p class="muted">No active printer faults</p>
-      </div>
-      <details class="fault-history-section">
-        <summary>Fault history</summary>
-        <div id="faultHistoryList" class="fault-history-list">
-          <p class="muted">No fault history recorded.</p>
-        </div>
-      </details>
-    </section>
-
-    <section id="operatorControlsPanel" class="panel operator-panel" aria-labelledby="sendTitle">
-      <div class="section-heading">
-        <div>
-          <h2 id="sendTitle">Set printer message</h2>
-          <p class="muted">Requests are queued per coder so only one WSI command sequence runs at a time.</p>
-        </div>
-      </div>
-      <form id="operatorSetForm" class="grid">
-        <label for="operatorMessageName">Select message
-          <select id="operatorMessageName"></select>
-        </label>
-        <div id="messageFields" class="wide message-fields"></div>
-        <section class="wide preview-panel" aria-labelledby="previewTitle">
-          <h3 id="previewTitle">Expected printed message</h3>
-          <p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p>
+          <div id="activeFaultPanel" class="fault-panel">
+            <p class="muted">No active printer faults</p>
+          </div>
+          <details class="fault-history-section">
+            <summary>Fault history</summary>
+            <div id="faultHistoryList" class="fault-history-list">
+              <p class="muted">No fault history recorded.</p>
+            </div>
+          </details>
         </section>
-        <div class="actions wide">
-          <button id="operatorSetButton" class="primary" type="submit">Review update</button>
-        </div>
-      </form>
-      <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle">
-        <h3 id="reviewTitle">Apply to coder?</h3>
-        <div id="reviewContent" class="review-content"></div>
-        <div class="actions">
-          <button id="cancelReviewButton" class="secondary" type="button">Cancel</button>
-          <button id="confirmSetButton" class="primary" type="button">Set printer</button>
-        </div>
-      </section>
-    </section>
+      </div>
+
+      <aside class="operator-side-column">
+        <section class="panel operator-panel" aria-labelledby="statusTitle">
+          <div class="section-heading compact-heading">
+            <div>
+              <h2 id="statusTitle">Printer summary</h2>
+              <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
+            </div>
+            <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
+          </div>
+          <div id="operatorStatus" class="operator-summary-card operator-status status-unknown">
+            <div class="summary-row">
+              <span>Communication</span>
+              <strong id="operatorConnection">Not checked</strong>
+            </div>
+            <div class="summary-row traffic-summary-row">
+              <span>Printer state</span>
+              <div>
+                <div id="operatorTrafficLight"></div>
+                <strong id="operatorAlarmStatus">-</strong>
+              </div>
+            </div>
+            <div class="summary-row">
+              <span>Selected message</span>
+              <strong id="operatorSelectedMessage">-</strong>
+            </div>
+            <div class="summary-row">
+              <span>Faults</span>
+              <strong id="operatorFaults">-</strong>
+            </div>
+            <div class="summary-row">
+              <span>Last update</span>
+              <strong id="operatorCheckedAt">No update yet</strong>
+            </div>
+            <div class="summary-row subtle-row">
+              <span>Data source</span>
+              <strong id="operatorDataSource">Last known status</strong>
+            </div>
+            <div class="summary-row subtle-row">
+              <span>Access</span>
+              <strong id="operatorAccessLevel">Loading</strong>
+            </div>
+            <details class="diagnostics">
+              <summary>Diagnostics</summary>
+              <div class="operator-diagnostics">
+                <div class="detail"><span>Raw status</span><strong id="operatorPrinterStatus">-</strong></div>
+                <div class="detail"><span>Host</span><strong id="operatorHost">-</strong></div>
+                <div class="detail"><span>Mode</span><strong id="operatorMode">-</strong></div>
+              </div>
+            </details>
+          </div>
+        </section>
+      </aside>
+    </div>
   </main>
   <script type="module" src="/printer-page.js"></script>
 </body>

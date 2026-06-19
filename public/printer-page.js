@@ -5,15 +5,16 @@ import { printerHref, renderNavigation } from './js/navigation.js';
 import { canOperatePrinter, currentSession, loadSession } from './js/session.js';
 import {
   activeFaults,
-  alarmSummary,
   faultSummary,
   formatAge,
   formatDuration,
   isStale,
   isVisibleBusy,
+  printerState,
   setLiveBadge,
   statusLabel,
-  statusTone
+  statusTone,
+  trafficLightMarkup
 } from './js/status-ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +34,8 @@ const elements = {
   nav: $('topNavigation'),
   expectedOutput: $('operatorExpectedOutput'),
   expectedSource: $('operatorExpectedSource'),
+  trafficLight: $('operatorTrafficLight'),
+  breadcrumb: $('printerBreadcrumb'),
   activeFaultPanel: $('activeFaultPanel'),
   faultHistoryList: $('faultHistoryList'),
   printerStatus: $('operatorPrinterStatus'),
@@ -245,17 +248,22 @@ function updateOperatorShell() {
   const sourceText = serverConnected ? 'Live data stream' : 'Last known status';
   const visibleBusy = isVisibleBusy(latestStatus);
   const tone = printer?.enabled ? statusTone(latestStatus || { state: 'not-checked' }) : 'disabled';
+  const decodedStatus = latestStatus?.decodedStatus || null;
+  const stale = latestStatus ? isStale(latestStatus) : false;
+  const lightState = printerState(decodedStatus);
 
-  elements.statusPanel.className = `operator-status status-${tone}`;
+  elements.statusPanel.className = `operator-summary-card operator-status status-${tone}`;
   elements.dataSource.textContent = sourceText;
   elements.liveNote.textContent = serverConnected
-    ? 'Live status is streaming from the server.'
-    : 'Live data lost. Last known printer state remains on screen.';
+    ? 'Live status is streaming.'
+    : 'Live data lost. Showing last known state.';
+  clear(elements.trafficLight);
+  elements.trafficLight.appendChild(trafficLightMarkup(decodedStatus, { stale: stale || latestStatus?.online === false }));
 
   if (latestStatus) {
     elements.connection.textContent = statusLabel(latestStatus);
     elements.selectedMessage.textContent = latestStatus.selectedMessage || '-';
-    elements.alarmStatus.textContent = alarmSummary(latestStatus.decodedStatus);
+    elements.alarmStatus.textContent = lightState.label;
     elements.faults.textContent = faultSummary(latestStatus.decodedStatus);
     elements.printerStatus.textContent = latestStatus.rawStatus || latestStatus.status || '-';
     elements.checkedAt.textContent = formatAge(latestStatus.lastSuccessfulAt);
@@ -359,6 +367,7 @@ function applyPrinterConfig(value) {
   printer = value;
   elements.title.textContent = printer.name;
   elements.subtitle.textContent = printer.location || 'No location set';
+  elements.breadcrumb.textContent = `Dashboard / ${printer.name}`;
   elements.host.textContent = `${printer.host}:${printer.port}`;
   elements.mode.textContent = printer.mode === 'emulator' ? 'Emulator' : 'Real printer';
   if (window.location.pathname !== printerHref(printer.id) && window.location.pathname.startsWith('/printers/')) {
@@ -418,7 +427,7 @@ async function loadPrinter() {
 
   try {
     await loadSession();
-    renderNavigation(elements.nav, { active: '/dashboard' });
+    renderNavigation(elements.nav, { active: window.location.pathname });
     applyPrinterConfig(await apiJson(`/api/printers/${encodeURIComponent(printerId)}`));
     if (canOperatePrinter(printerId)) await loadMessages();
     const cached = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/status`);

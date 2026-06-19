@@ -21,8 +21,8 @@ async function waitForServer(baseUrl, child) {
 }
 
 test('preview endpoint does not issue WSI commands', async () => {
-  const port = 18080 + Math.floor(Math.random() * 1000);
-  const emulatorPort = 19080 + Math.floor(Math.random() * 1000);
+  const port = 36080 + Math.floor(Math.random() * 1000);
+  const emulatorPort = 37080 + Math.floor(Math.random() * 1000);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
@@ -61,8 +61,11 @@ test('preview endpoint does not issue WSI commands', async () => {
     const countersResponse = await fetch(`${baseUrl}/api/debug/wsi-counters`);
     assert.deepEqual(await countersResponse.json(), {});
   } finally {
+    const exitPromise = child.exitCode === null
+      ? new Promise((resolve) => child.once('exit', resolve))
+      : Promise.resolve();
     child.kill();
-    await new Promise((resolve) => child.once('exit', resolve));
+    await exitPromise;
     if (child.exitCode && child.exitCode !== 0 && child.exitCode !== 1) {
       throw new Error(output.join(''));
     }
@@ -70,8 +73,8 @@ test('preview endpoint does not issue WSI commands', async () => {
 });
 
 test('fault history API records activation and clear from emulator checks', async () => {
-  const port = 18080 + Math.floor(Math.random() * 1000);
-  const emulatorPort = 19080 + Math.floor(Math.random() * 1000);
+  const port = 36080 + Math.floor(Math.random() * 1000);
+  const emulatorPort = 37080 + Math.floor(Math.random() * 1000);
   const dir = await mkdtemp(path.join(tmpdir(), 'fault-api-'));
   const faultHistoryPath = path.join(dir, 'fault-history.json');
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -144,8 +147,11 @@ test('fault history API records activation and clear from emulator checks', asyn
     const unknown = await fetch(`${baseUrl}/api/printers/missing/faults`);
     assert.equal(unknown.status, 404);
   } finally {
+    const exitPromise = child.exitCode === null
+      ? new Promise((resolve) => child.once('exit', resolve))
+      : Promise.resolve();
     child.kill();
-    await new Promise((resolve) => child.once('exit', resolve));
+    await exitPromise;
     if (child.exitCode && child.exitCode !== 0 && child.exitCode !== 1) {
       throw new Error(output.join(''));
     }

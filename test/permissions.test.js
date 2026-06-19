@@ -23,7 +23,7 @@ const TEST_PRINTERS = [
   { id: 'coder-3', name: 'Case Coder' }
 ];
 
-function randomPort(base = 18180) {
+function randomPort(base = 34080) {
   return base + Math.floor(Math.random() * 1000);
 }
 
@@ -44,7 +44,7 @@ async function waitForServer(baseUrl, child) {
 
 function startServer({ role, printerIds = '', extraEnv = {} }) {
   const port = randomPort();
-  const emulatorPort = randomPort(19180);
+  const emulatorPort = randomPort(35080);
   const dbPath = extraEnv.DB_PATH || path.join(tmpdir(), `vmm-permissions-${port}.db`);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
@@ -80,8 +80,11 @@ async function withServer(options, run) {
     await waitForServer(server.baseUrl, server.child);
     await run(server.baseUrl);
   } finally {
+    const exitPromise = server.child.exitCode === null
+      ? new Promise((resolve) => server.child.once('exit', resolve))
+      : Promise.resolve();
     server.child.kill();
-    await new Promise((resolve) => server.child.once('exit', resolve));
+    await exitPromise;
     if (server.child.exitCode && server.child.exitCode !== 0 && server.child.exitCode !== 1) {
       throw new Error(server.output.join(''));
     }
