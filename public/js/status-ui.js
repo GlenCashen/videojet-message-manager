@@ -10,13 +10,12 @@ function statusTimestamp(status) {
 }
 
 function isStale(status) {
-  if (typeof status?.stale === 'boolean') return status.stale;
-
   const timestamp = statusTimestamp(status);
-  if (!timestamp) return false;
+  if (!timestamp) return status?.stale === true;
 
   const checkedAt = new Date(timestamp).valueOf();
-  return Number.isFinite(checkedAt) && Date.now() - checkedAt > STALE_AFTER_MS;
+  const timestampIsStale = Number.isFinite(checkedAt) && Date.now() - checkedAt > STALE_AFTER_MS;
+  return status?.stale === true || timestampIsStale;
 }
 
 function formatAge(value) {

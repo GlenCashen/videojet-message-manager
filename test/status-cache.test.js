@@ -115,6 +115,31 @@ test('expected output is included in status and preserved by polls', () => {
   assert.deepEqual(cache.get('coder-1').expectedOutput, expectedOutput);
 });
 
+test('successful unchanged polls broadcast fresh timestamps without changing revision', async () => {
+  const events = [];
+  const cache = new StatusCache({
+    staleAfterMs: 1000,
+    onChange: (event, status) => events.push({ event, status })
+  });
+  cache.syncPrinters([{ id: 'coder-1' }]);
+
+  const first = cache.applySuccess('coder-1', {
+    selectedMessage: '9 MONTH',
+    rawStatus: '0000001',
+    responseTimeMs: 10
+  });
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const second = cache.applySuccess('coder-1', {
+    selectedMessage: '9 MONTH',
+    rawStatus: '0000001',
+    responseTimeMs: 10
+  });
+
+  assert.equal(events.length, 2);
+  assert.equal(second.revision, first.revision);
+  assert.notEqual(second.lastSuccessfulAt, first.lastSuccessfulAt);
+});
+
 test('stale calculation uses last successful timestamp', async () => {
   const cache = new StatusCache({ staleAfterMs: 5, offlineAfterFailures: 3 });
   cache.syncPrinters([{ id: 'coder-1' }]);

@@ -521,7 +521,18 @@ h3 { margin: 0; font-size: 1.15rem; }
   overflow-wrap: anywhere;
 }
 
-.current-message-readback button { justify-self: start; }
+.sync-message {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #273241;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+.sync-message.sync-good { background: rgba(34, 197, 94, .12); color: #c8ffdf; }
+.sync-message.sync-stale { background: rgba(245, 184, 65, .14); color: #ffe0a1; }
+.sync-message.sync-bad { background: rgba(239, 68, 68, .14); color: #ffd0d0; }
 
 .coder-card {
   display: grid;

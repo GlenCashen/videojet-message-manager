@@ -5,6 +5,7 @@ import { printerHref, renderNavigation } from './navigation.js';
 import { currentSession, loadSession } from './session.js';
 import {
   faultCountLabel,
+  formatAge,
   isStale,
   printerState,
   setLiveBadge,
@@ -24,7 +25,6 @@ const state = {
   printers: {},
   order: [],
   statuses: {},
-  readbacks: {},
   serverConnected: false,
   lastServerEventAt: Date.now()
 };
@@ -53,43 +53,45 @@ function expectedMessage(status) {
   return status?.expectedOutput?.printerMessageName || null;
 }
 
-function readbackStatus(status, readback) {
-  if (readback?.loading) return 'READING';
-  if (readback?.ok === false) return 'FAILED';
-  if (!readback?.ok) return 'NOT CHECKED';
+function syncState(status) {
+  if (!status?.lastSuccessfulAt) return { label: 'WAITING', tone: 'neutral' };
+  if (!state.serverConnected) return { label: 'SERVER OFFLINE', tone: 'bad' };
+  if (status.online === false) return { label: 'OFFLINE', tone: 'bad' };
+  if (isStale(status)) return { label: 'STALE', tone: 'stale' };
+  if (status.consecutiveFailures > 0) return { label: 'RETRYING', tone: 'stale' };
   const expected = expectedMessage(status);
-  return expected && expected !== readback.currentMessage ? 'MISMATCH' : 'OK';
+  if (expected && expected !== status.selectedMessage) return { label: 'MISMATCH', tone: 'bad' };
+  return { label: 'SYNCED', tone: 'good' };
 }
 
 function createReadback(printer, status) {
-  const readback = state.readbacks[printer.id] || {};
   const expected = expectedMessage(status);
-  const resultStatus = readbackStatus(status, readback);
-  const tone = resultStatus === 'FAILED' || resultStatus === 'MISMATCH' ? 'bad' : resultStatus === 'OK' ? 'good' : 'neutral';
-  const button = el('button', {
-    className: 'secondary',
-    type: 'button',
-    dataset: { action: 'refresh-current-message', id: printer.id }
-  }, readback.loading ? 'Refreshing...' : 'Refresh current message');
-  button.disabled = Boolean(readback.loading || !printer.enabled);
+  const sync = syncState(status);
+  let syncMessage = `Server polling is active. ${formatAge(status.lastSuccessfulAt)}.`;
+  if (!status.lastSuccessfulAt) syncMessage = 'Waiting for the first successful server poll.';
+  else if (!state.serverConnected) syncMessage = 'Live server connection lost. Showing the last successful readback.';
+  else if (status.online === false) syncMessage = `Printer is offline. Automatic polling continues. ${status.lastError || ''}`.trim();
+  else if (isStale(status)) syncMessage = `Data is stale. Automatic polling continues. ${status.lastError || ''}`.trim();
+  else if (status.consecutiveFailures > 0) syncMessage = `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
 
   return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [
     el('div', { className: 'readback-heading' }, [
       el('strong', { text: 'Current printer message' }),
-      el('span', { className: `badge ${tone}`, text: resultStatus })
+      el('span', { className: `badge ${sync.tone}`, text: sync.label })
     ]),
     el('div', { className: 'readback-facts' }, [
       el('span', { text: 'Printer address' }),
-      el('strong', { text: readback.printer || `${printer.host}:${printer.port}` }),
+      el('strong', { text: `${printer.host}:${printer.port}` }),
       expected ? el('span', { text: 'Expected message' }) : null,
       expected ? el('strong', { text: expected }) : null,
       el('span', { text: 'Current printer message' }),
-      el('strong', { text: readback.currentMessage || '-' }),
-      el('span', { text: 'Last checked' }),
-      el('strong', { text: readback.checkedAt ? new Date(readback.checkedAt).toLocaleString() : 'Not checked' })
+      el('strong', { text: status.selectedMessage || '-' }),
+      el('span', { text: 'Last successful sync' }),
+      el('strong', { text: status.lastSuccessfulAt ? new Date(status.lastSuccessfulAt).toLocaleString() : 'Waiting' }),
+      el('span', { text: 'Latest attempt' }),
+      el('strong', { text: status.lastAttemptAt ? new Date(status.lastAttemptAt).toLocaleString() : 'Waiting' })
     ]),
-    readback.error ? el('p', { className: 'card-error', text: readback.error }) : null,
-    button
+    el('p', { className: `sync-message sync-${sync.tone}`, text: syncMessage })
   ]);
 }
 
@@ -135,26 +137,6 @@ function createCard(printer) {
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
     el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View printer')
   ]);
-}
-
-async function refreshCurrentMessage(id) {
-  const printer = state.printers[id];
-  if (!printer) return;
-  state.readbacks[id] = { ...state.readbacks[id], loading: true, error: '' };
-  render();
-
-  try {
-    state.readbacks[id] = await apiJson(`/api/printer/current-message?printerId=${encodeURIComponent(id)}`);
-  } catch (error) {
-    state.readbacks[id] = {
-      ...(error.data || {}),
-      ok: false,
-      printer: error.data?.printer || `${printer.host}:${printer.port}`,
-      error: normalizeError(error),
-      checkedAt: error.data?.checkedAt || new Date().toISOString()
-    };
-  }
-  render();
 }
 
 function render() {
@@ -211,11 +193,6 @@ async function loadInitialData() {
 }
 
 elements.grid.addEventListener('click', (event) => {
-  const refreshButton = event.target.closest('button[data-action="refresh-current-message"]');
-  if (refreshButton) {
-    refreshCurrentMessage(refreshButton.dataset.id);
-    return;
-  }
   if (event.target.closest('a')) return;
   const card = event.target.closest('[data-href]');
   if (card) window.location.href = card.dataset.href;
@@ -251,6 +228,7 @@ subscribeToPrinterEvents({
 
 setInterval(() => {
   if (Date.now() - state.lastServerEventAt > 45000) markDisconnected();
+  render();
 }, 5000);
 
 loadInitialData();

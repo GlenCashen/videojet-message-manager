@@ -145,7 +145,7 @@ class StatusCache {
     current.consecutiveFailures = 0;
     current.lastError = decodedStatus.valid ? null : decodedStatus.error;
 
-    this.commit(printerId, before, current);
+    this.commit(printerId, before, current, { broadcastUnchanged: true });
     this.onStatusSuccess(publicStatus(current));
     return this.get(printerId);
   }
@@ -175,13 +175,13 @@ class StatusCache {
     return Number(expectedRevision) === this.ensure(printerId).revision;
   }
 
-  commit(printerId, before, current, { force = false, event = 'printer-status', broadcast = true } = {}) {
+  commit(printerId, before, current, { force = false, event = 'printer-status', broadcast = true, broadcastUnchanged = false } = {}) {
     const changed = force || isMaterialChange(before, current);
     if (changed) current.revision += 1;
     if (!before.online && current.online && before.consecutiveFailures >= this.offlineAfterFailures) {
       this.onTransition('offline -> online', publicStatus(current));
     }
-    if (broadcast && changed) this.onChange(event, this.get(printerId));
+    if (broadcast && (changed || broadcastUnchanged)) this.onChange(event, this.get(printerId));
   }
 }
 
