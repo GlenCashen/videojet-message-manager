@@ -51,6 +51,21 @@ function setDetailsOpen(panel, open) {
   if (details) details.open = open;
 }
 
+function ensureEditorSubnav() {
+  if (!elements.editorSubnav) {
+    elements.editorSubnav = el('nav', {
+      id: 'editorSubnav',
+      className: 'sub-nav',
+      'aria-label': 'Editor sections'
+    });
+  }
+
+  if (!elements.topNavigation) return;
+  const mainNav = elements.topNavigation.querySelector('.top-nav');
+  if (mainNav) mainNav.insertAdjacentElement('afterend', elements.editorSubnav);
+  else elements.topNavigation.appendChild(elements.editorSubnav);
+}
+
 function renderEditorSubnav() {
   if (!elements.editorSubnav) return;
   const activeSection = currentEditorSection();
@@ -181,6 +196,7 @@ async function start() {
   try {
     await loadSession();
     renderNavigation(elements.topNavigation, { active: '/editor' });
+    ensureEditorSubnav();
 
     if (!hasCapability('viewEditor')) {
       setNotice(elements.dashboardMessage, 'You do not have permission to view the editor.', 'error');
