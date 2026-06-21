@@ -1,0 +1,40 @@
+/* Editor sidebar subnav fix.
+   The editor subnav is moved into #topNavigation by app.js, directly after .top-nav.
+   Keep it in normal flow so it cannot overlap the main sidebar links. */
+.editor-app #topNavigation #editorSubnav {
+  position: static;
+  inset: auto;
+  left: auto;
+  right: auto;
+  top: auto;
+  bottom: auto;
+  z-index: auto;
+  display: grid;
+  gap: 3px;
+  margin: 18px 0 0;
+  width: auto;
+  overflow: visible;
+  transform: none;
+}
+
+.editor-app #topNavigation #editorSubnav .sub-nav-link {
+  display: block;
+  border: 0;
+  border-radius: 6px;
+  color: #bed0e4;
+  font-size: .88rem;
+  padding: 10px 12px;
+}
+
+.editor-app #topNavigation #editorSubnav .sub-nav-link.active,
+.editor-app #topNavigation #editorSubnav .sub-nav-link:hover {
+  background: #155eef;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .editor-app #topNavigation #editorSubnav {
+    margin: 12px 0;
+    overflow-x: auto;
+  }
+}
