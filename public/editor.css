@@ -8,7 +8,7 @@
 .editor-app button {
   align-items: center;
   background: #fff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #aebbc9;
   border-radius: 7px;
   color: #344054;
   cursor: pointer;
@@ -21,8 +21,8 @@
   transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
-.editor-app button:hover { background: #f8fafc; border-color: #94a3b8; }
-.editor-app button:focus-visible { box-shadow: 0 0 0 3px rgba(21, 94, 239, .2); outline: 0; }
+.editor-app button:hover { background: #f8fafc; border-color: #66788d; }
+.editor-app button:focus-visible { box-shadow: 0 0 0 3px rgba(21, 94, 239, .32); outline: 2px solid transparent; }
 .editor-app button:disabled { background: #eef2f6 !important; border-color: #d9e0e8 !important; color: #98a2b3 !important; cursor: not-allowed; opacity: 1; }
 .editor-app button.primary { background: #155eef; border-color: #155eef; color: #fff; }
 .editor-app button.primary:hover { background: #0f4fd1; border-color: #0f4fd1; }
@@ -35,7 +35,7 @@
 .editor-app select,
 .editor-app textarea {
   background: #fff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #aebbc9;
   border-radius: 7px;
   color: #172033;
   font-size: .88rem;
@@ -44,6 +44,9 @@
   width: 100%;
 }
 .editor-app textarea { line-height: 1.5; resize: vertical; }
+.editor-app input:focus-visible,
+.editor-app select:focus-visible,
+.editor-app textarea:focus-visible { border-color: #155eef; box-shadow: 0 0 0 3px rgba(21, 94, 239, .2); outline: 0; }
 .editor-app input[type='checkbox'] { accent-color: #155eef; min-height: 17px; padding: 0; width: 17px; }
 .editor-app label { color: #344054; font-size: .8rem; font-weight: 750; gap: 7px; }
 .editor-app fieldset { min-width: 0; }
@@ -159,6 +162,40 @@
 .editor-app .master-field-row small { color: #667085; font-size: .72rem; font-weight: 550; }
 .editor-app .master-field-row select { min-height: 38px; }
 .editor-app .master-register { border-top: 1px solid #dbe2ea; margin-top: 18px; padding-top: 18px; }
+
+.production-shell { max-width: 1480px; }
+.production-workspace { padding: 0; overflow: hidden; }
+.production-page-heading { align-items: center; display: flex; gap: 20px; justify-content: space-between; padding: 24px 28px 18px; }
+.production-page-heading h2, .production-page-heading p { margin: 0; }
+.production-page-heading p { margin-top: 5px; }
+.production-workspace > .notice { margin-left: 28px; margin-right: 28px; }
+.production-tabs { border-bottom: 1px solid #dbe2ea; display: flex; gap: 4px; padding: 0 28px; }
+.production-tab { background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; color: #667085; font-weight: 800; padding: 13px 18px; }
+.production-tab:hover { color: #172033; }
+.production-tab.active { border-bottom-color: #155eef; color: #155eef; }
+.production-tab-panel { padding: 24px 28px 30px; }
+.production-tab-panel.hidden { display: none; }
+.production-form-panel { border: 1px solid #b8c5d6; box-shadow: 0 12px 32px rgba(16, 24, 40, .08); margin: 20px 0; }
+.production-form-panel.hidden { display: none; }
+.master-tab-toolbar { align-items: center; display: flex; gap: 18px; justify-content: space-between; }
+.master-tab-toolbar h3, .master-tab-toolbar p { margin: 0; }
+.master-tab-toolbar p { margin-top: 4px; }
+.production-releases-app .release-summary-strip { margin-top: 0; }
+.production-releases-app .release-register { margin-top: 24px; }
+.production-control-notes { background: #f5f8ff; border: 1px solid #b9ccf5; border-radius: 8px; color: #344054; display: grid; gap: 5px; margin: 18px 0; padding: 14px 16px; }
+.production-control-notes p { font-size: .82rem; margin: 0; }
+.production-releases-app .release-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.production-releases-app .release-approval-note, .production-releases-app .release-correction-warning { background: #eef4ff; border-left: 3px solid #155eef; color: #344054; font-size: .8rem; margin: 12px 0; padding: 11px 13px; }
+.production-releases-app .release-card-printer-codes { display: grid; gap: 10px; margin-top: 12px; }
+.production-releases-app .release-card-printer-codes .review-printer-requirement { background: #f8fafc; }
+
+@media (max-width: 720px) {
+  .production-page-heading, .master-tab-toolbar { align-items: stretch; flex-direction: column; }
+  .production-page-heading, .production-tab-panel { padding-left: 18px; padding-right: 18px; }
+  .production-tabs { padding: 0 18px; }
+  .production-tab { flex: 1; }
+  .production-releases-app .release-facts { grid-template-columns: 1fr; }
+}
 .editor-app .master-register .section-heading { align-items: end; display: flex; gap: 18px; justify-content: space-between; }
 .editor-app .master-register .section-heading h3 { margin: 0 0 3px; }
 .editor-app .master-register .section-heading p { font-size: .78rem; margin: 0; }

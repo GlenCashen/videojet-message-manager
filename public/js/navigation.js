@@ -5,6 +5,7 @@ import { apiJson } from './api.js';
 function isActiveTopLink(href, activePath) {
   if (href === '/editor') return activePath === '/editor' || activePath.startsWith('/editor/');
   if (href === '/dashboard') return activePath === '/dashboard';
+  if (href === '/production-releases') return activePath === '/production-releases';
   return activePath === href;
 }
 
@@ -21,6 +22,7 @@ function renderNavigation(container, { active = window.location.pathname } = {})
   container.textContent = '';
 
   const links = [navLink('/dashboard', 'Dashboard', active)];
+  if (hasCapability('viewBatchReleases')) links.push(navLink('/production-releases', 'Production Coding Releases', active));
   if (hasCapability('viewEditor')) links.push(navLink('/editor', 'Editor', active));
 
   container.appendChild(el('nav', { className: 'top-nav', 'aria-label': 'Main navigation' }, links));

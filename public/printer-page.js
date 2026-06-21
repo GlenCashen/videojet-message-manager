@@ -783,7 +783,8 @@ subscribeToPrinterEvents({
       loadMessages().catch((error) => setNotice(elements.message, normalizeError(error), 'error'));
     }
   },
-  onBatchReleaseExecution: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error'))
+  onBatchReleaseExecution: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error')),
+  onBatchReleaseChanged: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error'))
 });
 
 loadPrinter();

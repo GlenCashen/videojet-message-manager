@@ -103,6 +103,11 @@ function subscribeToPrinterEvents(handlers = {}) {
     handlers.onBatchReleaseExecution?.(message.payload);
   });
 
+  source.addEventListener('batch-release-changed', (event) => {
+    const message = JSON.parse(event.data);
+    handlers.onBatchReleaseChanged?.(message.payload);
+  });
+
   source.addEventListener('emulator-snapshot', (event) => {
     const message = JSON.parse(event.data);
     handlers.onEmulatorSnapshot?.(message.payload);

@@ -112,6 +112,47 @@ function listBatchReleases({ limit = 100, statuses = [] } = {}, db = getDb()) {
     .all(...normalized, safeLimit).map(releaseFromRow).map((release) => attachExecutionTargets(release, db));
 }
 
+function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search = '', printerIds = [] } = {}, db = getDb()) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const normalized = statuses.filter(Boolean);
+  const query = String(search || '').trim().toLowerCase().slice(0, 100);
+  const where = [];
+  const params = [];
+  if (normalized.length) {
+    where.push(`br.status IN (${normalized.map(() => '?').join(',')})`);
+    params.push(...normalized);
+  }
+  if (query) {
+    where.push(`LOWER(COALESCE(pm.product_code, '') || ' ' || COALESCE(pm.display_name, '') || ' ' ||
+      COALESCE(br.brew_sheet_product, '') || ' ' || COALESCE(br.brew_number, '') || ' ' ||
+      COALESCE(br.batch_number, '') || ' ' || COALESCE(br.run_code, '') || ' ' || COALESCE(br.created_by_username, '')) LIKE ?`);
+    params.push(`%${query}%`);
+  }
+  if (printerIds.length) {
+    where.push(`EXISTS (SELECT 1 FROM json_each(br.printer_ids_json) assigned WHERE assigned.value IN (${printerIds.map(() => '?').join(',')}))`);
+    params.push(...printerIds);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const fromSql = `FROM batch_releases br
+    JOIN product_master_versions pmv ON pmv.id = br.product_master_version_id
+    JOIN product_masters pm ON pm.id = br.product_master_id
+    LEFT JOIN release_review_claims rc ON rc.release_id = br.id`;
+  const total = db.prepare(`SELECT COUNT(*) AS count ${fromSql} ${whereSql}`).get(...params).count;
+  const items = db.prepare(`
+    SELECT br.*, pmv.version AS product_master_version, pmv.specification_json AS product_master_specification_json,
+      rc.claimed_by_user_id, rc.claimed_by_username, rc.claimed_at, rc.expires_at AS claim_expires_at
+    ${fromSql} ${whereSql}
+    ORDER BY br.created_at DESC LIMIT ? OFFSET ?
+  `).all(...params, safeLimit, safeOffset).map(releaseFromRow).map((release) => attachExecutionTargets(release, db));
+  const countScope = printerIds.length
+    ? `WHERE EXISTS (SELECT 1 FROM json_each(printer_ids_json) assigned WHERE assigned.value IN (${printerIds.map(() => '?').join(',')}))`
+    : '';
+  const counts = Object.fromEntries(db.prepare(`SELECT status, COUNT(*) AS count FROM batch_releases ${countScope} GROUP BY status`)
+    .all(...printerIds).map((row) => [row.status, row.count]));
+  return { items, total, limit: safeLimit, offset: safeOffset, counts };
+}
+
 function refreshBatchReleaseExecutionStatus(id, db) {
   const statuses = db.prepare('SELECT status FROM batch_release_execution_targets WHERE release_id = ?').all(id).map((row) => row.status);
   let status = 'released';
@@ -151,6 +192,9 @@ function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reason
     if (!target) throw new Error('This printer is not an execution target for the release.');
     const isReapply = reapply === true && target.status === 'completed';
     if (!['pending', 'failed'].includes(target.status) && !isReapply) throw new Error('This printer target is already in progress or awaiting verification.');
+    if (target.status === 'failed' && !String(reason || '').trim()) {
+      throw new Error('Confirm the physical printer state and enter a reason before retrying an uncertain send.');
+    }
     if (isReapply && !String(reason || '').trim()) throw new Error('Enter a reason for reapplying a completed release.');
     const now = new Date().toISOString();
     db.prepare(`
@@ -327,12 +371,9 @@ function updateBatchRelease(id, input, actor, db = getDb()) {
   const release = getBatchRelease(id, db);
   if (!release) return null;
   if (!['draft', 'rejected'].includes(release.status)) {
-    throw new Error('Only draft or rejected releases can be edited.');
+    throw new Error('Approved releases are locked. Return the release for correction with a reason before editing it.');
   }
-  const master = db.prepare('SELECT * FROM product_masters WHERE id = ?').get(release.productMasterId);
-  const version = release.status === 'rejected'
-    ? db.prepare('SELECT * FROM product_master_versions WHERE product_master_id = ? AND version = ?').get(master.id, master.current_version)
-    : db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
+  const version = db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
   const specification = JSON.parse(version.specification_json);
   const brewSheetProduct = String(input.brewSheetProduct || '').trim().toUpperCase();
   const planned = new Date(input.plannedProductionAt);
@@ -561,6 +602,6 @@ function rejectBatchRelease(id, reason, actor, db = getDb()) {
 export {
   approveBatchRelease, beginBatchReleaseTarget, claimBatchReleaseReview, createBatchRelease,
   endBatchReleaseTargetRun, endOtherRunningTargets, finishBatchReleaseTarget, getBatchRelease, listBatchReleases, rejectBatchRelease,
-  recoverInterruptedBatchReleaseTargets, releaseBatchReleaseReview, reserveBatchReleaseRun,
+  listBatchReleasesPage, recoverInterruptedBatchReleaseTargets, releaseBatchReleaseReview, reserveBatchReleaseRun,
   returnBatchReleaseForReview, submitBatchRelease, updateBatchRelease, verifyBatchReleaseTarget
 };

@@ -3,12 +3,12 @@ import { clear, el, normalizeError, setNotice } from './dom.js';
 import { releaseExpectedOutput } from './release-preview.js';
 
 function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) {
-  const state = { releases: [], selected: null, busy: false };
+  const state = { releases: [], selected: null, busy: false, loading: false };
 
   function targetStatusLabel(status) {
     return {
-      pending: 'Ready to send', applying: 'Sending', awaiting_print_check: 'First print check',
-      running: 'Running', completed: 'Completed', failed: 'Attention required'
+      pending: 'Approved / ready to send', applying: 'Sending to printer', awaiting_print_check: 'Sent / awaiting first-print check',
+      running: 'Running on printer', completed: 'Completed', failed: 'Attention required — printer state uncertain'
     }[status] || status;
   }
 
@@ -40,7 +40,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   function renderTarget(container, { release, target }, { spotlight = false } = {}) {
     const printer = getPrinter(target.printerId);
     const actionText = {
-      awaiting_print_check: 'Verify first print', failed: 'Review attention', running: 'View running job', completed: 'Reapply job'
+      awaiting_print_check: 'Verify first print', failed: 'Resolve uncertain printer state', running: 'View running job', completed: 'Reapply job'
     }[target.status] || 'Review and send';
     const expected = releaseExpectedOutput(release, target.printerId);
     container.appendChild(el('article', { className: `operator-release-item target-${target.status}${spotlight ? ' release-spotlight-card' : ''}` }, [
@@ -108,12 +108,13 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   }
 
   function showPrintCheck() {
-    elements.confirmation.classList.add('hidden');
+    elements.confirmation.classList.remove('hidden');
+    elements.confirmation.querySelector('span').textContent = 'Confirm the first printed code matches the expected printed code before marking this release as running.';
     elements.send.classList.add('hidden');
     elements.verify.classList.remove('hidden');
     elements.report.classList.remove('hidden');
     elements.failureField.classList.remove('hidden');
-    setNotice(elements.dialogNotice, 'The message was sent. Check the first physical print before completing this target.', 'success');
+    setNotice(elements.dialogNotice, 'The message was sent, but the release is not running yet. Physically check the first printed code against the expected printed code.', 'success');
   }
 
   function open(release, target) {
@@ -121,7 +122,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     const printer = getPrinter(target.printerId);
     elements.title.textContent = {
       awaiting_print_check: 'Verify first printed code', running: 'Production run in progress',
-      completed: 'Reapply completed release', failed: 'Release requires attention'
+      completed: 'Reapply completed release', failed: 'Attention required — printer state uncertain'
     }[target.status] || 'Send approved release';
     elements.subtitle.textContent = `${printer?.name || target.printerId} · ${printer?.location || 'No line location'}`;
     clear(elements.facts);
@@ -135,6 +136,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     elements.confirmCheck.checked = false;
     elements.failureReason.value = '';
     elements.confirmation.classList.remove('hidden');
+    elements.confirmation.querySelector('span').textContent = 'I have checked the product, batch, physical line, printer and approved expected printed code.';
     elements.send.classList.remove('hidden');
     elements.verify.classList.add('hidden');
     elements.report.classList.add('hidden');
@@ -157,9 +159,19 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
       elements.send.textContent = 'Confirm reapply';
     }
     if (target.status === 'failed' && target.verifiedAt) {
+      elements.confirmation.classList.add('hidden');
+      elements.send.classList.add('hidden');
       elements.failureField.classList.remove('hidden');
       elements.reasonLabel.textContent = 'Reason for returning this release';
       elements.returnRelease.classList.remove('hidden');
+    }
+    if (target.status === 'failed' && !target.verifiedAt) {
+      elements.confirmation.classList.remove('hidden');
+      elements.confirmation.querySelector('span').textContent = 'I have physically checked the printer and confirmed its current message and print state.';
+      elements.failureField.classList.remove('hidden');
+      elements.reasonLabel.textContent = 'Physical check result and reason for retry';
+      elements.send.textContent = 'Retry after physical check';
+      setNotice(elements.dialogNotice, 'Attention required — printer state uncertain. Physically check the printer before retrying or continuing.', 'error');
     }
     if (!elements.dialog.open) elements.dialog.showModal();
   }
@@ -178,6 +190,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     const reapply = target.status === 'completed';
     const reason = elements.failureReason.value.trim();
     if (reapply && !reason) return setNotice(elements.dialogNotice, 'Enter why this completed job is being reapplied.', 'error');
+    if (target.status === 'failed' && !reason) return setNotice(elements.dialogNotice, 'Record the physical printer check and reason before retrying.', 'error');
     setBusy(true);
     setNotice(elements.dialogNotice, 'Sending the approved release and checking printer readback...');
     try {
@@ -238,6 +251,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   async function printCheck(passed) {
     if (state.busy || !state.selected) return;
     const reason = elements.failureReason.value.trim();
+    if (passed && !elements.confirmCheck.checked) return setNotice(elements.dialogNotice, 'Confirm the first printed code matches the expected printed code before marking this release as running.', 'error');
     if (!passed && !reason) return setNotice(elements.dialogNotice, 'Describe the print problem before reporting it.', 'error');
     const { release, target } = state.selected;
     setBusy(true);
@@ -263,12 +277,16 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   }
 
   async function load() {
+    if (state.loading || state.busy || document.hidden || elements.dialog.open) return;
+    state.loading = true;
     try {
       state.releases = await apiJson('/api/batch-releases?limit=500');
       render();
       setNotice(elements.notice);
     } catch (error) {
       setNotice(elements.notice, normalizeError(error), 'error');
+    } finally {
+      state.loading = false;
     }
   }
 
@@ -307,6 +325,9 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   elements.close.addEventListener('click', close);
   elements.cancel.addEventListener('click', close);
   elements.dialog.addEventListener('cancel', (event) => { if (state.busy) event.preventDefault(); });
+
+  window.setInterval(load, 10000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
   return { load, refresh: load };
 }

@@ -3,7 +3,6 @@ import { setupEditor, startEdit } from './js/editor.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { applyLogEntry, loadLogs, renderLogs, setupLogs } from './js/logs.js';
 import { loadMessageConfig, setupMessageConfig } from './js/message-config.js';
-import { applyReleasePresence, loadReleaseWorkflow, setupReleaseWorkflow } from './js/release-workflow.js';
 import { renderNavigation } from './js/navigation.js';
 import { hasCapability, loadSession } from './js/session.js';
 import { applyEmulatorState, loadConfig, setupSinglePrinterTools } from './js/single-printer-tools.js';
@@ -20,7 +19,6 @@ function canLoadLogs() {
 function applyCapabilityLayout() {
   elements.editorPanel.classList.toggle('hidden', true);
   elements.messageConfigPanel?.classList.toggle('hidden', !hasCapability('editMessages'));
-  document.getElementById('releaseWorkflowPanel')?.classList.toggle('hidden', !hasCapability('viewBatchReleases'));
   elements.faultHistoryPanel?.classList.toggle('hidden', !hasCapability('viewFaultHistory'));
   elements.devPanel?.classList.toggle('hidden', !hasCapability('accessDiagnostics'));
   elements.logPanel?.classList.toggle('hidden', !canLoadLogs());
@@ -32,7 +30,6 @@ function editorSections() {
     { id: 'overview', label: 'Overview', href: '/editor', visible: true, panel: null },
     { id: 'printers', label: 'Printers', href: '/editor#printers', visible: true, panel: document.querySelector('.dashboard-panel') },
     { id: 'messages', label: 'Messages', href: '/editor#messages', visible: hasCapability('editMessages'), panel: elements.messageConfigPanel },
-    { id: 'releases', label: 'Production releases', href: '/editor#releases', visible: hasCapability('viewBatchReleases'), panel: document.getElementById('releaseWorkflowPanel') },
     { id: 'users', label: 'Users', href: '/editor/users', visible: hasCapability('manageUsers'), panel: elements.userPanel },
     { id: 'faults', label: 'Fault history', href: '/editor/faults', visible: hasCapability('viewFaultHistory'), panel: elements.faultHistoryPanel },
     { id: 'audit', label: 'Audit', href: '/editor#audit', visible: canLoadLogs(), panel: elements.logPanel },
@@ -142,10 +139,6 @@ function setupEventStream() {
       if (canLoadLogs()) applyLogEntry(payload);
     },
 
-    onBatchReleasePresence: (payload) => {
-      markServerConnected();
-      applyReleasePresence(payload);
-    },
 
     onEmulatorSnapshot: (payload) => {
       markServerConnected();
@@ -206,7 +199,6 @@ async function start() {
     if (hasCapability('configurePrinters')) setupEditor({ loadPrinters });
     if (canLoadLogs()) setupLogs();
     if (hasCapability('editMessages')) setupMessageConfig();
-    if (hasCapability('viewBatchReleases')) setupReleaseWorkflow();
     if (hasCapability('accessDiagnostics')) setupSinglePrinterTools({ loadLogs: safeLoadLogs });
     if (hasCapability('manageUsers')) setupUserManagement();
     setupEventStream();
@@ -216,7 +208,6 @@ async function start() {
       loadPrinters().then(loadStatuses),
       safeLoadLogs(),
       hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve(),
-      hasCapability('viewBatchReleases') ? loadReleaseWorkflow() : Promise.resolve(),
       hasCapability('manageUsers') ? loadUsers() : Promise.resolve()
     ]);
     applyEditorSectionContext({ scroll: currentEditorSection() !== 'overview' });

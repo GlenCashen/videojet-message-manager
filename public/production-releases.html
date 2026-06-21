@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Production Coding Releases</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/editor.css">
+</head>
+<body class="editor-app production-releases-app">
+  <main class="shell production-shell">
+    <header class="app-header">
+      <div><p class="breadcrumb">Production control</p><h1>Production Coding Releases</h1><p class="muted">Prepare product masters, independently review coding requirements and release approved work.</p></div>
+      <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite"><span class="live-indicator-light" aria-hidden="true"></span><span>CONNECTING</span></div>
+    </header>
+    <div id="topNavigation" class="nav-shell"></div>
+
+    <section id="releaseWorkflowPanel" class="panel production-workspace" aria-labelledby="releaseWorkflowTitle">
+      <div class="production-page-heading">
+        <div><h2 id="releaseWorkflowTitle">Production control register</h2><p class="muted">Changes are versioned and every approved release requires an independent review.</p></div>
+        <button id="refreshReleaseWorkflow" class="ghost bordered" type="button">Sync now</button>
+      </div>
+      <p id="releaseWorkflowNotice" class="notice hidden" aria-live="polite"></p>
+      <nav class="production-tabs" aria-label="Production release sections">
+        <button id="productionMastersTab" class="production-tab" type="button" aria-controls="productionMastersPanel" aria-selected="false">Product Masters</button>
+        <button id="productionReleasesTab" class="production-tab active" type="button" aria-controls="productionReleasesPanel" aria-selected="true">Release Register</button>
+      </nav>
+
+      <section id="productionReleasesPanel" class="production-tab-panel">
+        <div class="release-summary-strip" aria-label="Release summary">
+          <div><span>Drafts</span><strong id="releaseDraftCount">0</strong></div><div><span>Awaiting independent review</span><strong id="releaseReviewCount">0</strong></div><div><span>Approved / ready to send</span><strong id="releaseReadyCount">0</strong></div>
+        </div>
+        <div class="production-control-notes"><p><strong>Independent review required.</strong> The creator cannot approve their own release.</p><p><strong>Approval does not send to a printer.</strong> Approval makes this release available for production. The operator must send and verify it from the printer page.</p></div>
+        <div class="release-command-bar">
+          <input id="releaseSearch" type="search" placeholder="Search product, brew or batch">
+          <select id="releaseStatusFilter" aria-label="Filter releases by status"><option value="">All statuses</option><option value="draft">Draft</option><option value="pending_review">Awaiting independent review</option><option value="released">Approved / ready to send</option><option value="awaiting_print_check">Sent / awaiting first-print check</option><option value="running">Running on printer</option><option value="completed">Completed</option><option value="failed">Attention required — printer state uncertain</option><option value="rejected">Returned for correction</option></select>
+          <button id="openBatchReleaseForm" class="primary" type="button">New release</button>
+        </div>
+        <section id="batchReleaseSection" class="sub-panel hidden production-form-panel" aria-labelledby="batchReleaseTitle">
+          <h3 id="batchReleaseTitle">New batch release</h3>
+          <p id="batchReleaseHelp" class="muted">The product run is assigned automatically when the operator sends the approved release.</p>
+          <form id="batchReleaseForm" class="message-job-builder">
+            <label>Product master<select id="releaseProductMaster" required></select></label>
+            <label>Brew-sheet product<input id="releaseBrewProduct" placeholder="Product name from brew sheet" maxlength="50" required></label>
+            <label>Brew number<input id="releaseBrewNumber" placeholder="H0477" maxlength="50"></label>
+            <label>Batch number<input id="releaseBatchNumber" placeholder="TBUNDRC-44" maxlength="50"></label>
+            <label>Planned production<input id="releaseProductionAt" type="datetime-local" required></label>
+            <fieldset id="releasePrinters" class="message-job-target-picker wide"><legend>Target printers</legend></fieldset>
+            <label class="wide">Notes<textarea id="releaseNotes" rows="3" maxlength="1000"></textarea></label>
+            <div class="actions wide"><button id="cancelBatchReleaseEdit" class="ghost bordered" type="button">Cancel</button><button id="saveBatchRelease" class="secondary" type="submit">Save draft</button></div>
+          </form>
+        </section>
+        <section class="release-register" aria-labelledby="releaseRegisterTitle"><div class="section-heading compact-heading"><h3 id="releaseRegisterTitle">Release register</h3></div><div id="batchReleaseList" class="message-job-list"></div><nav id="releasePagination" class="release-pagination" aria-label="Release register pages"><button id="previousReleasePage" class="ghost bordered" type="button">Previous</button><span id="releasePageSummary">Page 1</span><button id="nextReleasePage" class="ghost bordered" type="button">Next</button></nav></section>
+      </section>
+
+      <section id="productionMastersPanel" class="production-tab-panel hidden">
+        <div class="master-tab-toolbar"><div><h3>Product masters</h3><p class="muted">Versioned coding requirements by product and printer.</p></div><button id="openProductMasterForm" class="primary" type="button">New product master</button></div>
+        <section id="productMasterSection" class="sub-panel hidden production-form-panel" aria-labelledby="productMasterTitle">
+          <h3 id="productMasterTitle">New product master</h3><p class="muted">Editing this master creates a new version. Existing releases stay locked to their approved version.</p>
+          <form id="productMasterForm" class="message-job-builder">
+            <label>Product sequence code<input id="masterProductCode" placeholder="TBUNDRC" maxlength="30" required></label>
+            <label>Display name<input id="masterDisplayName" placeholder="Bundaberg Rum & Cola" maxlength="100" required></label>
+            <label>First available run<input id="masterNextRun" type="number" min="1" value="1" required></label>
+            <label>Run prefix<input id="masterRunPrefix" value="T" maxlength="10" required></label>
+            <label>Run digits<input id="masterRunWidth" type="number" min="1" max="8" value="4" required></label>
+            <label class="checkbox-line master-enabled"><input id="masterEnabled" type="checkbox" checked><span>Master enabled</span></label>
+            <label id="masterChangeReasonField" class="wide hidden">Reason for new version *<textarea id="masterChangeReason" rows="3" maxlength="500" placeholder="Describe what changed and why"></textarea></label>
+            <section class="master-printer-section wide" aria-labelledby="masterPrintersTitle"><div><h4 id="masterPrintersTitle">Printer coding requirements</h4><p class="muted">Select the stored message and release field mappings for each permitted printer.</p></div><div id="masterPrinterConfigurations" class="master-printer-configurations"></div></section>
+            <div class="actions wide"><button id="cancelProductMasterEdit" class="ghost bordered" type="button">Cancel</button><button id="saveProductMaster" class="primary" type="submit">Create product master</button></div>
+          </form>
+        </section>
+        <section id="productMasterRegister" class="master-register" aria-labelledby="productMasterRegisterTitle"><div class="section-heading compact-heading"><div><h3 id="productMasterRegisterTitle">Master register</h3><p class="muted">Editing a master creates a new version. Existing releases stay locked to their approved version.</p></div><input id="productMasterSearch" type="search" placeholder="Search product masters" aria-label="Search product masters"></div><div id="productMasterList" class="master-register-list"></div></section>
+      </section>
+      <div id="releaseFormWorkspace" class="hidden" aria-hidden="true"></div>
+    </section>
+
+    <dialog id="releaseReviewDialog" class="message-dialog" aria-labelledby="releaseReviewDialogTitle">
+      <div class="message-dialog-shell release-review-dialog"><header class="message-dialog-header"><div><h2 id="releaseReviewDialogTitle">Review production release</h2><p class="muted">Independent review required. The creator cannot approve their own release. Approval does not send anything to a printer.</p></div><button id="closeReleaseReview" class="ghost dialog-close" type="button">Close</button></header><div id="releaseReviewBody" class="release-review-body"></div><label id="releaseApprovalAttestation" class="release-attestation"><input id="releaseApprovalCheck" type="checkbox"><span>I have independently checked the brew-sheet values, product master version, expected printed codes and target printers.</span></label><label id="releaseRejectionField" class="hidden"><span id="releaseReasonLabel">Reason for rejection</span><textarea id="releaseRejectionReason" rows="3" maxlength="500"></textarea></label><p id="releaseReviewNotice" class="notice hidden" aria-live="polite"></p><div class="actions release-review-actions"><button id="cancelReleaseReview" class="secondary" type="button">Cancel</button><button id="confirmReleaseReview" class="primary" type="button">Approve release</button></div></div>
+    </dialog>
+  </main>
+  <script type="module" src="/production-releases.js"></script>
+</body>
+</html>

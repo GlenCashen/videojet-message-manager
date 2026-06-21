@@ -191,6 +191,10 @@ test('viewer can read dashboard data but cannot access editor APIs', async () =>
 
 test('operator APIs are filtered to assigned printers', async () => {
   await withServer({ role: 'operator', printerIds: 'coder-2' }, async (baseUrl) => {
+    const productionPage = await fetch(`${baseUrl}/production-releases`);
+    assert.equal(productionPage.status, 200);
+    assert.match(await productionPage.text(), /Production control register/);
+
     const session = await jsonFetch(`${baseUrl}/api/session`);
     assert.deepEqual(session.data.user.printerIds, ['coder-2']);
 

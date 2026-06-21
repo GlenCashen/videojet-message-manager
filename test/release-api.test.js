@@ -105,6 +105,28 @@ test('QA, planner and packaging leader complete release approval without contact
     });
     assert.equal(masterResult.response.status, 201, JSON.stringify(masterResult.data));
 
+    const missingMasterReason = await jsonFetch(`${baseUrl}/api/product-masters/${masterResult.data.master.id}`, {
+      method: 'PUT', role: 'qa', body: {
+        displayName: 'Bundaberg Rum and Cola',
+        nextRunNumber: 50,
+        specification: masterResult.data.master.specification
+      }
+    });
+    assert.equal(missingMasterReason.response.status, 400);
+    assert.match(missingMasterReason.data.error, /change reason/i);
+    const versionedMaster = await jsonFetch(`${baseUrl}/api/product-masters/${masterResult.data.master.id}`, {
+      method: 'PUT', role: 'qa', body: {
+        displayName: 'Bundaberg Rum and Cola',
+        nextRunNumber: 50,
+        specification: masterResult.data.master.specification,
+        changeReason: 'Confirm the printer-specific field mappings.'
+      }
+    });
+    assert.equal(versionedMaster.data.master.currentVersion, 2);
+    const masterAudit = await jsonFetch(`${baseUrl}/api/logs?targetType=product-master&targetId=${masterResult.data.master.id}`, { role: 'qa' });
+    assert.ok(masterAudit.data.some((event) => event.action === 'product-master-version-created'
+      && event.details.reason === 'Confirm the printer-specific field mappings.'));
+
     const draftResult = await jsonFetch(`${baseUrl}/api/batch-releases`, {
       method: 'POST',
       role: 'planner',
@@ -162,7 +184,16 @@ test('QA, planner and packaging leader complete release approval without contact
     const ended = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/end-run`, {
       method: 'POST', role: 'operator', body: {}
     });
+    assert.equal(ended.response.ok, true, JSON.stringify(ended.data));
     assert.equal(ended.data.release.status, 'completed');
+    const executionAudit = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/audit`, { role: 'qa' });
+    const executionActions = new Set(executionAudit.data.map((event) => event.action));
+    assert.ok(executionActions.has('batch-release-review-claimed'));
+    assert.ok(executionActions.has('batch-release-run-assigned'));
+    assert.ok(executionActions.has('batch-release-application-sent'));
+    assert.ok(executionActions.has('batch-release-print-verified'));
+    assert.ok(executionActions.has('batch-release-running'));
+    assert.ok(executionActions.has('batch-release-run-ended'));
 
     const rejectedDraft = await jsonFetch(`${baseUrl}/api/batch-releases`, {
       method: 'POST', role: 'planner', body: {

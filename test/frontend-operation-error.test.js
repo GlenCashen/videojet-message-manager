@@ -58,16 +58,38 @@ test('manual message changes retain guarded review but operator-only accounts us
 
 test('production releases require an independent review and expose no direct operator send', async () => {
   const editorHtml = await readFile('public/index.html', 'utf8');
+  const productionHtml = await readFile('public/production-releases.html', 'utf8');
+  const productionPage = await readFile('public/production-releases.js', 'utf8');
   const dashboardHtml = await readFile('public/dashboard.html', 'utf8');
   const releases = await readFile('public/js/release-workflow.js', 'utf8');
 
-  assert.ok(editorHtml.includes('id="releaseWorkflowPanel"'));
-  assert.ok(editorHtml.includes('Approve release'));
+  assert.ok(editorHtml.includes('id="releaseWorkflowPanel" class="panel message-config-panel hidden"'));
+  assert.ok(productionHtml.includes('id="releaseWorkflowPanel"'));
+  assert.ok(productionHtml.includes('id="productionReleasesTab"'));
+  assert.ok(productionHtml.includes('id="productionMastersTab"'));
+  assert.ok(productionHtml.includes('id="releaseBrewProduct"'));
+  assert.ok(productionHtml.includes('id="releaseBrewNumber"'));
+  assert.ok(productionHtml.includes('id="releaseBatchNumber"'));
+  assert.ok(productionHtml.includes('id="releasePagination"'));
+  assert.ok(productionHtml.includes('Production Coding Releases'));
+  assert.ok(productionHtml.includes('Awaiting independent review'));
+  assert.ok(productionHtml.includes('Approved / ready to send'));
+  assert.ok(productionHtml.includes('id="masterChangeReason"'));
+  assert.ok(productionHtml.includes('Approve release'));
+  assert.ok(productionPage.includes('onBatchReleaseChanged'));
+  assert.ok(productionPage.includes('setInterval'));
+  assert.ok(releases.includes("paged: 'true'"));
+  assert.ok(releases.includes('release-expanded'));
+  assert.ok(releases.includes('state.releasePage.offset'));
   assert.ok(releases.includes('releaseApprovalCheck'));
   assert.ok(releases.includes("mode === 'approve'"));
   assert.ok(releases.includes('/review-claim'));
   assert.ok(releases.includes('reviewHeartbeat'));
   assert.ok(releases.includes('is reviewing this release now'));
+  assert.ok(releases.includes('Return for correction'));
+  assert.ok(releases.includes('Create new version'));
+  assert.ok(releases.includes('Attention required — printer state uncertain'));
+  assert.equal(releases.includes("['draft', 'rejected'].includes(release.status) || approvedUnstarted"), false);
   assert.equal(dashboardHtml.includes('Accept and send'), false);
 });
 
@@ -98,6 +120,8 @@ test('individual printer page exposes release execution while dashboard stays re
   assert.ok(queue.includes('/api/batch-releases?limit=500'));
   assert.ok(queue.includes('completedTargets.length'));
   assert.ok(printer.includes('First print verified'));
+  assert.ok(queue.includes('Confirm the first printed code matches the expected printed code'));
+  assert.ok(queue.includes('physically checked the printer'));
   assert.match(styles, /\.operator-release-panel\s*\{[\s\S]*?color:\s*#172033/);
   assert.match(styles, /\.operator-release-preview pre\s*\{[^}]*color:\s*#172033/);
 });

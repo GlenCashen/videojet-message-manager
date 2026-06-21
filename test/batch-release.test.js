@@ -12,6 +12,7 @@ const {
   endOtherRunningTargets,
   finishBatchReleaseTarget,
   getBatchRelease,
+  listBatchReleasesPage,
   rejectBatchRelease,
   recoverInterruptedBatchReleaseTargets,
   reserveBatchReleaseRun,
@@ -107,6 +108,52 @@ test('creator cannot approve their own release and failed approval consumes no r
   assert.equal(db.prepare('SELECT next_run_number FROM product_masters WHERE id = ?').get(master.id).next_run_number, 75);
   assert.equal(approveBatchRelease(draft.id, reviewer, db).runNumber, null);
   assert.equal(reserveBatchReleaseRun(draft.id, db).runNumber, 75);
+  db.close();
+});
+
+test('an approved release must be returned with a reason before correction', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-correction', 'planner');
+  const reviewer = actor('qa-correction', 'qa');
+  const master = createProductMaster(masterInput('CORRECT', 10), reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'OLD-PRODUCT'), planner, db);
+  submitBatchRelease(draft.id, planner, db);
+  const approved = approveBatchRelease(draft.id, reviewer, db);
+  assert.equal(approved.status, 'released');
+  assert.equal(approved.executionTargets.length, 1);
+
+  assert.throws(() => updateBatchRelease(draft.id, releaseInput(master.id, 'QUIET-EDIT'), planner, db), /approved releases are locked/i);
+  const returned = returnBatchReleaseForReview(draft.id, 'Batch number was entered incorrectly.', reviewer, db);
+  assert.equal(returned.status, 'rejected');
+  assert.equal(returned.rejectionReason, 'Batch number was entered incorrectly.');
+
+  const corrected = updateBatchRelease(draft.id, {
+    ...releaseInput(master.id, 'NEW-PRODUCT'),
+    brewNumber: 'H0999',
+    batchNumber: 'TBUNDRC-44'
+  }, planner, db);
+  assert.equal(corrected.status, 'draft');
+  assert.equal(corrected.brewSheetProduct, 'NEW-PRODUCT');
+  assert.equal(corrected.brewNumber, 'H0999');
+  assert.equal(corrected.batchNumber, 'TBUNDRC-44');
+  assert.equal(corrected.reviewedByUsername, null);
+  assert.equal(corrected.executionTargets.length, 1);
+  db.close();
+});
+
+test('an approved release cannot be edited after printer execution starts', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-started', 'planner');
+  const reviewer = actor('qa-started', 'qa');
+  const operator = actor('operator-started', 'operator');
+  const master = createProductMaster(masterInput('STARTED', 10), reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'STARTED-01'), planner, db);
+  submitBatchRelease(draft.id, planner, db);
+  approveBatchRelease(draft.id, reviewer, db);
+  beginBatchReleaseTarget(draft.id, 'coder-1', operator, {}, db);
+  assert.throws(() => updateBatchRelease(draft.id, releaseInput(master.id, 'CHANGED'), planner, db), /approved releases are locked/i);
   db.close();
 });
 
@@ -212,6 +259,7 @@ test('a rejected release must be corrected as a draft before resubmission', () =
   const rejected = rejectBatchRelease(draft.id, 'Incorrect brew number', reviewer, db);
 
   assert.equal(rejected.status, 'rejected');
+  updateProductMaster(master.id, { displayName: 'New master version', specification: master.specification }, reviewer, db);
   assert.throws(() => submitBatchRelease(draft.id, planner, db), /must be edited/i);
   const corrected = updateBatchRelease(draft.id, {
     ...releaseInput(master.id, 'TBUNDRC-51'),
@@ -222,6 +270,7 @@ test('a rejected release must be corrected as a draft before resubmission', () =
   assert.equal(corrected.brewNumber, 'H0478');
   assert.equal(corrected.rejectionReason, null);
   assert.equal(corrected.productMasterVersionId, draft.productMasterVersionId);
+  assert.equal(corrected.productMasterVersion, 1);
   assert.equal(submitBatchRelease(draft.id, planner, db).status, 'pending_review');
   db.close();
 });
@@ -344,5 +393,42 @@ test('startup recovery turns interrupted sends into operator attention', () => {
   assert.equal(recovered.status, 'failed');
   assert.equal(recovered.executionTargets[0].status, 'failed');
   assert.match(recovered.executionTargets[0].error, /confirm the printer state/i);
+  db.close();
+});
+
+test('retrying an uncertain send requires a recorded physical printer check', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-uncertain', 'planner');
+  const reviewer = actor('qa-uncertain', 'qa');
+  const operator = actor('operator-uncertain', 'operator');
+  const master = createProductMaster(masterInput('UNCERTAIN', 1), reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'UNCERTAIN-01'), planner, db);
+  submitBatchRelease(draft.id, planner, db);
+  approveBatchRelease(draft.id, reviewer, db);
+  beginBatchReleaseTarget(draft.id, 'coder-1', operator, {}, db);
+  finishBatchReleaseTarget(draft.id, 'coder-1', { ok: false, error: 'Socket timed out' }, db);
+  assert.throws(() => beginBatchReleaseTarget(draft.id, 'coder-1', operator, {}, db), /physical printer state/i);
+  assert.equal(beginBatchReleaseTarget(draft.id, 'coder-1', operator, { reason: 'Checked printer; old message is still selected.' }, db).executionTargets[0].status, 'applying');
+  db.close();
+});
+
+test('release register pagination searches the full archive and returns lifecycle counts', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-pages', 'planner');
+  const reviewer = actor('qa-pages', 'qa');
+  const master = createProductMaster(masterInput('PAGED', 1), reviewer, db);
+  for (let index = 1; index <= 31; index += 1) {
+    createBatchRelease({ ...releaseInput(master.id, `PRODUCT-${index}`), batchNumber: `BATCH-${index}` }, planner, db);
+  }
+  const first = listBatchReleasesPage({ limit: 25 }, db);
+  assert.equal(first.items.length, 25);
+  assert.equal(first.total, 31);
+  assert.equal(first.counts.draft, 31);
+  assert.equal(listBatchReleasesPage({ limit: 25, offset: 25 }, db).items.length, 6);
+  const searched = listBatchReleasesPage({ limit: 25, search: 'BATCH-31' }, db);
+  assert.equal(searched.total, 1);
+  assert.equal(searched.items[0].batchNumber, 'BATCH-31');
   db.close();
 });
