@@ -1720,17 +1720,27 @@ body.server-disconnected .dashboard-panel {
 .editor-app .dev-identity-banner { margin-top: 12px; }
 
 .editor-app #editorSubnav {
-  align-content: start;
-  background: transparent;
-  bottom: 150px;
+  position: static;
   display: grid;
   gap: 3px;
-  left: 14px;
-  overflow: auto;
-  position: fixed;
-  top: 150px;
-  width: 208px;
-  z-index: 31;
+  margin: 18px 0 0;
+  width: auto;
+  overflow: visible;
+}
+
+.editor-app #editorSubnav .sub-nav-link {
+  display: block;
+  border: 0;
+  border-radius: 6px;
+  color: #bed0e4;
+  font-size: .88rem;
+  padding: 10px 12px;
+}
+
+.editor-app #editorSubnav .sub-nav-link.active,
+.editor-app #editorSubnav .sub-nav-link:hover {
+  background: #155eef;
+  color: #fff;
 }
 
 .editor-app .sub-nav-link {

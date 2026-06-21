@@ -181,6 +181,14 @@ async function start() {
   try {
     await loadSession();
     renderNavigation(elements.topNavigation, { active: '/editor' });
+    if (elements.topNavigation && elements.editorSubnav) {
+      const mainNav = elements.topNavigation.querySelector('.top-nav');
+      if (mainNav) {
+        mainNav.insertAdjacentElement('afterend', elements.editorSubnav);
+      } else {
+        elements.topNavigation.appendChild(elements.editorSubnav);
+      }
+    }
 
     if (!hasCapability('viewEditor')) {
       setNotice(elements.dashboardMessage, 'You do not have permission to view the editor.', 'error');
