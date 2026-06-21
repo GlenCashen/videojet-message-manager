@@ -1,25 +1,13 @@
-/* Fix editor sidebar subnav overlap. Load after editor.css if needed. */
-.editor-app #topNavigation,
-.editor-app #editorSubnav {
-  position: static;
-  transform: none;
+@media (min-width: 901px) {
+  .editor-app #editorSubnav {
+    top: 206px;
+    margin: 0;
+  }
 }
 
-.editor-app #topNavigation {
-  overflow: visible;
-}
-
-.editor-app #editorSubnav {
-  clear: both;
-  margin: 8px 0 16px;
-}
-
-.editor-app #editorSubnav .sub-nav-link {
-  display: block;
-}
-
-@supports selector(:has(*)) {
-  .editor-app #topNavigation:has(+ #editorSubnav) {
-    margin-bottom: 0;
+@media (max-width: 900px) {
+  .editor-app #editorSubnav {
+    margin: 12px 0;
+    width: auto;
   }
 }
