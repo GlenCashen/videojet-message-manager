@@ -18,7 +18,7 @@ function previewValues(configuration, release) {
     : format === 'hh:mm A'
       ? `${pad2(hour % 12 || 12)}:${pad2(production.getUTCMinutes())} ${hour >= 12 ? 'PM' : 'AM'}`
       : `${pad2(hour)}:${pad2(production.getUTCMinutes())}:${pad2(production.getUTCSeconds())}`;
-  return { run_code: release.runCode || '[assigned when sent]', brew_sheet_product: release.brewSheetProduct || '', brew_number: release.brewNumber || '', batch_number: release.batchNumber || '', bestBeforeDate, productionTime };
+  return { run_code: release.runCode || '[assigned when sent]', brew_sheet_product: release.brewSheetProduct || '', brew_number: release.brewNumber || '', bestBeforeDate, productionTime };
 }
 
 function releaseExpectedOutput(release, printerId) {

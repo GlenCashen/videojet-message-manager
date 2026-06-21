@@ -4,14 +4,14 @@ import { elements } from './elements.js';
 
 let messages = [];
 let printers = [];
+let userFields = [];
+let productMasters = [];
 let selectedId = null;
 let creating = false;
 let idTouched = false;
+let displayNameTouched = false;
 let activeLine = null;
-
-function selectedMessage() {
-  return messages.find((message) => message.id === selectedId) || null;
-}
+let editingUserFieldId = null;
 
 function slug(value, fallback = '') {
   return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || fallback;
@@ -21,93 +21,110 @@ function partialSlug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+/, '').slice(0, 50);
 }
 
-function fieldKey(value, fallback = 'field') {
-  const key = slug(value, fallback).slice(0, 30);
-  return /^[a-z]/.test(key) ? key : `field-${key}`.slice(0, 30);
+function selectedMessage() {
+  return messages.find((message) => message.id === selectedId) || null;
+}
+
+function assignmentFor(message) {
+  return message?.printerAssignments?.[0] || null;
+}
+
+function printerById(id) {
+  return printers.find((printer) => printer.id === id) || null;
+}
+
+function fieldsForPrinter(printerId) {
+  return userFields.filter((field) => field.printerId === printerId);
+}
+
+function renderPrinterOptions() {
+  const currentRegistryPrinter = elements.userFieldPrinter.value;
+  const currentMessagePrinter = elements.messagePrinter.value;
+  clear(elements.userFieldPrinter);
+  clear(elements.messagePrinter);
+  for (const printer of printers) {
+    const option = () => el('option', { value: printer.id, text: printer.enabled ? printer.name : `${printer.name} (disabled)` });
+    elements.userFieldPrinter.appendChild(option());
+    elements.messagePrinter.appendChild(option());
+  }
+  elements.userFieldPrinter.value = currentRegistryPrinter || assignmentFor(selectedMessage())?.printerId || printers[0]?.id || '';
+  elements.messagePrinter.value = currentMessagePrinter || elements.userFieldPrinter.value;
 }
 
 function renderMessageList() {
   clear(elements.messageList);
-  if (!messages.length) {
-    elements.messageList.appendChild(el('p', { className: 'muted', text: 'No messages configured.' }));
+  for (const printer of printers) {
+    const assigned = messages.filter((message) => assignmentFor(message)?.printerId === printer.id);
+    const group = el('section', { className: 'message-printer-group' }, [
+      el('div', { className: 'message-printer-group-heading' }, [
+        el('strong', { text: printer.name }),
+        el('span', { text: String(assigned.length) })
+      ])
+    ]);
+    if (!assigned.length) group.appendChild(el('p', { className: 'muted', text: 'No messages.' }));
+    for (const message of assigned) {
+      group.appendChild(el('button', {
+        type: 'button',
+        className: message.id === selectedId ? 'message-list-item active' : 'message-list-item',
+        dataset: { id: message.id }
+      }, [
+        el('strong', { text: message.displayName }),
+        el('span', { text: `${assignmentFor(message).printerMessageName} · ${message.enabled ? 'Enabled' : 'Disabled'}` })
+      ]));
+    }
+    elements.messageList.appendChild(group);
+  }
+}
+
+function renderMessageMasterUsage(message = selectedMessage()) {
+  clear(elements.messageMasterUsageList);
+  const usedBy = message ? productMasters.filter((master) => (master.specification?.printerConfigurations || [])
+    .some((configuration) => configuration.messageId === message.id)) : [];
+  elements.messageMasterUsageCount.textContent = String(usedBy.length);
+  elements.messageMasterUsage.open = false;
+  if (!usedBy.length) {
+    elements.messageMasterUsageList.appendChild(el('p', { className: 'muted', text: 'No current product masters use this message.' }));
     return;
   }
-  for (const message of messages) {
-    elements.messageList.appendChild(el('button', {
-      type: 'button', className: message.id === selectedId ? 'message-list-item active' : 'message-list-item', dataset: { id: message.id }
-    }, [el('strong', { text: message.displayName }), el('span', { text: message.enabled ? 'Enabled' : 'Disabled' })]));
-  }
-}
-
-function assignmentFor(message, printerId) {
-  return (message.printerAssignments || []).find((assignment) => assignment.printerId === printerId) || null;
-}
-
-function renderAssignments(message) {
-  clear(elements.messageAssignments);
-  for (const printer of printers) {
-    const assignment = assignmentFor(message, printer.id);
-    elements.messageAssignments.appendChild(el('div', { className: 'assignment-row' }, [
-      el('label', { className: 'checkbox-line' }, [
-        el('input', { type: 'checkbox', checked: assignment?.enabled ? 'checked' : null, dataset: { assignmentEnabled: printer.id } }),
-        el('span', { text: printer.name })
-      ]),
-      el('label', {}, [
-        el('span', { text: 'Stored printer message' }),
-        el('input', { value: assignment?.printerMessageName || '', maxlength: '30', autocomplete: 'off', dataset: { assignmentName: printer.id } })
-      ])
+  for (const master of usedBy) {
+    const batchCode = master.specification?.defaultBrewSheetProduct || master.productCode;
+    const href = `/production-releases?masterSearch=${encodeURIComponent(master.productCode)}#masters`;
+    elements.messageMasterUsageList.appendChild(el('a', { className: 'message-master-link', href }, [
+      el('strong', { text: `${master.productCode} - ${batchCode}` }),
+      el('span', { text: master.displayName })
     ]));
   }
 }
 
-function fieldRows() {
-  return [...elements.messageFieldRows.querySelectorAll('[data-message-field-row]')];
+function selectedFieldIds() {
+  return [...elements.messageFieldChoices.querySelectorAll('[data-message-user-field]:checked')]
+    .map((input) => input.value);
 }
 
-function collectFields({ strict = false } = {}) {
-  const fields = fieldRows().map((row, index) => {
-    const label = row.querySelector('[data-field-label]').value.trim();
-    const key = row.dataset.fieldKey || fieldKey(label, `field-${index + 1}`);
-    return {
-      key,
-      label,
-      printerFieldName: row.querySelector('[data-field-printer-name]').value.trim().toUpperCase(),
-      required: row.querySelector('[data-field-required]').checked,
-      maxLength: Number(row.querySelector('[data-field-max-length]').value),
-      transform: row.querySelector('[data-field-uppercase]').checked ? 'uppercase' : 'none'
-    };
-  });
-  if (strict) {
-    if (fields.some((field) => !field.label || !field.printerFieldName)) throw new Error('Every user field needs a name and printer field name.');
-    if (fields.some((field) => !Number.isInteger(field.maxLength) || field.maxLength < 1 || field.maxLength > 50)) throw new Error('Field maximum length must be between 1 and 50.');
-    if (new Set(fields.map((field) => field.key)).size !== fields.length) throw new Error('User field names must be unique.');
-    if (new Set(fields.map((field) => field.printerFieldName)).size !== fields.length) throw new Error('Printer field names must be unique.');
+function selectedFields() {
+  const ids = new Set(selectedFieldIds());
+  return userFields.filter((field) => ids.has(field.id));
+}
+
+function renderMessageFieldChoices(message = selectedMessage()) {
+  clear(elements.messageFieldChoices);
+  const printerId = elements.messagePrinter.value;
+  const available = fieldsForPrinter(printerId);
+  const selected = new Set((message?.fields || []).map((field) => field.userFieldId).filter(Boolean));
+  if (!available.length) {
+    elements.messageFieldChoices.appendChild(el('p', { className: 'no-message-fields', text: 'This printer has no user fields. Create them in Printer user fields above.' }));
   }
-  return fields;
-}
-
-function fieldRow(field = {}) {
-  return el('article', { className: 'message-field-editor-row', dataset: { messageFieldRow: 'true', fieldKey: field.key || 'field' } }, [
-    el('div', { className: 'message-field-editor-row-heading' }, [
-      el('strong', { text: field.label || 'New user field' }),
-      el('button', { className: 'ghost danger-text', type: 'button', text: 'Remove', dataset: { removeMessageField: 'true' } })
-    ]),
-    el('div', { className: 'message-field-editor-grid' }, [
-      el('label', {}, [el('span', { text: 'Field name' }), el('input', { value: field.label || '', maxlength: '60', required: 'required', autocomplete: 'off', dataset: { fieldLabel: 'true' } })]),
-      el('label', {}, [el('span', { text: 'Printer field name' }), el('input', { value: field.printerFieldName || '', maxlength: '30', required: 'required', autocomplete: 'off', dataset: { fieldPrinterName: 'true' } })]),
-      el('label', {}, [el('span', { text: 'Maximum length' }), el('input', { type: 'number', value: String(field.maxLength || 30), min: '1', max: '50', required: 'required', dataset: { fieldMaxLength: 'true' } })]),
-      el('label', { className: 'checkbox-line message-field-toggle' }, [el('input', { type: 'checkbox', checked: field.transform !== 'none' ? 'checked' : null, dataset: { fieldUppercase: 'true' } }), el('span', { text: 'Force uppercase' })]),
-      el('label', { className: 'checkbox-line message-field-toggle' }, [el('input', { type: 'checkbox', checked: field.required !== false ? 'checked' : null, dataset: { fieldRequired: 'true' } }), el('span', { text: 'Required' })])
-    ]),
-    el('small', { className: 'message-field-token-name', text: `Print token: {{${field.key || 'field-name'}}}` })
-  ]);
-}
-
-function renderFields(fields = []) {
-  clear(elements.messageFieldRows);
-  if (!fields.length) elements.messageFieldRows.appendChild(el('p', { className: 'no-message-fields', text: 'No user fields. Add one only when the stored printer message expects an operator or release value.' }));
-  for (const field of fields) elements.messageFieldRows.appendChild(fieldRow(field));
+  for (const field of available) {
+    elements.messageFieldChoices.appendChild(el('label', { className: 'message-field-choice' }, [
+      el('input', { type: 'checkbox', value: field.id, checked: selected.has(field.id) ? 'checked' : null, dataset: { messageUserField: 'true' } }),
+      el('span', {}, [
+        el('strong', { text: field.label }),
+        el('small', { text: `${field.printerFieldName} · {{${field.key}}}` })
+      ])
+    ]));
+  }
   renderTokenPalette();
+  updateSuggestedName();
 }
 
 function lineValues() {
@@ -115,6 +132,7 @@ function lineValues() {
 }
 
 function insertToken(input, token) {
+  if (!input) return;
   const start = input.selectionStart ?? input.value.length;
   const end = input.selectionEnd ?? start;
   input.value = `${input.value.slice(0, start)}${token}${input.value.slice(end)}`;
@@ -122,6 +140,7 @@ function insertToken(input, token) {
   input.setSelectionRange(start + token.length, start + token.length);
   activeLine = input;
   renderLivePreview();
+  updateSuggestedName();
 }
 
 function renderLineBuilder(lines = lineValues()) {
@@ -143,11 +162,12 @@ function renderLineBuilder(lines = lineValues()) {
   }
   activeLine = elements.messageLineBuilder.querySelector('[data-message-line]');
   renderLivePreview();
+  updateSuggestedName();
 }
 
 function renderTokenPalette() {
   clear(elements.messageTokenPalette);
-  const tokens = collectFields().filter((field) => field.label).map((field) => ({ key: field.key, label: field.label }));
+  const tokens = selectedFields().map((field) => ({ key: field.key, label: field.label }));
   tokens.push({ key: 'bestBeforeDate', label: 'Best-before date' }, { key: 'currentTime', label: 'Production time' });
   for (const token of tokens) {
     const value = `{{${token.key}}}`;
@@ -170,9 +190,8 @@ function pad2(value) { return String(value).padStart(2, '0'); }
 
 function sampleDate() {
   const date = addMonthsClamped(new Date(), Number(elements.messageDateMonths.value || 0));
-  const format = elements.messageDateFormat.value;
   const values = { DD: pad2(date.getDate()), MM: pad2(date.getMonth() + 1), YYYY: String(date.getFullYear()), YY: String(date.getFullYear()).slice(-2) };
-  return format.replace(/YYYY|YY|DD|MM/g, (token) => values[token]);
+  return elements.messageDateFormat.value.replace(/YYYY|YY|DD|MM/g, (token) => values[token]);
 }
 
 function sampleTime() {
@@ -183,7 +202,7 @@ function sampleTime() {
 }
 
 function renderLivePreview() {
-  const values = Object.fromEntries(collectFields().map((field) => [field.key, `[${field.label || field.key}]`]));
+  const values = Object.fromEntries(selectedFields().map((field) => [field.key, `[${field.label}]`]));
   values.bestBeforeDate = sampleDate();
   values.currentTime = sampleTime();
   values.productionTime = values.currentTime;
@@ -191,11 +210,33 @@ function renderLivePreview() {
   elements.messageDefinitionPreview.textContent = rendered.some(Boolean) ? rendered.join('\n') : 'Build the expected print lines above.';
 }
 
+function suggestedDisplayName() {
+  const months = Number(elements.messageDateMonths.value || 0);
+  const monthLabel = months ? `${months}M` : 'NOW';
+  const descriptors = selectedFields().map((field) => field.key.toUpperCase());
+  if (!descriptors.length) {
+    if (lineValues().some((line) => line.includes('{{bestBeforeDate}}'))) descriptors.push('DATE');
+    if (lineValues().some((line) => line.includes('{{currentTime}}'))) descriptors.push('TIME');
+  }
+  return `${monthLabel} ${elements.messageLineCount.value || 1} line ${descriptors.join('/') || 'STATIC'}`;
+}
+
+function updateSuggestedName() {
+  if (!creating || displayNameTouched) return;
+  elements.messageDisplayName.value = suggestedDisplayName();
+  if (!idTouched) elements.messageConfigId.value = slug(`${elements.messagePrinter.value}-${elements.messageDisplayName.value}`);
+}
+
 function populateForm(message) {
+  const assignment = assignmentFor(message);
   selectedId = message.id;
   creating = false;
   idTouched = true;
+  displayNameTouched = true;
   elements.messageForm.classList.remove('hidden');
+  elements.messagePrinter.disabled = true;
+  elements.messagePrinter.value = assignment.printerId;
+  elements.messagePrinterName.value = assignment.printerMessageName;
   elements.messageConfigId.readOnly = true;
   elements.messageConfigId.value = message.id;
   elements.messageDisplayName.value = message.displayName;
@@ -204,9 +245,9 @@ function populateForm(message) {
   elements.messageDateFormat.value = message.dateRule?.format || 'DD/MM/YYYY';
   elements.messageTimeFormat.value = message.timeRule?.format || 'HH:mm:ss';
   elements.messageLineCount.value = String(Math.min(Math.max(message.previewLines?.length || 2, 1), 4));
-  renderFields(message.fields || []);
+  renderMessageFieldChoices(message);
   renderLineBuilder(message.previewLines || []);
-  renderAssignments(message);
+  renderMessageMasterUsage(message);
   renderMessageList();
 }
 
@@ -214,7 +255,11 @@ function startNewMessage() {
   creating = true;
   selectedId = null;
   idTouched = false;
+  displayNameTouched = false;
   elements.messageForm.classList.remove('hidden');
+  elements.messagePrinter.disabled = false;
+  elements.messagePrinter.value = elements.userFieldPrinter.value || printers[0]?.id || '';
+  elements.messagePrinterName.value = '';
   elements.messageConfigId.readOnly = false;
   elements.messageConfigId.value = '';
   elements.messageDisplayName.value = '';
@@ -223,19 +268,11 @@ function startNewMessage() {
   elements.messageDateFormat.value = 'DD/MM/YYYY';
   elements.messageTimeFormat.value = 'HH:mm:ss';
   elements.messageLineCount.value = '2';
-  renderFields([]);
+  renderMessageFieldChoices(null);
   renderLineBuilder(['', '']);
-  renderAssignments({ printerAssignments: [] });
+  renderMessageMasterUsage(null);
   renderMessageList();
-  elements.messageDisplayName.focus();
-}
-
-function collectAssignments() {
-  return printers.map((printer) => ({
-    printerId: printer.id,
-    printerMessageName: elements.messageAssignments.querySelector(`[data-assignment-name="${printer.id}"]`)?.value.trim(),
-    enabled: Boolean(elements.messageAssignments.querySelector(`[data-assignment-enabled="${printer.id}"]`)?.checked)
-  })).filter((assignment) => assignment.enabled || assignment.printerMessageName);
+  elements.messagePrinterName.focus();
 }
 
 async function saveMessage(event) {
@@ -246,16 +283,16 @@ async function saveMessage(event) {
   setNotice(elements.messageConfigMessage, 'Saving message...');
   try {
     const previewLines = lineValues().map((line) => line.trimEnd());
-    if (previewLines.some((line) => !line.trim())) throw new Error('Every configured print line needs content. Reduce the line count or build the missing line.');
+    if (previewLines.some((line) => !line.trim())) throw new Error('Every configured print line needs content.');
     const payload = {
       id: slug(elements.messageConfigId.value),
       displayName: elements.messageDisplayName.value.trim(),
       enabled: elements.messageEnabled.checked,
-      fields: collectFields({ strict: true }),
+      fieldIds: selectedFieldIds(),
       dateRule: { type: 'offset-months', months: Number(elements.messageDateMonths.value), format: elements.messageDateFormat.value },
       timeRule: { type: 'production-time', format: elements.messageTimeFormat.value },
       previewLines,
-      printerAssignments: collectAssignments()
+      printerAssignments: [{ printerId: elements.messagePrinter.value, printerMessageName: elements.messagePrinterName.value.trim(), enabled: true }]
     };
     const data = await apiJson(creating ? '/api/messages' : `/api/messages/${encodeURIComponent(message.id)}`, {
       method: creating ? 'POST' : 'PUT', body: payload
@@ -273,11 +310,94 @@ async function saveMessage(event) {
   }
 }
 
+function resetUserFieldForm() {
+  editingUserFieldId = null;
+  elements.printerUserFieldForm.reset();
+  elements.printerUserFieldType.disabled = false;
+  elements.printerUserFieldMaxLength.value = '30';
+  elements.printerUserFieldUppercase.checked = true;
+  elements.printerUserFieldRequired.checked = true;
+  elements.printerUserFieldForm.classList.add('hidden');
+}
+
+function editUserField(field) {
+  editingUserFieldId = field.id;
+  elements.printerUserFieldType.value = field.key;
+  elements.printerUserFieldType.disabled = true;
+  elements.printerUserFieldMaxLength.value = String(field.maxLength);
+  elements.printerUserFieldUppercase.checked = field.transform !== 'none';
+  elements.printerUserFieldRequired.checked = field.required;
+  elements.printerUserFieldForm.classList.remove('hidden');
+  elements.printerUserFieldMaxLength.focus();
+}
+
+function renderPrinterUserFields() {
+  clear(elements.printerUserFieldList);
+  const fields = fieldsForPrinter(elements.userFieldPrinter.value);
+  if (!fields.length) elements.printerUserFieldList.appendChild(el('p', { className: 'muted', text: 'No user fields assigned to this printer.' }));
+  for (const field of fields) {
+    elements.printerUserFieldList.appendChild(el('article', { className: 'printer-user-field-card' }, [
+      el('div', {}, [el('strong', { text: field.label }), el('span', { text: `${field.printerFieldName} · {{${field.key}}} · max ${field.maxLength}` })]),
+      el('div', { className: 'actions' }, [
+        el('button', { className: 'ghost', type: 'button', text: 'Edit', dataset: { editUserField: field.id } }),
+        el('button', { className: 'ghost danger-text', type: 'button', text: 'Delete', dataset: { deleteUserField: field.id } })
+      ])
+    ]));
+  }
+}
+
+async function saveUserField(event) {
+  event.preventDefault();
+  const type = elements.printerUserFieldType.value;
+  const labels = { brew: 'Brew code', batch: 'Batch code', run: 'Run code' };
+  const payload = {
+    label: labels[type],
+    key: type,
+    printerFieldName: type.toUpperCase(),
+    maxLength: Number(elements.printerUserFieldMaxLength.value),
+    transform: elements.printerUserFieldUppercase.checked ? 'uppercase' : 'none',
+    required: elements.printerUserFieldRequired.checked
+  };
+  try {
+    const path = editingUserFieldId
+      ? `/api/printer-user-fields/${encodeURIComponent(editingUserFieldId)}`
+      : `/api/printers/${encodeURIComponent(elements.userFieldPrinter.value)}/user-fields`;
+    const data = await apiJson(path, { method: editingUserFieldId ? 'PUT' : 'POST', body: payload });
+    const index = userFields.findIndex((field) => field.id === data.field.id);
+    if (index >= 0) userFields[index] = data.field;
+    else userFields.push(data.field);
+    resetUserFieldForm();
+    renderPrinterUserFields();
+    if (elements.messagePrinter.value === data.field.printerId) renderMessageFieldChoices(selectedMessage());
+    setNotice(elements.messageConfigMessage, `${data.field.label} saved for ${printerById(data.field.printerId)?.name}.`, 'success');
+  } catch (error) {
+    setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
+  }
+}
+
+async function deleteUserField(id) {
+  const field = userFields.find((item) => item.id === id);
+  if (!field || !window.confirm(`Delete ${field.label} from ${printerById(field.printerId)?.name}?`)) return;
+  try {
+    await apiJson(`/api/printer-user-fields/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    userFields = userFields.filter((item) => item.id !== id);
+    renderPrinterUserFields();
+    renderMessageFieldChoices(selectedMessage());
+    setNotice(elements.messageConfigMessage, `${field.label} deleted.`, 'success');
+  } catch (error) {
+    setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
+  }
+}
+
 async function loadMessageConfig() {
   setNotice(elements.messageConfigMessage, 'Loading messages...');
   try {
-    [messages, printers] = await Promise.all([apiJson('/api/messages'), apiJson('/api/printers')]);
+    [messages, printers, userFields, productMasters] = await Promise.all([
+      apiJson('/api/messages'), apiJson('/api/printers'), apiJson('/api/printer-user-fields'), apiJson('/api/product-masters')
+    ]);
     const next = selectedMessage() || messages[0] || null;
+    renderPrinterOptions();
+    renderPrinterUserFields();
     renderMessageList();
     if (next) populateForm(next);
     else elements.messageForm.classList.add('hidden');
@@ -290,52 +410,28 @@ async function loadMessageConfig() {
 function setupMessageConfig() {
   elements.newMessageButton.addEventListener('click', startNewMessage);
   elements.messageList.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-id]');
-    const message = messages.find((item) => item.id === button?.dataset.id);
+    const message = messages.find((item) => item.id === event.target.closest('[data-id]')?.dataset.id);
     if (message) populateForm(message);
   });
-  elements.addMessageField.addEventListener('click', () => {
-    if (elements.messageFieldRows.querySelector('.no-message-fields')) clear(elements.messageFieldRows);
-    elements.messageFieldRows.appendChild(fieldRow({ key: `field-${fieldRows().length + 1}` }));
+  elements.messagePrinter.addEventListener('change', () => {
+    renderMessageFieldChoices(null);
+    updateSuggestedName();
+  });
+  elements.messageFieldChoices.addEventListener('change', () => {
     renderTokenPalette();
-  });
-  elements.messageFieldRows.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-remove-message-field]');
-    if (!button) return;
-    button.closest('[data-message-field-row]').remove();
-    if (!fieldRows().length) renderFields([]);
-    else { renderTokenPalette(); renderLivePreview(); }
-  });
-  elements.messageFieldRows.addEventListener('input', (event) => {
-    if (event.target.matches('[data-field-printer-name]')) event.target.value = event.target.value.toUpperCase();
-    const row = event.target.closest('[data-message-field-row]');
-    if (row && event.target.matches('[data-field-label]')) {
-      const oldKey = row.dataset.fieldKey;
-      const newKey = fieldKey(event.target.value, oldKey);
-      if (newKey !== oldKey) {
-        for (const input of elements.messageLineBuilder.querySelectorAll('[data-message-line]')) {
-          input.value = input.value.replaceAll(`{{${oldKey}}}`, `{{${newKey}}}`);
-        }
-        row.dataset.fieldKey = newKey;
-      }
-      row.querySelector('.message-field-editor-row-heading strong').textContent = event.target.value || 'New user field';
-      row.querySelector('.message-field-token-name').textContent = `Print token: {{${row.dataset.fieldKey}}}`;
-      renderTokenPalette();
-    }
     renderLivePreview();
+    updateSuggestedName();
   });
   elements.messageTokenPalette.addEventListener('click', (event) => {
     const button = event.target.closest('[data-message-token]');
     if (button) insertToken(activeLine || elements.messageLineBuilder.querySelector('[data-message-line]'), button.dataset.messageToken);
   });
   elements.messageLineCount.addEventListener('change', () => renderLineBuilder());
-  elements.messageLineBuilder.addEventListener('input', renderLivePreview);
-  elements.messageDateMonths.addEventListener('input', renderLivePreview);
+  elements.messageLineBuilder.addEventListener('input', () => { renderLivePreview(); updateSuggestedName(); });
+  elements.messageDateMonths.addEventListener('input', () => { renderLivePreview(); updateSuggestedName(); });
   elements.messageDateFormat.addEventListener('change', renderLivePreview);
   elements.messageTimeFormat.addEventListener('change', renderLivePreview);
-  elements.messageDisplayName.addEventListener('input', () => {
-    if (creating && !idTouched) elements.messageConfigId.value = slug(elements.messageDisplayName.value);
-  });
+  elements.messageDisplayName.addEventListener('input', () => { displayNameTouched = true; });
   elements.messageConfigId.addEventListener('input', () => {
     idTouched = true;
     const normalized = partialSlug(elements.messageConfigId.value);
@@ -344,6 +440,20 @@ function setupMessageConfig() {
   elements.messageConfigId.addEventListener('blur', () => { elements.messageConfigId.value = slug(elements.messageConfigId.value); });
   elements.messageForm.addEventListener('submit', saveMessage);
   elements.refreshMessagesButton.addEventListener('click', (event) => { event.preventDefault(); loadMessageConfig(); });
+  elements.userFieldPrinter.addEventListener('change', () => { resetUserFieldForm(); renderPrinterUserFields(); });
+  elements.newPrinterUserField.addEventListener('click', () => {
+    resetUserFieldForm();
+    elements.printerUserFieldForm.classList.remove('hidden');
+    elements.printerUserFieldType.focus();
+  });
+  elements.cancelPrinterUserField.addEventListener('click', resetUserFieldForm);
+  elements.printerUserFieldForm.addEventListener('submit', saveUserField);
+  elements.printerUserFieldList.addEventListener('click', (event) => {
+    const edit = event.target.closest('[data-edit-user-field]');
+    const remove = event.target.closest('[data-delete-user-field]');
+    if (edit) editUserField(userFields.find((field) => field.id === edit.dataset.editUserField));
+    if (remove) deleteUserField(remove.dataset.deleteUserField);
+  });
 }
 
 export { loadMessageConfig, setupMessageConfig };

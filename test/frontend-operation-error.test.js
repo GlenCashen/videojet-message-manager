@@ -69,7 +69,9 @@ test('production releases require an independent review and expose no direct ope
   assert.ok(productionHtml.includes('id="productionMastersTab"'));
   assert.ok(productionHtml.includes('id="releaseBrewProduct"'));
   assert.ok(productionHtml.includes('id="releaseBrewNumber"'));
-  assert.ok(productionHtml.includes('id="releaseBatchNumber"'));
+  assert.equal(productionHtml.includes('id="releaseBatchNumber"'), false);
+  assert.ok(productionHtml.includes('id="releaseMasterSearch"'));
+  assert.ok(productionHtml.includes('id="releaseExpectedMessages"'));
   assert.ok(productionHtml.includes('id="releasePagination"'));
   assert.ok(productionHtml.includes('Production Coding Releases'));
   assert.ok(productionHtml.includes('Awaiting independent review'));
@@ -132,18 +134,29 @@ test('new messages define fields that product masters infer', async () => {
   const releases = await readFile('public/js/release-workflow.js', 'utf8');
 
   assert.ok(html.includes('id="newMessageButton"'));
-  assert.ok(html.includes('id="addMessageField"'));
+  assert.ok(html.includes('id="userFieldPrinter"'));
+  assert.ok(html.includes('id="printerUserFieldForm"'));
+  assert.ok(html.includes('id="printerUserFieldType"'));
+  assert.match(html, /value="brew">BREW<\/option>.*value="batch">BATCH<\/option>.*value="run">RUN<\/option>/s);
+  assert.ok(html.includes('id="messageFieldChoices"'));
+  assert.ok(html.includes('id="messagePrinter"'));
   assert.ok(html.includes('id="messageTokenPalette"'));
   assert.ok(html.includes('id="messageLineBuilder"'));
   assert.equal(html.includes('id="messageFieldsJson"'), false);
   assert.equal(html.includes('id="messagePreviewLines"'), false);
   assert.ok(messageConfig.includes("draggable: 'true'"));
   assert.ok(messageConfig.includes('dataTransfer.getData'));
+  assert.ok(messageConfig.includes("apiJson('/api/printer-user-fields')"));
+  assert.ok(html.includes('Messages belong to one printer'));
   assert.equal(html.includes('id="masterRunField"'), false);
   assert.equal(html.includes('id="masterBatchField"'), false);
   assert.ok(html.includes('id="masterPrinterConfigurations"'));
   assert.ok(html.includes('id="productMasterList"'));
   assert.ok(html.includes('id="productMasterSearch"'));
+  assert.ok(html.includes('id="messageMasterUsage"'));
+  assert.ok(html.includes('id="messageMasterUsageList"'));
+  assert.ok(messageConfig.includes("apiJson('/api/product-masters')"));
+  assert.ok(messageConfig.includes('masterSearch='));
   assert.ok(messageConfig.includes("method: creating ? 'POST' : 'PUT'"));
   assert.ok(releases.includes('function renderMasterPrinterConfigurations('));
   assert.ok(releases.includes('function renderMasterRegister()'));
@@ -152,6 +165,22 @@ test('new messages define fields that product masters infer', async () => {
   assert.ok(releases.includes('renderConfiguredLines'));
   assert.ok(releases.includes('field.printerFieldName'));
   assert.ok(releases.includes("['run_code', 'Tracked product run (optional)']"));
+});
+
+test('new releases prefill an editable BATCH prefix and inherit category and printers', async () => {
+  const html = await readFile('public/production-releases.html', 'utf8');
+  const source = await readFile('public/js/release-workflow.js', 'utf8');
+  assert.ok(html.includes('id="releasePackagingCategory"'));
+  assert.ok(html.includes('id="releaseBrewProduct"'));
+  assert.ok(html.includes('id="releasePrinters"'));
+  assert.ok(html.includes('id="masterPackagingCategory"'));
+  assert.ok(html.includes('id="masterBatchCode"'));
+  assert.equal(html.includes('id="releaseBrewProduct" readonly'), false);
+  assert.match(source, /brewSheetProduct: nodes\.releaseBrewProduct\.value/);
+  assert.match(source, /defaultBrewSheetProduct/);
+  assert.match(source, /applySelectedMasterDefaults\(\)/);
+  assert.match(source, /Printers inherited from product master/);
+  assert.equal(source.includes("querySelectorAll('[data-release-printer]')"), false);
 });
 
 test('printer editor persists the current-message readback override', async () => {

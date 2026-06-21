@@ -30,8 +30,7 @@ function releaseInput(master, printerIds, sequence, state) {
   return {
     productMasterId: master.id,
     brewSheetProduct: `${master.productCode}-${String(sequence + 1).padStart(3, '0')}`,
-    brewNumber: `H${String(4000 + sequence).padStart(4, '0')}`,
-    batchNumber: `BATCH-${String(sequence + 1).padStart(3, '0')}`,
+    brewNumber: String((400 + sequence) % 1000).padStart(3, '0'),
     plannedProductionAt: planned.toISOString(),
     printerIds,
     notes: `${SEED_NOTE_PREFIX}${state}:${String(sequence + 1).padStart(3, '0')}`

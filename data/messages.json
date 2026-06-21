@@ -1,7 +1,7 @@
 [
   {
     "id": "9-month",
-    "displayName": "9 Month",
+    "displayName": "9M 2 line BREW/BATCH",
     "enabled": true,
     "fields": [
       {
@@ -34,12 +34,78 @@
         "printerId": "coder-1",
         "printerMessageName": "9 MONTH",
         "enabled": true
+      }
+    ]
+  },
+  {
+    "id": "9-month-coder-2",
+    "displayName": "9M 2 line BREW/BATCH",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
       },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 9
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
       {
         "printerId": "coder-2",
         "printerMessageName": "9 MONTH",
         "enabled": true
+      }
+    ]
+  },
+  {
+    "id": "9-month-coder-3",
+    "displayName": "9M 2 line BREW/BATCH",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
       },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 9
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
       {
         "printerId": "coder-3",
         "printerMessageName": "9 MONTH",
@@ -49,7 +115,7 @@
   },
   {
     "id": "12-month",
-    "displayName": "12 Month",
+    "displayName": "12M 2 line BREW/BATCH",
     "enabled": true,
     "fields": [
       {
@@ -82,28 +148,18 @@
         "printerId": "coder-1",
         "printerMessageName": "12 MONTH",
         "enabled": true
-      },
-      {
-        "printerId": "coder-2",
-        "printerMessageName": "12 MONTH",
-        "enabled": true
-      },
-      {
-        "printerId": "coder-3",
-        "printerMessageName": "12 MONTH",
-        "enabled": true
       }
     ]
   },
   {
-    "id": "test",
-    "displayName": "Test",
+    "id": "12-month-coder-2",
+    "displayName": "12M 2 line BREW/BATCH",
     "enabled": true,
     "fields": [
       {
         "key": "brew",
         "label": "Brew code",
-        "printerFieldName": "TBREW",
+        "printerFieldName": "BREW",
         "required": true,
         "maxLength": 30,
         "transform": "uppercase"
@@ -111,7 +167,7 @@
       {
         "key": "batch",
         "label": "Batch code",
-        "printerFieldName": "TEST",
+        "printerFieldName": "BATCH",
         "required": true,
         "maxLength": 30,
         "transform": "uppercase"
@@ -127,8 +183,46 @@
     ],
     "printerAssignments": [
       {
-        "printerId": "coder-1",
-        "printerMessageName": "TEST",
+        "printerId": "coder-2",
+        "printerMessageName": "12 MONTH",
+        "enabled": true
+      }
+    ]
+  },
+  {
+    "id": "12-month-coder-3",
+    "displayName": "12M 2 line BREW/BATCH",
+    "enabled": true,
+    "fields": [
+      {
+        "key": "brew",
+        "label": "Brew code",
+        "printerFieldName": "BREW",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
+      },
+      {
+        "key": "batch",
+        "label": "Batch code",
+        "printerFieldName": "BATCH",
+        "required": true,
+        "maxLength": 30,
+        "transform": "uppercase"
+      }
+    ],
+    "dateRule": {
+      "type": "offset-months",
+      "months": 12
+    },
+    "previewLines": [
+      "{{brew}} {{batch}}",
+      "BBD: {{bestBeforeDate}} {{currentTime}}"
+    ],
+    "printerAssignments": [
+      {
+        "printerId": "coder-3",
+        "printerMessageName": "12 MONTH",
         "enabled": true
       }
     ]

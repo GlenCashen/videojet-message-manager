@@ -121,6 +121,9 @@ function validateDefinition(definition, index, printerIds) {
     }
     assignmentPrinterIds.add(assignment.printerId);
   }
+  if (printerIds && definition.printerAssignments.length !== 1) {
+    throw new Error(`Message ${definition.id} must be assigned to exactly one printer.`);
+  }
 
   assertObject(definition.dateRule, `Message ${definition.id} dateRule`);
   if (definition.dateRule.type !== 'offset-months') {

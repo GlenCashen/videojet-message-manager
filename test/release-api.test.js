@@ -65,6 +65,11 @@ test('QA, planner and packaging leader complete release approval without contact
 
   try {
     await waitForServer(baseUrl, child, output);
+    const canFields = await jsonFetch(`${baseUrl}/api/printer-user-fields?printerId=coder-1`, { role: 'qa' });
+    const brewField = canFields.data.find((field) => field.key === 'brew');
+    const batchField = canFields.data.find((field) => field.key === 'batch');
+    assert.ok(brewField);
+    assert.ok(batchField);
     const messageResult = await jsonFetch(`${baseUrl}/api/messages`, {
       method: 'POST',
       role: 'qa',
@@ -72,10 +77,7 @@ test('QA, planner and packaging leader complete release approval without contact
         id: 'tbundrc-code',
         displayName: 'TBUNDRC package code',
         enabled: true,
-        fields: [
-          { key: 'brew', label: 'Brew code', printerFieldName: 'BREW', required: true, maxLength: 30, transform: 'uppercase' },
-          { key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: true, maxLength: 30, transform: 'uppercase' }
-        ],
+        fieldIds: [brewField.id, batchField.id],
         dateRule: { type: 'offset-months', months: 15 },
         previewLines: ['{{brew}}{{batch}}', 'BBD: {{bestBeforeDate}} {{currentTime}}'],
         printerAssignments: [{ printerId: 'coder-1', printerMessageName: 'TBUNDRC', enabled: true }]
@@ -83,16 +85,40 @@ test('QA, planner and packaging leader complete release approval without contact
     });
     assert.equal(messageResult.response.status, 201, JSON.stringify(messageResult.data));
     assert.deepEqual(messageResult.data.message.fields.map((field) => field.key), ['brew', 'batch']);
+    assert.equal(messageResult.data.message.printerAssignments.length, 1);
+
+    const bottleFields = await jsonFetch(`${baseUrl}/api/printer-user-fields?printerId=coder-2`, { role: 'qa' });
+    const bottleBatch = bottleFields.data.find((field) => field.key === 'batch');
+    const wrongPrinterField = await jsonFetch(`${baseUrl}/api/messages`, {
+      method: 'POST', role: 'qa', body: {
+        id: 'wrong-printer-field', displayName: 'Wrong printer field', enabled: true,
+        fieldIds: [bottleBatch.id],
+        dateRule: { type: 'offset-months', months: 12 },
+        previewLines: ['{{batch}}'],
+        printerAssignments: [{ printerId: 'coder-1', printerMessageName: 'WRONG FIELD', enabled: true }]
+      }
+    });
+    assert.equal(wrongPrinterField.response.status, 400);
+    assert.match(wrongPrinterField.data.error, /belong to the assigned printer/i);
+
+    const unsupportedField = await jsonFetch(`${baseUrl}/api/printers/coder-1/user-fields`, {
+      method: 'POST', role: 'qa', body: {
+        key: 'custom', label: 'Custom', printerFieldName: 'CUSTOM', required: true, maxLength: 30, transform: 'uppercase'
+      }
+    });
+    assert.equal(unsupportedField.response.status, 400);
+    assert.match(unsupportedField.data.error, /BREW, BATCH or RUN/);
 
     const masterResult = await jsonFetch(`${baseUrl}/api/product-masters`, {
       method: 'POST',
       role: 'qa',
       body: {
         productCode: 'TBUNDRC',
+        packagingCategory: 'cans',
         displayName: 'Bundaberg Rum and Cola',
         nextRunNumber: 50,
         specification: {
-          runPrefix: 'T', runWidth: 4,
+          runPrefix: 'T', runWidth: 4, defaultBrewSheetProduct: 'TBUNDRC',
           printerConfigurations: [{
             printerId: 'coder-1', messageId: 'tbundrc-code',
             fieldMappings: [
@@ -133,13 +159,15 @@ test('QA, planner and packaging leader complete release approval without contact
       body: {
         productMasterId: masterResult.data.master.id,
         brewSheetProduct: 'TBUNDRC-50',
-        brewNumber: 'H0477',
-        batchNumber: 'FV27',
+        brewNumber: '477',
         plannedProductionAt: '2026-06-18T04:32:08.000Z',
-        printerIds: ['coder-1']
+        printerIds: ['coder-2']
       }
     });
     assert.equal(draftResult.response.status, 201, JSON.stringify(draftResult.data));
+    assert.equal(draftResult.data.release.brewSheetProduct, 'TBUNDRC-50');
+    assert.equal(draftResult.data.release.packagingCategory, 'cans');
+    assert.deepEqual(draftResult.data.release.printerIds, ['coder-1']);
 
     const submitted = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/submit`, {
       method: 'POST', role: 'planner', body: {}
@@ -199,8 +227,7 @@ test('QA, planner and packaging leader complete release approval without contact
       method: 'POST', role: 'planner', body: {
         productMasterId: masterResult.data.master.id,
         brewSheetProduct: 'TBUNDRC-51',
-        brewNumber: 'WRONG',
-        batchNumber: 'FV28',
+        brewNumber: '111',
         plannedProductionAt: '2026-06-19T04:32:08.000Z',
         printerIds: ['coder-1']
       }
@@ -213,15 +240,14 @@ test('QA, planner and packaging leader complete release approval without contact
     const corrected = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}`, {
       method: 'PUT', role: 'planner', body: {
         brewSheetProduct: 'TBUNDRC-51',
-        brewNumber: 'H0478',
-        batchNumber: 'FV28',
+        brewNumber: '478',
         plannedProductionAt: '2026-06-19T04:32:08.000Z',
         printerIds: ['coder-1'],
         notes: 'Corrected after QA review'
       }
     });
     assert.equal(corrected.data.release.status, 'draft');
-    assert.equal(corrected.data.release.brewNumber, 'H0478');
+    assert.equal(corrected.data.release.brewNumber, '478');
 
     const audit = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/audit`, { role: 'qa' });
     assert.equal(audit.response.ok, true, JSON.stringify(audit.data));

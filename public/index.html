@@ -114,7 +114,7 @@
         <summary>
           <span>
             <strong id="messageConfigTitle">Messages</strong>
-            <span class="muted">Edit logical messages and assign stored names to coders</span>
+            <span class="muted">Manage printer-specific messages and reusable printer user fields</span>
           </span>
           <span class="actions">
             <button id="newMessageButton" class="primary" type="button">New message</button>
@@ -122,9 +122,36 @@
           </span>
         </summary>
         <p id="messageConfigMessage" class="notice hidden" aria-live="polite"></p>
+        <section class="printer-user-fields-section" aria-labelledby="printerUserFieldsTitle">
+          <div class="message-definition-heading">
+            <div><h3 id="printerUserFieldsTitle">Printer user fields</h3><p class="muted">Each printer owns its field list. Messages assigned to that printer select fields from this list.</p></div>
+            <div class="actions">
+              <label for="userFieldPrinter">Printer<select id="userFieldPrinter"></select></label>
+              <button id="newPrinterUserField" class="secondary" type="button">New user field</button>
+            </div>
+          </div>
+          <div id="printerUserFieldList" class="printer-user-field-list"></div>
+          <form id="printerUserFieldForm" class="printer-user-field-form hidden">
+            <label>User field<select id="printerUserFieldType" required><option value="brew">BREW</option><option value="batch">BATCH</option><option value="run">RUN</option></select></label>
+            <label>Maximum length<input id="printerUserFieldMaxLength" type="number" min="1" max="50" value="30" required></label>
+            <label class="checkbox-line"><input id="printerUserFieldUppercase" type="checkbox" checked>Force uppercase</label>
+            <label class="checkbox-line"><input id="printerUserFieldRequired" type="checkbox" checked>Required</label>
+            <div class="actions">
+              <button class="primary" type="submit">Save user field</button>
+              <button id="cancelPrinterUserField" class="ghost" type="button">Cancel</button>
+            </div>
+          </form>
+        </section>
         <div class="message-config-layout">
-          <div id="messageList" class="message-list" aria-label="Messages"></div>
+          <div id="messageList" class="message-list" aria-label="Messages grouped by printer"></div>
           <form id="messageForm" class="message-form hidden">
+            <label for="messagePrinter">Printer
+              <select id="messagePrinter" required></select>
+              <small>Messages belong to one printer and cannot span printers.</small>
+            </label>
+            <label for="messagePrinterName">Stored printer message
+              <input id="messagePrinterName" maxlength="30" required autocomplete="off">
+            </label>
             <label for="messageConfigId">Message ID
               <input id="messageConfigId" maxlength="50" pattern="[a-z0-9-]+" required autocomplete="off">
               <small>Generated as lowercase kebab-case and fixed after creation.</small>
@@ -138,11 +165,9 @@
             </label>
             <section class="wide message-definition-section" aria-labelledby="messageUserFieldsTitle">
               <div class="message-definition-heading">
-                <div><h3 id="messageUserFieldsTitle">User fields</h3><p class="muted">Values written into named user fields in the stored printer message.</p></div>
-                <button id="addMessageField" class="secondary" type="button">Add user field</button>
+                <div><h3 id="messageUserFieldsTitle">Message user fields</h3><p class="muted">Select from the fields assigned to this message's printer.</p></div>
               </div>
-              <div id="messageFieldRows" class="message-field-editor"></div>
-              <p class="message-definition-warning">Optional blank values are sent as empty field updates. Confirm this behaviour on each real printer model before production use.</p>
+              <div id="messageFieldChoices" class="message-field-choices"></div>
             </section>
             <section class="wide message-definition-section" aria-labelledby="messageFormattingTitle">
               <div class="message-definition-heading"><div><h3 id="messageFormattingTitle">Date and time</h3><p class="muted">System values calculated from the planned production date.</p></div></div>
@@ -161,10 +186,10 @@
               <div id="messageLineBuilder" class="message-line-builder"></div>
               <div class="message-live-preview"><span>Expected message preview</span><pre id="messageDefinitionPreview"></pre></div>
             </section>
-            <section class="wide" aria-labelledby="assignmentsTitle">
-              <h3 id="assignmentsTitle">Assigned printers</h3>
-              <div id="messageAssignments" class="assignment-list"></div>
-            </section>
+            <details id="messageMasterUsage" class="wide message-master-usage">
+              <summary>Used by product masters <span id="messageMasterUsageCount" class="badge neutral">0</span></summary>
+              <div id="messageMasterUsageList" class="message-master-usage-list"></div>
+            </details>
             <div class="actions wide">
               <button id="saveMessageButton" class="primary" type="submit">Save message</button>
             </div>
@@ -200,13 +225,14 @@
             <option value="failed">Attention required</option>
             <option value="rejected">Rejected</option>
           </select>
+          <select id="releaseCategoryFilter" aria-label="Filter releases by packaging category"><option value="">All packaging</option><option value="cans">Cans</option><option value="bottles">Bottles</option></select>
           <button id="openProductMasterForm" class="secondary" type="button">New product master</button>
           <button id="openBatchReleaseForm" class="primary" type="button">New release</button>
         </div>
         <section id="productMasterRegister" class="master-register" aria-labelledby="productMasterRegisterTitle">
           <div class="section-heading compact-heading">
             <div><h3 id="productMasterRegisterTitle">Product masters</h3><p class="muted">Versioned coding requirements by product and printer.</p></div>
-            <input id="productMasterSearch" type="search" placeholder="Search product masters" aria-label="Search product masters">
+            <div class="master-register-filters"><select id="masterCategoryFilter" aria-label="Filter masters by packaging category"><option value="">All packaging</option><option value="cans">Cans</option><option value="bottles">Bottles</option></select><input id="productMasterSearch" type="search" placeholder="Search name, SKU or BATCH code" aria-label="Search product masters"></div>
           </div>
           <div id="productMasterList" class="master-register-list"></div>
         </section>
@@ -216,7 +242,9 @@
             <p class="muted">Creating or changing a master creates a permanent specification version.</p>
             <form id="productMasterForm" class="message-job-builder">
               <label>Product sequence code<input id="masterProductCode" placeholder="TBUNDRC" maxlength="30" required></label>
+              <label>Packaging category<select id="masterPackagingCategory" required><option value="cans">Cans</option><option value="bottles">Bottles</option></select></label>
               <label>Display name<input id="masterDisplayName" placeholder="Bundaberg Rum & Cola" maxlength="100" required></label>
+              <label>Product code / BATCH prefix<input id="masterBatchCode" placeholder="TBUNDRC" maxlength="50" required></label>
               <label>First available run<input id="masterNextRun" type="number" min="1" value="1" required></label>
               <label>Run prefix<input id="masterRunPrefix" value="T" maxlength="10" required></label>
               <label>Run digits<input id="masterRunWidth" type="number" min="1" max="8" value="4" required></label>
@@ -236,12 +264,14 @@
             <h3 id="batchReleaseTitle">New batch release</h3>
             <p id="batchReleaseHelp" class="muted">The product run is assigned automatically when the operator sends the approved release.</p>
             <form id="batchReleaseForm" class="message-job-builder">
+              <label class="wide">Find product master<input id="releaseMasterSearch" type="search" placeholder="Search name, SKU or BATCH code, e.g. 4325" autocomplete="off"></label>
               <label>Product master<select id="releaseProductMaster" required></select></label>
-              <label>Brew-sheet product<input id="releaseBrewProduct" placeholder="TBUNDRC-50" maxlength="50" required></label>
-              <label>Brew number<input id="releaseBrewNumber" placeholder="H0477" maxlength="50"></label>
-              <label>Batch number<input id="releaseBatchNumber" placeholder="FV27" maxlength="50"></label>
+              <label>Packaging category<input id="releasePackagingCategory" readonly></label>
+              <label>BATCH <span class="field-hint">Product code-batch number; combined batches can use /</span><input id="releaseBrewProduct" placeholder="SMGOLD-370/371" maxlength="50" required></label>
+              <label>Brew number<input id="releaseBrewNumber" placeholder="477" inputmode="numeric" pattern="[0-9]{3}" minlength="3" maxlength="3" required></label>
               <label>Planned production<input id="releaseProductionAt" type="datetime-local" required></label>
-              <fieldset id="releasePrinters" class="message-job-target-picker wide"><legend>Target printers</legend></fieldset>
+              <section id="releasePrinters" class="inherited-printer-list wide" aria-label="Printers inherited from product master"></section>
+              <section id="releaseExpectedMessages" class="release-form-preview wide" aria-label="Expected printed messages"></section>
               <label class="wide">Notes<textarea id="releaseNotes" rows="3" maxlength="1000"></textarea></label>
               <div class="actions wide">
                 <button id="cancelBatchReleaseEdit" class="ghost bordered hidden" type="button">Cancel edit</button>
@@ -266,7 +296,7 @@
         <div id="releaseReviewBody" class="release-review-body"></div>
         <label id="releaseApprovalAttestation" class="release-attestation">
           <input id="releaseApprovalCheck" type="checkbox">
-          <span>I have independently checked the brew-sheet values, product master and target printers.</span>
+          <span>I have independently checked the BATCH code, production values, product master and inherited printers.</span>
         </label>
         <label id="releaseRejectionField" class="hidden">Reason for rejection<textarea id="releaseRejectionReason" rows="3" maxlength="500"></textarea></label>
         <p id="releaseReviewNotice" class="notice hidden" aria-live="polite"></p>

@@ -12,14 +12,24 @@ function parseJson(value, fallback) {
 
 function messageFromRow(row, db) {
   if (!row) return null;
-  const fields = db.prepare('SELECT * FROM message_fields WHERE message_id = ? ORDER BY sort_order, rowid').all(row.id)
+  const fields = db.prepare(`
+    SELECT mf.*, puf.id AS user_field_id, puf.field_key AS registered_field_key,
+      puf.label AS registered_label, puf.printer_field_name AS registered_printer_field_name,
+      puf.required AS registered_required, puf.max_length AS registered_max_length,
+      puf.transform AS registered_transform
+    FROM message_fields mf
+    LEFT JOIN printer_user_fields puf ON puf.id = mf.printer_user_field_id
+    WHERE mf.message_id = ?
+    ORDER BY mf.sort_order, mf.rowid
+  `).all(row.id)
     .map((field) => ({
-      key: field.field_key,
-      label: field.label,
-      printerFieldName: field.printer_field_name,
-      required: Boolean(field.required),
-      maxLength: field.max_length,
-      transform: field.transform
+      userFieldId: field.user_field_id || null,
+      key: field.registered_field_key || field.field_key,
+      label: field.registered_label || field.label,
+      printerFieldName: field.registered_printer_field_name || field.printer_field_name,
+      required: Boolean(field.user_field_id ? field.registered_required : field.required),
+      maxLength: field.registered_max_length || field.max_length,
+      transform: field.registered_transform || field.transform
     }));
   const printerAssignments = db.prepare('SELECT * FROM message_printer_assignments WHERE message_id = ? ORDER BY rowid').all(row.id)
     .map((assignment) => ({
@@ -56,13 +66,15 @@ function replaceMessageFields(message, db = getDb()) {
   db.prepare('DELETE FROM message_fields WHERE message_id = ?').run(message.id);
   const insert = db.prepare(`
     INSERT INTO message_fields (
-      id, message_id, field_key, label, printer_field_name, required, max_length, transform, sort_order, created_at, updated_at
-    ) VALUES (@id, @messageId, @fieldKey, @label, @printerFieldName, @required, @maxLength, @transform, @sortOrder, @now, @now)
+      id, message_id, printer_user_field_id, field_key, label, printer_field_name, required,
+      max_length, transform, sort_order, created_at, updated_at
+    ) VALUES (@id, @messageId, @userFieldId, @fieldKey, @label, @printerFieldName, @required, @maxLength, @transform, @sortOrder, @now, @now)
   `);
   for (const [index, field] of (message.fields || []).entries()) {
     insert.run({
       id: `${message.id}-${field.key}-${crypto.randomUUID()}`,
       messageId: message.id,
+      userFieldId: field.userFieldId || field.id || null,
       fieldKey: field.key,
       label: field.label,
       printerFieldName: field.printerFieldName,

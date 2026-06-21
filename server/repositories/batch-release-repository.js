@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getDb } from '../db.js';
+import { getMessageByIdFromDb } from './message-repository.js';
 
 function parseJson(value, fallback = null) {
   return value ? JSON.parse(value) : fallback;
@@ -21,10 +22,10 @@ function releaseFromRow(row) {
     productMasterVersionId: row.product_master_version_id,
     productMasterVersion: row.product_master_version || null,
     productMasterSpecification: parseJson(row.product_master_specification_json, null),
+    packagingCategory: row.packaging_category,
     status: row.status,
     brewSheetProduct: row.brew_sheet_product,
     brewNumber: row.brew_number || null,
-    batchNumber: row.batch_number || null,
     plannedProductionAt: row.planned_production_at,
     printerIds: parseJson(row.printer_ids_json, []),
     notes: row.notes || null,
@@ -70,6 +71,14 @@ function executionTargetFromRow(row) {
 
 function attachExecutionTargets(release, db) {
   if (!release) return null;
+  const specification = release.productMasterSpecification;
+  if (specification) {
+    release.productMasterSpecification = {
+      ...specification,
+      printerConfigurations: printerConfigurations(specification)
+        .map((configuration) => currentMessageConfiguration(configuration, db))
+    };
+  }
   const executionTargets = db.prepare(`
     SELECT * FROM batch_release_execution_targets WHERE release_id = ? ORDER BY printer_id
   `).all(release.id).map(executionTargetFromRow);
@@ -112,7 +121,7 @@ function listBatchReleases({ limit = 100, statuses = [] } = {}, db = getDb()) {
     .all(...normalized, safeLimit).map(releaseFromRow).map((release) => attachExecutionTargets(release, db));
 }
 
-function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search = '', printerIds = [] } = {}, db = getDb()) {
+function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search = '', printerIds = [], packagingCategory = '' } = {}, db = getDb()) {
   const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const normalized = statuses.filter(Boolean);
@@ -123,10 +132,15 @@ function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search =
     where.push(`br.status IN (${normalized.map(() => '?').join(',')})`);
     params.push(...normalized);
   }
+  if (packagingCategory) {
+    if (!['cans', 'bottles'].includes(packagingCategory)) throw new Error('Packaging category must be cans or bottles.');
+    where.push('br.packaging_category = ?');
+    params.push(packagingCategory);
+  }
   if (query) {
     where.push(`LOWER(COALESCE(pm.product_code, '') || ' ' || COALESCE(pm.display_name, '') || ' ' ||
       COALESCE(br.brew_sheet_product, '') || ' ' || COALESCE(br.brew_number, '') || ' ' ||
-      COALESCE(br.batch_number, '') || ' ' || COALESCE(br.run_code, '') || ' ' || COALESCE(br.created_by_username, '')) LIKE ?`);
+      COALESCE(br.run_code, '') || ' ' || COALESCE(br.created_by_username, '')) LIKE ?`);
     params.push(`%${query}%`);
   }
   if (printerIds.length) {
@@ -145,11 +159,19 @@ function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search =
     ${fromSql} ${whereSql}
     ORDER BY br.created_at DESC LIMIT ? OFFSET ?
   `).all(...params, safeLimit, safeOffset).map(releaseFromRow).map((release) => attachExecutionTargets(release, db));
-  const countScope = printerIds.length
-    ? `WHERE EXISTS (SELECT 1 FROM json_each(printer_ids_json) assigned WHERE assigned.value IN (${printerIds.map(() => '?').join(',')}))`
-    : '';
+  const countWhere = [];
+  const countParams = [];
+  if (printerIds.length) {
+    countWhere.push(`EXISTS (SELECT 1 FROM json_each(printer_ids_json) assigned WHERE assigned.value IN (${printerIds.map(() => '?').join(',')}))`);
+    countParams.push(...printerIds);
+  }
+  if (packagingCategory) {
+    countWhere.push('packaging_category = ?');
+    countParams.push(packagingCategory);
+  }
+  const countScope = countWhere.length ? `WHERE ${countWhere.join(' AND ')}` : '';
   const counts = Object.fromEntries(db.prepare(`SELECT status, COUNT(*) AS count FROM batch_releases ${countScope} GROUP BY status`)
-    .all(...printerIds).map((row) => [row.status, row.count]));
+    .all(...countParams).map((row) => [row.status, row.count]));
   return { items, total, limit: safeLimit, offset: safeOffset, counts };
 }
 
@@ -325,27 +347,41 @@ function assertReviewClaimAvailable(id, actor, db) {
   }
 }
 
+function normalizeReleaseBatch(value, specification, productCode) {
+  const prefix = String(specification.defaultBrewSheetProduct || productCode).trim().toUpperCase();
+  const batch = String(value || '').trim().toUpperCase();
+  const suffix = batch.startsWith(`${prefix}-`) ? batch.slice(prefix.length + 1) : '';
+  if (!prefix || batch.length > 50 || !suffix || !/^[A-Z0-9._\/-]+$/.test(suffix)) {
+    throw new Error(`BATCH must use the selected product code followed by the batch number, for example ${prefix || 'PRODUCT'}-50.`);
+  }
+  return batch;
+}
+
+function normalizeBrewNumber(value) {
+  const brewNumber = String(value || '').trim();
+  if (!/^\d{3}$/.test(brewNumber)) throw new Error('Brew number must be exactly three digits, for example 477.');
+  return brewNumber;
+}
+
 function createBatchRelease(input, actor, db = getDb()) {
   const master = db.prepare('SELECT * FROM product_masters WHERE id = ? AND enabled = 1').get(input.productMasterId);
   if (!master) throw new Error('Select an enabled product master.');
   const version = db.prepare('SELECT * FROM product_master_versions WHERE product_master_id = ? AND version = ?')
     .get(master.id, master.current_version);
   const specification = JSON.parse(version.specification_json);
-  const brewSheetProduct = String(input.brewSheetProduct || '').trim().toUpperCase();
+  const brewSheetProduct = normalizeReleaseBatch(input.brewSheetProduct, specification, master.product_code);
   const planned = new Date(input.plannedProductionAt);
-  const printerIds = [...new Set((Array.isArray(input.printerIds) ? input.printerIds : []).map((id) => String(id || '').trim()).filter(Boolean))];
-  if (!brewSheetProduct || brewSheetProduct.length > 50) throw new Error('Brew-sheet product is required and must be at most 50 characters.');
+  const printerIds = [...specification.printerIds];
   if (Number.isNaN(planned.valueOf())) throw new Error('A valid planned production date and time is required.');
-  if (!printerIds.length) throw new Error('Select at least one target printer.');
-  if (printerIds.some((id) => !specification.printerIds.includes(id))) throw new Error('One or more printers are not permitted by this product master.');
+  if (!printerIds.length) throw new Error('The selected product master has no target printers.');
   const now = new Date().toISOString();
   const release = {
     id: crypto.randomUUID(),
     productMasterId: master.id,
     versionId: version.id,
+    packagingCategory: master.packaging_category,
     brewSheetProduct,
-    brewNumber: String(input.brewNumber || '').trim().toUpperCase() || null,
-    batchNumber: String(input.batchNumber || '').trim().toUpperCase() || null,
+    brewNumber: normalizeBrewNumber(input.brewNumber),
     plannedProductionAt: planned.toISOString(),
     printerIds,
     notes: String(input.notes || '').trim().slice(0, 1000) || null,
@@ -355,12 +391,12 @@ function createBatchRelease(input, actor, db = getDb()) {
   };
   db.prepare(`
     INSERT INTO batch_releases (
-      id, product_master_id, product_master_version_id, status, brew_sheet_product,
-      brew_number, batch_number, planned_production_at, printer_ids_json, notes,
+      id, product_master_id, product_master_version_id, packaging_category, status, brew_sheet_product,
+      brew_number, planned_production_at, printer_ids_json, notes,
       created_by_user_id, created_by_username, created_at, updated_at
     ) VALUES (
-      @id, @productMasterId, @versionId, 'draft', @brewSheetProduct,
-      @brewNumber, @batchNumber, @plannedProductionAt, @printerIdsJson, @notes,
+      @id, @productMasterId, @versionId, @packagingCategory, 'draft', @brewSheetProduct,
+      @brewNumber, @plannedProductionAt, @printerIdsJson, @notes,
       @userId, @username, @now, @now
     )
   `).run({ ...release, printerIdsJson: JSON.stringify(printerIds) });
@@ -375,27 +411,22 @@ function updateBatchRelease(id, input, actor, db = getDb()) {
   }
   const version = db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
   const specification = JSON.parse(version.specification_json);
-  const brewSheetProduct = String(input.brewSheetProduct || '').trim().toUpperCase();
+  const master = db.prepare('SELECT product_code FROM product_masters WHERE id = ?').get(release.productMasterId);
+  const brewSheetProduct = normalizeReleaseBatch(input.brewSheetProduct, specification, master.product_code);
   const planned = new Date(input.plannedProductionAt);
-  const printerIds = [...new Set((Array.isArray(input.printerIds) ? input.printerIds : [])
-    .map((printerId) => String(printerId || '').trim()).filter(Boolean))];
-  if (!brewSheetProduct || brewSheetProduct.length > 50) throw new Error('Brew-sheet product is required and must be at most 50 characters.');
+  const printerIds = [...specification.printerIds];
   if (Number.isNaN(planned.valueOf())) throw new Error('A valid planned production date and time is required.');
-  if (!printerIds.length) throw new Error('Select at least one target printer.');
-  if (printerIds.some((printerId) => !specification.printerIds.includes(printerId))) {
-    throw new Error('One or more printers are not permitted by this product master version.');
-  }
+  if (!printerIds.length) throw new Error('The selected product master version has no target printers.');
   const now = new Date().toISOString();
   db.prepare(`
-    UPDATE batch_releases SET status = 'draft', product_master_version_id = ?, brew_sheet_product = ?, brew_number = ?, batch_number = ?,
+    UPDATE batch_releases SET status = 'draft', product_master_version_id = ?, brew_sheet_product = ?, brew_number = ?,
       planned_production_at = ?, printer_ids_json = ?, notes = ?, submitted_at = NULL,
       reviewed_by_user_id = NULL, reviewed_by_username = NULL, reviewed_at = NULL,
       rejection_reason = NULL, expected_output_json = NULL, updated_at = ? WHERE id = ?
   `).run(
     version.id,
     brewSheetProduct,
-    String(input.brewNumber || '').trim().toUpperCase() || null,
-    String(input.batchNumber || '').trim().toUpperCase() || null,
+    normalizeBrewNumber(input.brewNumber),
     planned.toISOString(),
     JSON.stringify(printerIds),
     String(input.notes || '').trim().slice(0, 1000) || null,
@@ -403,6 +434,17 @@ function updateBatchRelease(id, input, actor, db = getDb()) {
     id
   );
   return getBatchRelease(id, db);
+}
+
+function deleteDraftBatchRelease(id, db = getDb()) {
+  return db.transaction(() => {
+    const release = db.prepare('SELECT status FROM batch_releases WHERE id = ?').get(id);
+    if (!release) return false;
+    if (release.status !== 'draft') throw new Error('Only draft releases can be deleted.');
+    db.prepare("DELETE FROM audit_events WHERE target_type = 'batch-release' AND target_id = ?").run(id);
+    db.prepare('DELETE FROM batch_releases WHERE id = ?').run(id);
+    return true;
+  })();
 }
 
 function submitBatchRelease(id, actor, db = getDb()) {
@@ -454,20 +496,33 @@ function renderTemplate(template, values) {
 }
 
 function printerConfigurations(specification) {
-  if (Array.isArray(specification.printerConfigurations) && specification.printerConfigurations.length) {
-    return specification.printerConfigurations;
-  }
-  return (specification.printerIds || []).map((printerId) => ({
-    printerId,
-    messageId: specification.messageId,
-    fieldMappings: specification.fieldMappings,
-    dateRule: specification.dateRule || { type: 'offset-months', months: specification.bestBeforeMonths, format: 'DD/MM/YYYY' },
-    timeRule: specification.timeRule,
-    previewLines: specification.previewLines || [specification.firstLineTemplate, specification.secondLineTemplate].filter(Boolean)
-  }));
+  return specification.printerConfigurations || [];
 }
 
-function expectedOutputForRelease(release, version, runNumber) {
+function defaultReleaseSource(field) {
+  const value = `${field.key} ${field.label} ${field.printerFieldName}`.toLowerCase();
+  if (value.includes('run')) return 'run_code';
+  if (value.includes('brew')) return 'brew_number';
+  return 'brew_sheet_product';
+}
+
+function currentMessageConfiguration(configuration, db) {
+  const message = getMessageByIdFromDb(configuration.messageId, db);
+  if (!message) return configuration;
+  if (!message.enabled) throw new Error(`Stored message ${configuration.messageId} is unavailable.`);
+  const assignment = message.printerAssignments.find((item) => item.printerId === configuration.printerId && item.enabled);
+  if (!assignment) throw new Error(`${message.displayName} is no longer assigned to printer ${configuration.printerId}.`);
+  const mappingByKey = new Map((configuration.fieldMappings || []).map((mapping) => [mapping.fieldKey, mapping.source]));
+  return {
+    ...configuration,
+    fieldMappings: message.fields.map((field) => ({ fieldKey: field.key, source: mappingByKey.get(field.key) || defaultReleaseSource(field) })),
+    dateRule: message.dateRule,
+    timeRule: message.timeRule,
+    previewLines: message.previewLines
+  };
+}
+
+function expectedOutputForRelease(release, version, runNumber, db = getDb()) {
   const specification = JSON.parse(version.specification_json);
   const digits = String(runNumber).padStart(specification.runWidth, '0');
   if (digits.length > specification.runWidth) throw new Error('The product run sequence exceeds its configured width.');
@@ -477,10 +532,10 @@ function expectedOutputForRelease(release, version, runNumber) {
     run_code: runCode,
     brew_sheet_product: release.brewSheetProduct,
     brew_number: release.brewNumber || '',
-    batch_number: release.batchNumber || ''
   };
   const byPrinter = {};
-  for (const configuration of printerConfigurations(specification)) {
+  const currentConfigurations = printerConfigurations(specification).map((configuration) => currentMessageConfiguration(configuration, db));
+  for (const configuration of currentConfigurations) {
     const months = configuration.dateRule?.months ?? specification.bestBeforeMonths;
     const bestBefore = addMonthsClamped(production, months);
     const values = {
@@ -503,7 +558,8 @@ function expectedOutputForRelease(release, version, runNumber) {
     };
   }
   const firstOutput = byPrinter[release.printerIds[0]] || Object.values(byPrinter)[0];
-  const expectedOutput = { ...firstOutput, byPrinter, specification, productMasterVersionId: version.id };
+  const liveSpecification = { ...specification, printerConfigurations: currentConfigurations };
+  const expectedOutput = { ...firstOutput, byPrinter, specification: liveSpecification, productMasterVersionId: version.id };
   return { runCode, expectedOutput };
 }
 
@@ -516,7 +572,7 @@ function reserveBatchReleaseRun(id, db = getDb()) {
     const master = db.prepare('SELECT * FROM product_masters WHERE id = ?').get(release.productMasterId);
     const version = db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
     const runNumber = master.next_run_number;
-    const { runCode, expectedOutput } = expectedOutputForRelease(release, version, runNumber);
+    const { runCode, expectedOutput } = expectedOutputForRelease(release, version, runNumber, db);
     const now = new Date().toISOString();
     db.prepare('UPDATE product_masters SET next_run_number = ?, updated_at = ? WHERE id = ?').run(runNumber + 1, now, master.id);
     db.prepare(`
@@ -541,7 +597,7 @@ function approveBatchRelease(id, actor, db = getDb()) {
       throw error;
     }
     const version = db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
-    const prepared = release.runNumber ? expectedOutputForRelease(release, version, release.runNumber) : null;
+    const prepared = release.runNumber ? expectedOutputForRelease(release, version, release.runNumber, db) : null;
     const now = new Date().toISOString();
     db.prepare(`
       UPDATE batch_releases SET status = 'released', run_number = ?, run_code = ?, expected_output_json = ?,
@@ -601,7 +657,7 @@ function rejectBatchRelease(id, reason, actor, db = getDb()) {
 
 export {
   approveBatchRelease, beginBatchReleaseTarget, claimBatchReleaseReview, createBatchRelease,
-  endBatchReleaseTargetRun, endOtherRunningTargets, finishBatchReleaseTarget, getBatchRelease, listBatchReleases, rejectBatchRelease,
+  deleteDraftBatchRelease, endBatchReleaseTargetRun, endOtherRunningTargets, finishBatchReleaseTarget, getBatchRelease, listBatchReleases, rejectBatchRelease,
   listBatchReleasesPage, recoverInterruptedBatchReleaseTargets, releaseBatchReleaseReview, reserveBatchReleaseRun,
   returnBatchReleaseForReview, submitBatchRelease, updateBatchRelease, verifyBatchReleaseTarget
 };

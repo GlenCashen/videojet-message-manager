@@ -8,14 +8,15 @@
     "dev": "node --watch server.js",
     "test": "node --test",
     "migrate": "node server/migrate.js",
-    "migrate:json": "node server/migrate-json-to-sqlite.js",
     "db:status": "node server/db-status.js",
     "db:check": "node server/db-check.js",
     "db:backup": "node server/db-backup.js",
-    "seed:releases": "node server/seed-releases.js"
+    "seed:releases": "node server/seed-releases.js",
+    "seed:catalog": "node server/import-product-catalog.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
+    "csv-parse": "^7.0.0",
     "express": "^4.21.2"
   }
 }

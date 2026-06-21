@@ -1248,7 +1248,6 @@ summary:focus-visible {
   white-space: pre-wrap;
 }
 
-.message-jobs-section { margin-bottom: 18px; }
 .message-job-target-list { margin-top: 14px; }
 .message-job-actions { margin-top: 12px; }
 .message-job-error { color: #ffb0b0; font-weight: 700; }
@@ -1784,11 +1783,22 @@ body.server-disconnected .dashboard-panel {
   align-items: center;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(260px, 1fr) 190px auto auto;
+  grid-template-columns: minmax(240px, 1fr) 190px 150px auto auto;
   margin-bottom: 16px;
 }
 .release-command-bar input,
 .release-command-bar select { margin: 0; }
+.master-register-filters { align-items: center; display: flex; gap: 10px; }
+.master-register-filters input { min-width: 240px; }
+.badge.packaging-cans { background: #e0f2fe; color: #075985; }
+.badge.packaging-bottles { background: #fef3c7; color: #92400e; }
+.release-heading-badges { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.inherited-printer-list { align-items: center; background: #f8fafc; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+.inherited-printer-list > strong { color: var(--muted); font-size: .78rem; margin-right: 4px; }
+.inherited-printer { background: #eef4ff; border: 1px solid #84adff; border-radius: 999px; color: #1849a9; font-size: .78rem; font-weight: 700; padding: 6px 10px; }
+.release-form-preview { background: #f8fafc; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 10px; padding: 14px; }
+.release-form-preview-heading h4, .release-form-preview-heading p { margin: 0; }
+.release-form-preview .review-printer-requirement { margin: 0; }
 
 .release-workflow-layout {
   display: grid;

@@ -7,20 +7,24 @@ import * as indexes from './migrations/002_indexes.js';
 import * as printerModels from './migrations/003_printer_models.js';
 import * as printerReadbackMode from './migrations/004_printer_readback_mode.js';
 import * as printerArchiving from './migrations/005_printer_archiving.js';
-import * as messageJobs from './migrations/006_message_jobs.js';
 import * as batchReleases from './migrations/007_batch_releases.js';
 import * as releaseReviewClaims from './migrations/008_release_review_claims.js';
 import * as releaseExecutionTargets from './migrations/009_release_execution_targets.js';
 import * as releaseRunningState from './migrations/010_release_running_state.js';
 import * as messageFormatRules from './migrations/011_message_format_rules.js';
 import * as resetDevelopmentMasters from './migrations/012_reset_development_masters.js';
+import * as printerUserFields from './migrations/013_printer_user_fields.js';
+import * as canonicalPrinterFields from './migrations/014_canonical_printer_fields.js';
+import * as packagingCategories from './migrations/015_packaging_categories.js';
+import * as removeRetiredSchema from './migrations/017_remove_retired_schema.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_DB_PATH = path.join(__dirname, '..', 'data', 'videojet.db');
 const migrations = [
-  initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving, messageJobs,
-  batchReleases, releaseReviewClaims, releaseExecutionTargets, releaseRunningState, messageFormatRules, resetDevelopmentMasters
+  initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving,
+  batchReleases, releaseReviewClaims, releaseExecutionTargets, releaseRunningState, messageFormatRules,
+  resetDevelopmentMasters, printerUserFields, canonicalPrinterFields, packagingCategories, removeRetiredSchema
 ]
   .sort((a, b) => a.version - b.version);
 

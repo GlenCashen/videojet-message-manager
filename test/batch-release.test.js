@@ -3,11 +3,13 @@ import test from 'node:test';
 
 const { openDatabase, runMigrations } = await import('../server/db.js');
 const { createProductMaster, updateProductMaster } = await import('../server/repositories/product-master-repository.js');
+const { upsertMessage } = await import('../server/repositories/message-repository.js');
 const {
   approveBatchRelease,
   beginBatchReleaseTarget,
   claimBatchReleaseReview,
   createBatchRelease,
+  deleteDraftBatchRelease,
   endBatchReleaseTargetRun,
   endOtherRunningTargets,
   finishBatchReleaseTarget,
@@ -35,6 +37,7 @@ function masterInput(productCode, nextRunNumber) {
       runPrefix: 'T',
       runWidth: 4,
       bestBeforeMonths: 15,
+      defaultBrewSheetProduct: productCode,
       printerConfigurations: [{
         printerId: 'coder-1',
         messageId: `${productCode.toLowerCase()}-message`,
@@ -54,8 +57,7 @@ function releaseInput(productMasterId, brewSheetProduct) {
   return {
     productMasterId,
     brewSheetProduct,
-    brewNumber: 'H0477',
-    batchNumber: 'FV27',
+    brewNumber: '477',
     plannedProductionAt: '2026-06-18T04:32:08.000Z',
     printerIds: ['coder-1']
   };
@@ -68,6 +70,11 @@ test('first send independently reserves product-scoped runs and pins the master 
   const planner = actor('planner-one', 'planner');
   const tbundrc = createProductMaster(masterInput('TBUNDRC', 50), qa, db);
   const smgold = createProductMaster(masterInput('SMGOLD', 20), qa, db);
+
+  assert.throws(
+    () => createBatchRelease(releaseInput(tbundrc.id, 'SMGOLD-370/371'), planner, db),
+    /selected product code/i
+  );
 
   const firstDraft = createBatchRelease(releaseInput(tbundrc.id, 'TBUNDRC-50'), planner, db);
   updateProductMaster(tbundrc.id, {
@@ -89,7 +96,8 @@ test('first send independently reserves product-scoped runs and pins the master 
   approveBatchRelease(secondDraft.id, qa, db);
   assert.equal(reserveBatchReleaseRun(secondDraft.id, db).runNumber, 51);
 
-  const otherDraft = createBatchRelease(releaseInput(smgold.id, 'SMGOLD-30'), planner, db);
+  const otherDraft = createBatchRelease(releaseInput(smgold.id, 'SMGOLD-370/371'), planner, db);
+  assert.equal(otherDraft.brewSheetProduct, 'SMGOLD-370/371');
   submitBatchRelease(otherDraft.id, planner, db);
   approveBatchRelease(otherDraft.id, qa, db);
   assert.equal(reserveBatchReleaseRun(otherDraft.id, db).runNumber, 20);
@@ -117,26 +125,24 @@ test('an approved release must be returned with a reason before correction', () 
   const planner = actor('planner-correction', 'planner');
   const reviewer = actor('qa-correction', 'qa');
   const master = createProductMaster(masterInput('CORRECT', 10), reviewer, db);
-  const draft = createBatchRelease(releaseInput(master.id, 'OLD-PRODUCT'), planner, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'CORRECT-OLD'), planner, db);
   submitBatchRelease(draft.id, planner, db);
   const approved = approveBatchRelease(draft.id, reviewer, db);
   assert.equal(approved.status, 'released');
   assert.equal(approved.executionTargets.length, 1);
 
   assert.throws(() => updateBatchRelease(draft.id, releaseInput(master.id, 'QUIET-EDIT'), planner, db), /approved releases are locked/i);
-  const returned = returnBatchReleaseForReview(draft.id, 'Batch number was entered incorrectly.', reviewer, db);
+  const returned = returnBatchReleaseForReview(draft.id, 'BATCH was entered incorrectly.', reviewer, db);
   assert.equal(returned.status, 'rejected');
-  assert.equal(returned.rejectionReason, 'Batch number was entered incorrectly.');
+  assert.equal(returned.rejectionReason, 'BATCH was entered incorrectly.');
 
   const corrected = updateBatchRelease(draft.id, {
-    ...releaseInput(master.id, 'NEW-PRODUCT'),
-    brewNumber: 'H0999',
-    batchNumber: 'TBUNDRC-44'
+    ...releaseInput(master.id, 'CORRECT-NEW'),
+    brewNumber: '999'
   }, planner, db);
   assert.equal(corrected.status, 'draft');
-  assert.equal(corrected.brewSheetProduct, 'NEW-PRODUCT');
-  assert.equal(corrected.brewNumber, 'H0999');
-  assert.equal(corrected.batchNumber, 'TBUNDRC-44');
+  assert.equal(corrected.brewSheetProduct, 'CORRECT-NEW');
+  assert.equal(corrected.brewNumber, '999');
   assert.equal(corrected.reviewedByUsername, null);
   assert.equal(corrected.executionTargets.length, 1);
   db.close();
@@ -170,11 +176,12 @@ test('products with no message fields still reserve an audited product run', () 
       runPrefix: 'R',
       runWidth: 4,
       bestBeforeMonths: 12,
-      messageId: 'plain-message',
-      fieldMappings: [],
-      printerIds: ['coder-1'],
-      firstLineTemplate: 'STATIC PRODUCT CODE',
-      secondLineTemplate: 'BBD: {{bestBeforeDate}} {{productionTime}}'
+      printerConfigurations: [{
+        printerId: 'coder-1', messageId: 'plain-message', fieldMappings: [],
+        dateRule: { type: 'offset-months', months: 12, format: 'DD/MM/YYYY' },
+        timeRule: { type: 'production-time', format: 'HH:mm:ss' },
+        previewLines: ['STATIC PRODUCT CODE', 'BBD: {{bestBeforeDate}} {{productionTime}}']
+      }]
     }
   }, reviewer, db);
   const draft = createBatchRelease(releaseInput(master.id, 'PLAIN-01'), planner, db);
@@ -217,17 +224,18 @@ test('one product master renders a different approved message for each printer',
       ]
     }
   }, reviewer, db);
-  const draft = createBatchRelease({ ...releaseInput(master.id, 'MULTI-50'), printerIds: ['coder-1', 'coder-2'] }, planner, db);
+  const draft = createBatchRelease({ ...releaseInput(master.id, 'MULTICODE-50'), printerIds: ['coder-1'] }, planner, db);
+  assert.deepEqual(draft.printerIds, ['coder-1', 'coder-2']);
   submitBatchRelease(draft.id, planner, db);
   approveBatchRelease(draft.id, reviewer, db);
   const prepared = reserveBatchReleaseRun(draft.id, db);
 
   assert.equal(prepared.expectedOutput.byPrinter['coder-1'].messageId, 'can-code');
-  assert.deepEqual(prepared.expectedOutput.byPrinter['coder-1'].fields, { run: 'T0008', batch: 'MULTI-50' });
-  assert.equal(prepared.expectedOutput.byPrinter['coder-1'].rendered, 'T0008 MULTI-50\nBBD: 18/06/2027');
+  assert.deepEqual(prepared.expectedOutput.byPrinter['coder-1'].fields, { run: 'T0008', batch: 'MULTICODE-50' });
+  assert.equal(prepared.expectedOutput.byPrinter['coder-1'].rendered, 'T0008 MULTICODE-50\nBBD: 18/06/2027');
   assert.equal(prepared.expectedOutput.byPrinter['coder-2'].messageId, 'case-code');
-  assert.deepEqual(prepared.expectedOutput.byPrinter['coder-2'].fields, { product: 'MULTI-50' });
-  assert.equal(prepared.expectedOutput.byPrinter['coder-2'].rendered, 'CASE MULTI-50 2026-12-18');
+  assert.deepEqual(prepared.expectedOutput.byPrinter['coder-2'].fields, { product: 'MULTICODE-50' });
+  assert.equal(prepared.expectedOutput.byPrinter['coder-2'].rendered, 'CASE MULTICODE-50 2026-12-18');
   beginBatchReleaseTarget(draft.id, 'coder-1', planner, {}, db);
   finishBatchReleaseTarget(draft.id, 'coder-1', { ok: true, messageMatches: true }, db);
   assert.equal(verifyBatchReleaseTarget(draft.id, 'coder-1', { passed: true }, planner, db).status, 'running');
@@ -263,11 +271,11 @@ test('a rejected release must be corrected as a draft before resubmission', () =
   assert.throws(() => submitBatchRelease(draft.id, planner, db), /must be edited/i);
   const corrected = updateBatchRelease(draft.id, {
     ...releaseInput(master.id, 'TBUNDRC-51'),
-    brewNumber: 'H0478',
+    brewNumber: '478',
     notes: 'Corrected against brew sheet'
   }, planner, db);
   assert.equal(corrected.status, 'draft');
-  assert.equal(corrected.brewNumber, 'H0478');
+  assert.equal(corrected.brewNumber, '478');
   assert.equal(corrected.rejectionReason, null);
   assert.equal(corrected.productMasterVersionId, draft.productMasterVersionId);
   assert.equal(corrected.productMasterVersion, 1);
@@ -420,15 +428,78 @@ test('release register pagination searches the full archive and returns lifecycl
   const reviewer = actor('qa-pages', 'qa');
   const master = createProductMaster(masterInput('PAGED', 1), reviewer, db);
   for (let index = 1; index <= 31; index += 1) {
-    createBatchRelease({ ...releaseInput(master.id, `PRODUCT-${index}`), batchNumber: `BATCH-${index}` }, planner, db);
+    createBatchRelease(releaseInput(master.id, `PAGED-${index}`), planner, db);
   }
   const first = listBatchReleasesPage({ limit: 25 }, db);
   assert.equal(first.items.length, 25);
   assert.equal(first.total, 31);
   assert.equal(first.counts.draft, 31);
   assert.equal(listBatchReleasesPage({ limit: 25, offset: 25 }, db).items.length, 6);
-  const searched = listBatchReleasesPage({ limit: 25, search: 'BATCH-31' }, db);
+  const searched = listBatchReleasesPage({ limit: 25, search: 'PAGED-31' }, db);
   assert.equal(searched.total, 1);
-  assert.equal(searched.items[0].batchNumber, 'BATCH-31');
+  assert.equal(searched.items[0].brewSheetProduct, 'PAGED-31');
+  db.close();
+});
+
+test('release output uses the latest saved message without bumping the master version', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const reviewer = actor('qa-live-message', 'qa');
+  const planner = actor('planner-live-message', 'planner');
+  const printerId = 'live-coder';
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO printers (id, name, location, host, port, mode, enabled, created_at, updated_at)
+    VALUES (?, 'Live coder', 'Test line', '127.0.0.1', 19001, 'emulator', 1, ?, ?)`)
+    .run(printerId, now, now);
+  const message = {
+    id: 'live-message', displayName: 'Live message', enabled: true,
+    fields: [{ key: 'batch', label: 'BATCH', printerFieldName: 'BATCH', required: true, maxLength: 50, transform: 'uppercase' }],
+    dateRule: { type: 'offset-months', months: 12, format: 'DD/MM/YYYY' },
+    timeRule: { type: 'production-time', format: 'HH:mm:ss' },
+    previewLines: ['OLD {{batch}}'],
+    printerAssignments: [{ printerId, printerMessageName: 'LIVE', enabled: true }]
+  };
+  upsertMessage(message, db);
+  const master = createProductMaster({
+    productCode: 'LIVE', displayName: 'Live definition product', nextRunNumber: 1,
+    specification: {
+      runPrefix: 'T', runWidth: 4, defaultBrewSheetProduct: 'LIVE',
+      printerConfigurations: [{
+        printerId, messageId: message.id,
+        fieldMappings: [{ fieldKey: 'batch', source: 'brew_sheet_product' }],
+        dateRule: message.dateRule, timeRule: message.timeRule, previewLines: message.previewLines
+      }]
+    }
+  }, reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'LIVE-42'), planner, db);
+
+  upsertMessage({ ...message, previewLines: ['NEW {{batch}}'] }, db);
+  submitBatchRelease(draft.id, planner, db);
+  approveBatchRelease(draft.id, reviewer, db);
+  const prepared = reserveBatchReleaseRun(draft.id, db);
+
+  assert.equal(prepared.productMasterVersion, 1);
+  assert.equal(prepared.expectedOutput.rendered, 'NEW LIVE-42');
+  db.close();
+});
+
+test('draft releases can be deleted completely but submitted releases cannot', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const reviewer = actor('qa-delete', 'qa');
+  const planner = actor('planner-delete', 'planner');
+  const master = createProductMaster(masterInput('DELETE', 1), reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'DELETE-1'), planner, db);
+  db.prepare(`INSERT INTO audit_events (id, occurred_at, actor_username, action, target_type, target_id)
+    VALUES ('delete-audit', ?, 'planner-delete', 'batch-release-created', 'batch-release', ?)`)
+    .run(new Date().toISOString(), draft.id);
+
+  assert.equal(deleteDraftBatchRelease(draft.id, db), true);
+  assert.equal(getBatchRelease(draft.id, db), null);
+  assert.equal(db.prepare("SELECT COUNT(*) count FROM audit_events WHERE target_type = 'batch-release' AND target_id = ?").get(draft.id).count, 0);
+
+  const submitted = createBatchRelease(releaseInput(master.id, 'DELETE-2'), planner, db);
+  submitBatchRelease(submitted.id, planner, db);
+  assert.throws(() => deleteDraftBatchRelease(submitted.id, db), /only draft releases/i);
   db.close();
 });

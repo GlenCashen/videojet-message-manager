@@ -120,13 +120,20 @@ test('rejects unknown printer assignment when printers are supplied', () => {
   }], { printers: [{ id: 'coder-1' }] }), /unknown printer/);
 });
 
-test('filters and resolves printer-specific assignments', () => {
-  const assigned = validateMessages([{
+test('rejects messages assigned to more than one printer', () => {
+  assert.throws(() => validateMessages([{
     ...definitions[0],
     printerAssignments: [
       { printerId: 'coder-1', printerMessageName: 'CAN 9M', enabled: true },
-      { printerId: 'coder-2', printerMessageName: 'BBD 9M', enabled: false }
+      { printerId: 'coder-2', printerMessageName: 'BOTTLE 9M', enabled: true }
     ]
+  }], { printers: [{ id: 'coder-1' }, { id: 'coder-2' }] }), /exactly one printer/);
+});
+
+test('filters and resolves printer-specific assignments', () => {
+  const assigned = validateMessages([{
+    ...definitions[0],
+    printerAssignments: [{ printerId: 'coder-1', printerMessageName: 'CAN 9M', enabled: true }]
   }], { printers: [{ id: 'coder-1' }, { id: 'coder-2' }] });
 
   assert.equal(messagesForPrinter(assigned, 'coder-1').length, 1);

@@ -1,4 +1,4 @@
-/* Editor-only visual system. This file intentionally loads after the legacy shared styles. */
+/* Editor-only visual system. This file intentionally loads after the shared styles. */
 .editor-app .hidden,
 .editor-app .release-workflow-layout.hidden,
 .editor-app .release-workflow-layout .sub-panel.hidden {
@@ -103,6 +103,19 @@
 }
 .editor-app .message-config-panel > details > summary > .actions { display: flex; gap: 8px; }
 .editor-app .message-config-layout { margin-top: 18px; }
+.editor-app .printer-user-fields-section { border-bottom: 1px solid #dbe2ea; margin-top: 18px; padding-bottom: 18px; }
+.editor-app .printer-user-fields-section > .message-definition-heading > .actions { align-items: end; }
+.editor-app .printer-user-fields-section > .message-definition-heading label { min-width: 210px; }
+.editor-app .printer-user-field-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.editor-app .printer-user-field-card { align-items: center; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: flex; gap: 12px; justify-content: space-between; padding: 12px 14px; }
+.editor-app .printer-user-field-card > div:first-child { display: grid; gap: 4px; }
+.editor-app .printer-user-field-card span { color: #667085; font-family: Consolas, monospace; font-size: .74rem; }
+.editor-app .printer-user-field-form { align-items: end; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(130px, 1fr)) auto auto; margin-top: 12px; padding: 14px; }
+.editor-app .printer-user-field-form.hidden { display: none; }
+.editor-app .printer-user-field-form .actions { grid-column: 1 / -1; }
+.editor-app .message-printer-group { border-bottom: 1px solid #dbe2ea; display: grid; gap: 8px; padding-bottom: 12px; }
+.editor-app .message-printer-group-heading { align-items: center; color: #344054; display: flex; justify-content: space-between; }
+.editor-app .message-printer-group-heading span { background: #e4e7ec; border-radius: 999px; color: #475467; font-size: .72rem; min-width: 24px; padding: 3px 7px; text-align: center; }
 .editor-app .message-list-item { background: #f8fafc; border-color: #dbe2ea; color: #172033; }
 .editor-app .message-list-item.active { background: #eef4ff; border-color: #84adff; box-shadow: inset 3px 0 0 #155eef; }
 .editor-app #messageConfigId[readonly] { background: #f1f5f9; color: #667085; }
@@ -112,6 +125,10 @@
 .editor-app .message-definition-heading h3 { margin: 0 0 4px; }
 .editor-app .message-definition-heading p { font-size: .8rem; margin: 0; }
 .editor-app .message-field-editor { display: grid; gap: 10px; }
+.editor-app .message-field-choices { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.editor-app .message-field-choice { align-items: center; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: flex; flex-direction: row; gap: 10px; padding: 12px; }
+.editor-app .message-field-choice span { display: grid; gap: 3px; }
+.editor-app .message-field-choice small { color: #667085; font-family: Consolas, monospace; font-size: .72rem; }
 .editor-app .message-field-editor-row { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; padding: 14px; }
 .editor-app .message-field-editor-row-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 12px; }
 .editor-app .message-field-editor-grid { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1fr) 120px auto auto; }
@@ -131,6 +148,12 @@
 .editor-app .message-live-preview { background: #101828; border-radius: 8px; color: #f2f4f7; margin-top: 14px; padding: 14px 16px; }
 .editor-app .message-live-preview > span { color: #98a2b3; font-size: .72rem; font-weight: 700; text-transform: uppercase; }
 .editor-app .message-live-preview pre { color: #fff; font-family: Consolas, monospace; font-size: 1rem; line-height: 1.6; margin: 8px 0 0; min-height: 52px; white-space: pre-wrap; }
+.editor-app .message-master-usage { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; padding: 0; }
+.editor-app .message-master-usage > summary { align-items: center; cursor: pointer; display: flex; font-weight: 750; gap: 10px; justify-content: space-between; padding: 13px 15px; }
+.editor-app .message-master-usage-list { border-top: 1px solid #dbe2ea; display: grid; gap: 8px; padding: 12px; }
+.editor-app .message-master-link { align-items: center; background: #fff; border: 1px solid #dbe2ea; border-radius: 7px; color: #172033; display: flex; gap: 12px; justify-content: space-between; padding: 10px 12px; text-decoration: none; }
+.editor-app .message-master-link:hover { border-color: #84adff; color: #155eef; }
+.editor-app .message-master-link span { color: #667085; font-size: .75rem; }
 .editor-app .danger-text { color: #b42318; }
 .editor-app .master-message-summary {
   align-self: end;
@@ -200,7 +223,7 @@
 .editor-app .master-register .section-heading h3 { margin: 0 0 3px; }
 .editor-app .master-register .section-heading p { font-size: .78rem; margin: 0; }
 .editor-app .master-register .section-heading input { margin: 0; max-width: 320px; }
-.editor-app .master-register-list { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; max-height: 360px; overflow: auto; padding-right: 5px; }
+.editor-app .master-register-list { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; overflow: auto; padding-right: 5px; }
 .editor-app .master-register-row { align-items: center; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) auto; padding: 14px; }
 .editor-app .master-register-main { display: grid; gap: 8px; min-width: 0; }
 .editor-app .master-register-main h4, .editor-app .master-register-main p { margin: 0; }
@@ -242,6 +265,8 @@
 .editor-app .release-command-bar input,
 .editor-app .release-command-bar select { margin: 0; }
 .editor-app .release-command-bar button { white-space: nowrap; }
+.editor-app .master-register-filters select,
+.editor-app .master-register-filters input { margin: 0; }
 
 .editor-app .message-job-target-picker {
   background: #fff;
@@ -295,6 +320,7 @@
   .editor-app .release-workflow-layout { grid-template-columns: 1fr; }
   .editor-app .release-workflow-layout .sub-panel { max-height: none; }
   .editor-app .message-field-editor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .editor-app .printer-user-field-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .editor-app .master-register-list, .editor-app .master-printer-configurations { grid-template-columns: 1fr; }
 }
 
@@ -309,4 +335,5 @@
   .editor-app .master-register .section-heading input { max-width: none; width: 100%; }
   .editor-app .message-definition-heading { flex-direction: column; }
   .editor-app .message-format-grid, .editor-app .message-field-editor-grid { grid-template-columns: 1fr; }
+  .editor-app .printer-user-field-form { grid-template-columns: 1fr; }
 }

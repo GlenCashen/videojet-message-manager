@@ -34,18 +34,21 @@
         <div class="release-command-bar">
           <input id="releaseSearch" type="search" placeholder="Search product, brew or batch">
           <select id="releaseStatusFilter" aria-label="Filter releases by status"><option value="">All statuses</option><option value="draft">Draft</option><option value="pending_review">Awaiting independent review</option><option value="released">Approved / ready to send</option><option value="awaiting_print_check">Sent / awaiting first-print check</option><option value="running">Running on printer</option><option value="completed">Completed</option><option value="failed">Attention required — printer state uncertain</option><option value="rejected">Returned for correction</option></select>
+          <select id="releaseCategoryFilter" aria-label="Filter releases by packaging category"><option value="">All packaging</option><option value="cans">Cans</option><option value="bottles">Bottles</option></select>
           <button id="openBatchReleaseForm" class="primary" type="button">New release</button>
         </div>
         <section id="batchReleaseSection" class="sub-panel hidden production-form-panel" aria-labelledby="batchReleaseTitle">
           <h3 id="batchReleaseTitle">New batch release</h3>
           <p id="batchReleaseHelp" class="muted">The product run is assigned automatically when the operator sends the approved release.</p>
           <form id="batchReleaseForm" class="message-job-builder">
+            <label class="wide">Find product master<input id="releaseMasterSearch" type="search" placeholder="Search name, SKU or BATCH code, e.g. 4325" autocomplete="off"></label>
             <label>Product master<select id="releaseProductMaster" required></select></label>
-            <label>Brew-sheet product<input id="releaseBrewProduct" placeholder="Product name from brew sheet" maxlength="50" required></label>
-            <label>Brew number<input id="releaseBrewNumber" placeholder="H0477" maxlength="50"></label>
-            <label>Batch number<input id="releaseBatchNumber" placeholder="TBUNDRC-44" maxlength="50"></label>
+            <label>Packaging category<input id="releasePackagingCategory" readonly></label>
+            <label>BATCH <span class="field-hint">Product code-batch number; combined batches can use /</span><input id="releaseBrewProduct" placeholder="SMGOLD-370/371" maxlength="50" required></label>
+            <label>Brew number<input id="releaseBrewNumber" placeholder="477" inputmode="numeric" pattern="[0-9]{3}" minlength="3" maxlength="3" required></label>
             <label>Planned production<input id="releaseProductionAt" type="datetime-local" required></label>
-            <fieldset id="releasePrinters" class="message-job-target-picker wide"><legend>Target printers</legend></fieldset>
+            <section id="releasePrinters" class="inherited-printer-list wide" aria-label="Printers inherited from product master"></section>
+            <section id="releaseExpectedMessages" class="release-form-preview wide" aria-label="Expected printed messages"></section>
             <label class="wide">Notes<textarea id="releaseNotes" rows="3" maxlength="1000"></textarea></label>
             <div class="actions wide"><button id="cancelBatchReleaseEdit" class="ghost bordered" type="button">Cancel</button><button id="saveBatchRelease" class="secondary" type="submit">Save draft</button></div>
           </form>
@@ -59,7 +62,9 @@
           <h3 id="productMasterTitle">New product master</h3><p class="muted">Editing this master creates a new version. Existing releases stay locked to their approved version.</p>
           <form id="productMasterForm" class="message-job-builder">
             <label>Product sequence code<input id="masterProductCode" placeholder="TBUNDRC" maxlength="30" required></label>
+            <label>Packaging category<select id="masterPackagingCategory" required><option value="cans">Cans</option><option value="bottles">Bottles</option></select></label>
             <label>Display name<input id="masterDisplayName" placeholder="Bundaberg Rum & Cola" maxlength="100" required></label>
+            <label>Product code / BATCH prefix<input id="masterBatchCode" placeholder="TBUNDRC" maxlength="50" required></label>
             <label>First available run<input id="masterNextRun" type="number" min="1" value="1" required></label>
             <label>Run prefix<input id="masterRunPrefix" value="T" maxlength="10" required></label>
             <label>Run digits<input id="masterRunWidth" type="number" min="1" max="8" value="4" required></label>
@@ -69,13 +74,13 @@
             <div class="actions wide"><button id="cancelProductMasterEdit" class="ghost bordered" type="button">Cancel</button><button id="saveProductMaster" class="primary" type="submit">Create product master</button></div>
           </form>
         </section>
-        <section id="productMasterRegister" class="master-register" aria-labelledby="productMasterRegisterTitle"><div class="section-heading compact-heading"><div><h3 id="productMasterRegisterTitle">Master register</h3><p class="muted">Editing a master creates a new version. Existing releases stay locked to their approved version.</p></div><input id="productMasterSearch" type="search" placeholder="Search product masters" aria-label="Search product masters"></div><div id="productMasterList" class="master-register-list"></div></section>
+        <section id="productMasterRegister" class="master-register" aria-labelledby="productMasterRegisterTitle"><div class="section-heading compact-heading"><div><h3 id="productMasterRegisterTitle">Master register</h3><p class="muted">Editing a master creates a new version. Existing releases stay locked to their approved version.</p></div><div class="master-register-filters"><select id="masterCategoryFilter" aria-label="Filter masters by packaging category"><option value="">All packaging</option><option value="cans">Cans</option><option value="bottles">Bottles</option></select><input id="productMasterSearch" type="search" placeholder="Search name, SKU or BATCH code" aria-label="Search product masters"></div></div><div id="productMasterList" class="master-register-list"></div></section>
       </section>
       <div id="releaseFormWorkspace" class="hidden" aria-hidden="true"></div>
     </section>
 
     <dialog id="releaseReviewDialog" class="message-dialog" aria-labelledby="releaseReviewDialogTitle">
-      <div class="message-dialog-shell release-review-dialog"><header class="message-dialog-header"><div><h2 id="releaseReviewDialogTitle">Review production release</h2><p class="muted">Independent review required. The creator cannot approve their own release. Approval does not send anything to a printer.</p></div><button id="closeReleaseReview" class="ghost dialog-close" type="button">Close</button></header><div id="releaseReviewBody" class="release-review-body"></div><label id="releaseApprovalAttestation" class="release-attestation"><input id="releaseApprovalCheck" type="checkbox"><span>I have independently checked the brew-sheet values, product master version, expected printed codes and target printers.</span></label><label id="releaseRejectionField" class="hidden"><span id="releaseReasonLabel">Reason for rejection</span><textarea id="releaseRejectionReason" rows="3" maxlength="500"></textarea></label><p id="releaseReviewNotice" class="notice hidden" aria-live="polite"></p><div class="actions release-review-actions"><button id="cancelReleaseReview" class="secondary" type="button">Cancel</button><button id="confirmReleaseReview" class="primary" type="button">Approve release</button></div></div>
+      <div class="message-dialog-shell release-review-dialog"><header class="message-dialog-header"><div><h2 id="releaseReviewDialogTitle">Review production release</h2><p class="muted">Independent review required. The creator cannot approve their own release. Approval does not send anything to a printer.</p></div><button id="closeReleaseReview" class="ghost dialog-close" type="button">Close</button></header><div id="releaseReviewBody" class="release-review-body"></div><label id="releaseApprovalAttestation" class="release-attestation"><input id="releaseApprovalCheck" type="checkbox"><span>I have independently checked the BATCH code, production values, product master version, expected printed codes and inherited printers.</span></label><label id="releaseRejectionField" class="hidden"><span id="releaseReasonLabel">Reason for rejection</span><textarea id="releaseRejectionReason" rows="3" maxlength="500"></textarea></label><p id="releaseReviewNotice" class="notice hidden" aria-live="polite"></p><div class="actions release-review-actions"><button id="cancelReleaseReview" class="secondary" type="button">Cancel</button><button id="confirmReleaseReview" class="primary" type="button">Approve release</button></div></div>
     </dialog>
   </main>
   <script type="module" src="/production-releases.js"></script>

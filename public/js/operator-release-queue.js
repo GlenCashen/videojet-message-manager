@@ -33,7 +33,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   function matchesSearch({ release }, query) {
     const search = query.trim().toLowerCase();
     if (!search) return true;
-    return [release.brewSheetProduct, release.brewNumber, release.batchNumber, release.runCode]
+    return [release.brewSheetProduct, release.brewNumber, release.runCode]
       .some((value) => String(value || '').toLowerCase().includes(search));
   }
 
@@ -52,7 +52,6 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
         ]),
         el('div', { className: 'operator-release-compact-facts' }, [
           el('span', { text: 'Brew' }), el('strong', { text: release.brewNumber || '-' }),
-          el('span', { text: 'Batch' }), el('strong', { text: release.batchNumber || '-' }),
           el('span', { text: 'Planned' }), el('strong', { text: new Date(release.plannedProductionAt).toLocaleString() })
         ])
       ]),
@@ -128,7 +127,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     clear(elements.facts);
     elements.facts.append(
       fact('Product', release.brewSheetProduct), fact('Tracked run', release.runCode),
-      fact('Brew number', release.brewNumber), fact('Batch number', release.batchNumber),
+      fact('Brew number', release.brewNumber),
       fact('Physical line', printer?.location || 'Not configured'), fact('Printer', printer?.name || target.printerId),
       fact('Planned production', new Date(release.plannedProductionAt).toLocaleString()), fact('Approved by', release.reviewedByUsername)
     );

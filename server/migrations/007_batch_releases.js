@@ -50,7 +50,6 @@ function up(db) {
       )),
       brew_sheet_product TEXT NOT NULL,
       brew_number TEXT,
-      batch_number TEXT,
       planned_production_at TEXT NOT NULL,
       printer_ids_json TEXT NOT NULL,
       notes TEXT,
