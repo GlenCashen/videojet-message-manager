@@ -103,6 +103,32 @@
 .editor-app .message-list-item { background: #f8fafc; border-color: #dbe2ea; color: #172033; }
 .editor-app .message-list-item.active { background: #eef4ff; border-color: #84adff; box-shadow: inset 3px 0 0 #155eef; }
 .editor-app #messageConfigId[readonly] { background: #f1f5f9; color: #667085; }
+.editor-app .message-form > label > small { color: #667085; font-size: .72rem; font-weight: 500; }
+.editor-app .message-definition-section { border-top: 1px solid #dbe2ea; padding-top: 18px; }
+.editor-app .message-definition-heading { align-items: flex-start; display: flex; gap: 18px; justify-content: space-between; margin-bottom: 14px; }
+.editor-app .message-definition-heading h3 { margin: 0 0 4px; }
+.editor-app .message-definition-heading p { font-size: .8rem; margin: 0; }
+.editor-app .message-field-editor { display: grid; gap: 10px; }
+.editor-app .message-field-editor-row { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; padding: 14px; }
+.editor-app .message-field-editor-row-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 12px; }
+.editor-app .message-field-editor-grid { align-items: end; display: grid; gap: 12px; grid-template-columns: minmax(150px, 1.2fr) minmax(150px, 1fr) 120px auto auto; }
+.editor-app .message-field-toggle { min-height: 42px; white-space: nowrap; }
+.editor-app .message-field-token-name { color: #667085; display: block; font-family: Consolas, monospace; margin-top: 10px; }
+.editor-app .message-definition-warning { background: #fffaeb; border: 1px solid #fedf89; border-radius: 7px; color: #854a0e; font-size: .76rem; margin: 12px 0 0; padding: 10px 12px; }
+.editor-app .message-format-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.editor-app .message-line-count { align-items: center; display: flex; flex-direction: row; gap: 8px; }
+.editor-app .message-line-count select { min-width: 70px; }
+.editor-app .message-token-palette { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.editor-app .message-token { background: #eef4ff; border: 1px solid #84adff; color: #1849a9; cursor: grab; font-size: .78rem; padding: 8px 11px; }
+.editor-app .message-token:active { cursor: grabbing; }
+.editor-app .message-line-builder { display: grid; gap: 10px; }
+.editor-app .message-line-row { align-items: center; display: grid; gap: 12px; grid-template-columns: 58px minmax(0, 1fr); }
+.editor-app .message-line-row > span { color: #475467; font-size: .8rem; }
+.editor-app .message-line-row input { font-family: Consolas, monospace; }
+.editor-app .message-live-preview { background: #101828; border-radius: 8px; color: #f2f4f7; margin-top: 14px; padding: 14px 16px; }
+.editor-app .message-live-preview > span { color: #98a2b3; font-size: .72rem; font-weight: 700; text-transform: uppercase; }
+.editor-app .message-live-preview pre { color: #fff; font-family: Consolas, monospace; font-size: 1rem; line-height: 1.6; margin: 8px 0 0; min-height: 52px; white-space: pre-wrap; }
+.editor-app .danger-text { color: #b42318; }
 .editor-app .master-message-summary {
   align-self: end;
   background: #f1f5f9;
@@ -132,6 +158,41 @@
 .editor-app .master-field-row > div { display: grid; gap: 2px; }
 .editor-app .master-field-row small { color: #667085; font-size: .72rem; font-weight: 550; }
 .editor-app .master-field-row select { min-height: 38px; }
+.editor-app .master-register { border-top: 1px solid #dbe2ea; margin-top: 18px; padding-top: 18px; }
+.editor-app .master-register .section-heading { align-items: end; display: flex; gap: 18px; justify-content: space-between; }
+.editor-app .master-register .section-heading h3 { margin: 0 0 3px; }
+.editor-app .master-register .section-heading p { font-size: .78rem; margin: 0; }
+.editor-app .master-register .section-heading input { margin: 0; max-width: 320px; }
+.editor-app .master-register-list { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; max-height: 360px; overflow: auto; padding-right: 5px; }
+.editor-app .master-register-row { align-items: center; background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) auto; padding: 14px; }
+.editor-app .master-register-main { display: grid; gap: 8px; min-width: 0; }
+.editor-app .master-register-main h4, .editor-app .master-register-main p { margin: 0; }
+.editor-app .master-register-main p { color: #475467; font-size: .8rem; }
+.editor-app .master-register-main small { color: #667085; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-app .master-register-meta { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.editor-app .master-register-meta > span:not(.badge) { color: #475467; font-size: .75rem; font-weight: 650; }
+.editor-app .master-enabled { align-self: end; min-height: 42px; }
+.editor-app .master-printer-section { border-top: 1px solid #dbe2ea; padding-top: 16px; }
+.editor-app .master-printer-section > div:first-child h4 { margin: 0 0 4px; }
+.editor-app .master-printer-section > div:first-child p { font-size: .78rem; margin: 0 0 14px; }
+.editor-app .master-printer-configurations { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.editor-app .master-printer-card { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; display: grid; gap: 12px; opacity: .68; padding: 14px; }
+.editor-app .master-printer-card.enabled { background: #fff; border-color: #84adff; box-shadow: inset 3px 0 0 #155eef; opacity: 1; }
+.editor-app .master-printer-card-heading { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.editor-app .master-printer-card-heading label span { display: grid; gap: 2px; }
+.editor-app .master-printer-card-heading small { color: #667085; font-size: .7rem; }
+.editor-app .master-printer-state { color: #667085; font-size: .7rem; font-weight: 750; text-transform: uppercase; }
+.editor-app .master-printer-card.enabled .master-printer-state { color: #175cd3; }
+.editor-app .master-printer-card .master-message-summary { align-self: auto; min-height: 0; }
+.editor-app .master-config-preview { background: #101828; border-radius: 7px; color: #f2f4f7; padding: 11px 12px; }
+.editor-app .master-config-preview span { color: #98a2b3; font-size: .68rem; font-weight: 750; text-transform: uppercase; }
+.editor-app .master-config-preview pre { color: #fff; font-family: Consolas, monospace; line-height: 1.5; margin: 7px 0 0; min-height: 24px; white-space: pre-wrap; }
+.editor-app .review-printer-requirements { border-top: 1px solid #dbe2ea; display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; }
+.editor-app .review-printer-requirements h3 { font-size: .9rem; margin: 0; }
+.editor-app .review-printer-requirement { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 7px; display: grid; gap: 8px; padding: 12px; }
+.editor-app .review-printer-requirement > div { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.editor-app .review-printer-requirement span, .editor-app .review-printer-requirement small { color: #667085; font-size: .74rem; }
+.editor-app .review-printer-requirement pre { background: #fff; border: 1px solid #e4e7ec; border-radius: 5px; color: #172033; font-family: Consolas, monospace; margin: 0; padding: 9px; white-space: pre-wrap; }
 .editor-app .no-message-fields {
   background: #f8fafc;
   border: 1px dashed #cbd5e1;
@@ -170,6 +231,7 @@
   grid-template-columns: minmax(0, 720px);
   justify-content: end;
 }
+.editor-app .release-workflow-layout:has(.sub-panel.hidden) { grid-template-columns: 1fr; }
 .editor-app .release-workflow-layout .sub-panel { max-height: calc(100vh - 120px); overflow: auto; }
 
 .editor-app .release-register { margin-top: 0; }
@@ -195,6 +257,8 @@
 @media (max-width: 900px) {
   .editor-app .release-workflow-layout { grid-template-columns: 1fr; }
   .editor-app .release-workflow-layout .sub-panel { max-height: none; }
+  .editor-app .message-field-editor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .editor-app .master-register-list, .editor-app .master-printer-configurations { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 620px) {
@@ -203,4 +267,9 @@
   .editor-app .message-config-panel > details > summary > .actions { width: 100%; }
   .editor-app .release-review-dialog { width: 100vw; }
   .editor-app .master-field-row { grid-template-columns: 1fr; }
+  .editor-app .master-register .section-heading, .editor-app .master-register-row { align-items: stretch; grid-template-columns: 1fr; }
+  .editor-app .master-register .section-heading { flex-direction: column; }
+  .editor-app .master-register .section-heading input { max-width: none; width: 100%; }
+  .editor-app .message-definition-heading { flex-direction: column; }
+  .editor-app .message-format-grid, .editor-app .message-field-editor-grid { grid-template-columns: 1fr; }
 }

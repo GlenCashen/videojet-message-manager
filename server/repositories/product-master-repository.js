@@ -21,21 +21,48 @@ function normalizeSpecification(input = {}) {
   const fieldMappings = (Array.isArray(input.fieldMappings) ? input.fieldMappings : legacyMappings)
     .map((mapping) => ({ fieldKey: String(mapping.fieldKey || '').trim(), source: String(mapping.source || '').trim() }));
   const messageId = String(input.messageId || '').trim();
-  const printerIds = [...new Set((Array.isArray(input.printerIds) ? input.printerIds : [])
+  const legacyPrinterIds = [...new Set((Array.isArray(input.printerIds) ? input.printerIds : [])
     .map((id) => String(id || '').trim()).filter(Boolean))];
+  const requestedConfigurations = Array.isArray(input.printerConfigurations) && input.printerConfigurations.length
+    ? input.printerConfigurations
+    : legacyPrinterIds.map((printerId) => ({
+      printerId, messageId, fieldMappings, dateRule: input.dateRule, timeRule: input.timeRule,
+      previewLines: input.previewLines
+    }));
+  const printerConfigurations = requestedConfigurations.map((configuration) => ({
+    printerId: String(configuration.printerId || '').trim(),
+    messageId: String(configuration.messageId || '').trim(),
+    fieldMappings: (Array.isArray(configuration.fieldMappings) ? configuration.fieldMappings : [])
+      .map((mapping) => ({ fieldKey: String(mapping.fieldKey || '').trim(), source: String(mapping.source || '').trim() })),
+    dateRule: configuration.dateRule || input.dateRule || { type: 'offset-months', months: bestBeforeMonths, format: 'DD/MM/YYYY' },
+    timeRule: configuration.timeRule || input.timeRule || { type: 'production-time', format: 'HH:mm:ss' },
+    previewLines: (configuration.previewLines || input.previewLines || [
+      input.firstLineTemplate || '{{run}}{{batch}}',
+      input.secondLineTemplate || 'BBD: {{bestBeforeDate}} {{productionTime}}'
+    ]).filter(Boolean).map(String)
+  }));
+  const printerIds = printerConfigurations.map((configuration) => configuration.printerId);
+  const primary = printerConfigurations[0] || {};
   if (!runPrefix || runPrefix.length > 10 || !/^[\x20-\x7E]+$/.test(runPrefix)) throw new Error('Run prefix must be 1-10 printable characters.');
   if (!Number.isInteger(runWidth) || runWidth < 1 || runWidth > 8) throw new Error('Run width must be between 1 and 8 digits.');
-  if (!Number.isInteger(bestBeforeMonths) || bestBeforeMonths < 1 || bestBeforeMonths > 120) throw new Error('Best-before months must be between 1 and 120.');
-  if (fieldMappings.some((mapping) => !FIELD_KEY_PATTERN.test(mapping.fieldKey))) throw new Error('Message field mappings are invalid.');
-  if (!messageId) throw new Error('A stored printer message is required.');
+  if (!Number.isInteger(bestBeforeMonths) || bestBeforeMonths < 0 || bestBeforeMonths > 120) throw new Error('Best-before months must be between 0 and 120.');
+  if (printerConfigurations.some((configuration) => !configuration.printerId || !configuration.messageId)) throw new Error('Every permitted printer requires a stored message.');
+  if (printerConfigurations.some((configuration) => configuration.fieldMappings.some((mapping) => !FIELD_KEY_PATTERN.test(mapping.fieldKey)))) throw new Error('Message field mappings are invalid.');
+  if (new Set(printerIds).size !== printerIds.length) throw new Error('Each printer can appear only once in a product master.');
   if (!printerIds.length) throw new Error('Select at least one permitted printer.');
   return {
     runPrefix,
     runWidth,
     bestBeforeMonths,
-    fieldMappings,
-    messageId,
+    fieldMappings: primary.fieldMappings || fieldMappings,
+    messageId: primary.messageId || messageId,
     printerIds,
+    printerConfigurations,
+    dateRule: primary.dateRule || input.dateRule || { type: 'offset-months', months: bestBeforeMonths, format: 'DD/MM/YYYY' },
+    timeRule: primary.timeRule || input.timeRule || { type: 'production-time', format: 'HH:mm:ss' },
+    previewLines: primary.previewLines?.length
+      ? primary.previewLines
+      : [String(input.firstLineTemplate || '{{run}}{{batch}}'), String(input.secondLineTemplate || 'BBD: {{bestBeforeDate}} {{productionTime}}')],
     firstLineTemplate: String(input.firstLineTemplate || '{{run}}{{batch}}'),
     secondLineTemplate: String(input.secondLineTemplate || 'BBD: {{bestBeforeDate}} {{productionTime}}')
   };
@@ -118,12 +145,14 @@ function updateProductMaster(id, input, actor = {}, db = getDb()) {
   const displayName = String(input.displayName ?? current.displayName).trim();
   if (!displayName || displayName.length > 100) throw new Error('Display name must be 1-100 characters.');
   const specification = normalizeSpecification(input.specification || current.specification);
+  const nextRunNumber = Number(input.nextRunNumber ?? current.nextRunNumber);
+  if (!Number.isInteger(nextRunNumber) || nextRunNumber < 1) throw new Error('Next run number must be a positive integer.');
   const nextVersion = current.currentVersion + 1;
   const now = new Date().toISOString();
   const creator = actorRecord(actor);
   db.transaction(() => {
-    db.prepare('UPDATE product_masters SET display_name = ?, enabled = ?, current_version = ?, updated_at = ? WHERE id = ?')
-      .run(displayName, input.enabled ?? current.enabled ? 1 : 0, nextVersion, now, id);
+    db.prepare('UPDATE product_masters SET display_name = ?, enabled = ?, current_version = ?, next_run_number = ?, updated_at = ? WHERE id = ?')
+      .run(displayName, (input.enabled ?? current.enabled) ? 1 : 0, nextVersion, nextRunNumber, now, id);
     db.prepare(`
       INSERT INTO product_master_versions (
         id, product_master_id, version, specification_json, created_by_user_id, created_by_username, created_at

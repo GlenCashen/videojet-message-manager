@@ -2,6 +2,7 @@ import { apiJson, postJson } from './js/api.js';
 import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { printerHref, renderNavigation } from './js/navigation.js';
+import { createOperatorReleaseQueue } from './js/operator-release-queue.js';
 import { canOperatePrinter, currentSession, loadSession } from './js/session.js';
 import {
   activeFaults,
@@ -45,6 +46,10 @@ const elements = {
   model: $('operatorModel'),
   form: $('operatorSetForm'),
   controlsPanel: $('operatorControlsPanel'),
+  manualDialog: $('manualMessageDialog'),
+  openManualMessage: $('openManualMessage'),
+  closeManualMessage: $('closeManualMessage'),
+  manualReason: $('manualMessageReason'),
   setButton: $('operatorSetButton'),
   messageName: $('operatorMessageName'),
   messageFields: $('messageFields'),
@@ -72,6 +77,24 @@ let manualBusy = false;
 let previewTimer = null;
 let previewRequestId = 0;
 
+const releaseQueue = createOperatorReleaseQueue({
+  printerId,
+  elements: {
+    current: $('currentOperatorRelease'), next: $('nextOperatorRelease'), upcomingList: $('upcomingReleaseList'),
+    upcomingButton: $('viewUpcomingReleases'), upcomingDialog: $('upcomingReleaseDialog'), upcomingClose: $('closeUpcomingReleases'),
+    upcomingSearch: $('upcomingReleaseSearch'), completedSearch: $('completedReleaseSearch'),
+    completedList: $('completedReleaseList'), completedButton: $('viewCompletedReleases'),
+    completedDialog: $('completedReleaseDialog'), completedClose: $('closeCompletedReleases'), notice: $('operatorReleaseNotice'),
+    refresh: $('refreshOperatorReleases'), dialog: $('operatorReleaseDialog'), title: $('operatorReleaseDialogTitle'),
+    subtitle: $('operatorReleaseDialogSubtitle'), close: $('closeOperatorReleaseDialog'), dialogNotice: $('operatorReleaseDialogNotice'),
+    facts: $('operatorReleaseFacts'), preview: $('operatorReleasePreview'), confirmation: $('operatorReleaseConfirmation'),
+    confirmCheck: $('operatorReleaseConfirmationCheck'), failureField: $('operatorPrintFailureField'), reasonLabel: $('operatorReleaseReasonLabel'),
+    failureReason: $('operatorPrintFailureReason'), cancel: $('cancelOperatorRelease'), send: $('sendOperatorRelease'),
+    returnRelease: $('returnOperatorRelease'), report: $('reportOperatorPrintFailure'), verify: $('verifyOperatorPrint'), endRun: $('endOperatorRun')
+  },
+  getPrinter: (id) => id === printerId ? printer : null
+});
+
 function selectedMessageDefinition() {
   return messages.find((message) => message.id === elements.messageName.value) || null;
 }
@@ -88,6 +111,8 @@ function setBusy(busy) {
   elements.checkButton.disabled = disabled;
   elements.setButton.disabled = disabled || !messages.length;
   elements.messageName.disabled = disabled || !messages.length;
+  elements.manualReason.disabled = disabled;
+  elements.openManualMessage.disabled = disabled;
   elements.confirmSetButton.disabled = disabled;
   for (const input of dynamicFieldInputs()) input.disabled = disabled;
 }
@@ -100,10 +125,16 @@ function accessLabel() {
   return 'Operator';
 }
 
+function canSetManually() {
+  return Boolean(currentSession()?.user?.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role)));
+}
+
 function updateCapabilityView() {
   const canOperate = printer ? canOperatePrinter(printer.id) : false;
   elements.accessLevel.textContent = accessLabel();
-  elements.controlsPanel.classList.toggle('hidden', !canOperate);
+  const manualAllowed = canOperate && canSetManually();
+  elements.controlsPanel.classList.toggle('hidden', !manualAllowed);
+  elements.openManualMessage.classList.toggle('hidden', !manualAllowed);
   elements.checkButton.textContent = canOperate ? 'Check status' : 'Read only';
   setBusy(manualBusy);
 }
@@ -435,6 +466,7 @@ async function loadPrinter() {
     renderNavigation(elements.nav, { active: window.location.pathname });
     applyPrinterConfig(await apiJson(`/api/printers/${encodeURIComponent(printerId)}`));
     if (canOperatePrinter(printerId)) await loadMessages();
+    await releaseQueue.load();
     const cached = await apiJson(`/api/printers/${encodeURIComponent(printerId)}/status`);
     applyPrinterStatus(cached);
     await loadFaultHistory();
@@ -523,6 +555,11 @@ async function reviewPrinterUpdate(event) {
   event.preventDefault();
   if (!printer || !printer.enabled || !serverConnected || manualBusy || !canOperatePrinter(printer.id)) return;
 
+  const reason = elements.manualReason.value.trim();
+  if (reason.length < 5) {
+    setNotice(elements.message, 'Enter a clear reason for this manual message change.', 'error');
+    return;
+  }
   const preview = await refreshPreviewNow();
   if (!preview) {
     setNotice(elements.message, 'Enter all required fields before reviewing this update.', 'error');
@@ -531,6 +568,7 @@ async function reviewPrinterUpdate(event) {
 
   setNotice(elements.message);
   renderReview(preview);
+  appendReviewLine('Audit reason', reason);
 }
 
 function fieldResultLine(result) {
@@ -599,9 +637,10 @@ async function confirmPrinterUpdate() {
   if (!printer || !printer.enabled || !serverConnected || manualBusy || !canOperatePrinter(printer.id)) return;
 
   const definition = selectedMessageDefinition();
+  const reason = elements.manualReason.value.trim();
   const validation = validateFieldValues();
   setFieldErrors(validation.errors);
-  if (!definition || !validation.valid) {
+  if (!definition || !validation.valid || reason.length < 5) {
     setNotice(elements.message, 'Enter all required fields before setting the printer.', 'error');
     return;
   }
@@ -612,9 +651,12 @@ async function confirmPrinterUpdate() {
     const result = await postJson(`/api/printers/${encodeURIComponent(printerId)}/set`, {
       messageId: definition.id,
       fields: validation.fields,
+      reason,
       expectedRevision: latestStatus?.revision
     });
     hideReview();
+    elements.manualDialog.close();
+    elements.manualReason.value = '';
     showUpdateResult(result);
     if (result.verificationAvailable !== false && printer?.capabilities?.currentMessageReadback !== false) {
       try {
@@ -679,6 +721,17 @@ elements.messageName.addEventListener('change', () => {
 });
 elements.cancelReviewButton.addEventListener('click', hideReview);
 elements.confirmSetButton.addEventListener('click', confirmPrinterUpdate);
+elements.openManualMessage.addEventListener('click', () => {
+  setNotice(elements.message);
+  hideReview();
+  if (!elements.manualDialog.open) elements.manualDialog.showModal();
+});
+elements.closeManualMessage.addEventListener('click', () => {
+  if (!manualBusy) elements.manualDialog.close();
+});
+elements.manualDialog.addEventListener('cancel', (event) => {
+  if (manualBusy) event.preventDefault();
+});
 
 subscribeToPrinterEvents({
   onConnected: markServerConnected,
@@ -729,7 +782,8 @@ subscribeToPrinterEvents({
       applyPrinterConfig(match);
       loadMessages().catch((error) => setNotice(elements.message, normalizeError(error), 'error'));
     }
-  }
+  },
+  onBatchReleaseExecution: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error'))
 });
 
 loadPrinter();

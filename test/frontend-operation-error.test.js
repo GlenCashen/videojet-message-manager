@@ -43,15 +43,17 @@ test('traffic-light printer state helper is shared by dashboard and printer page
 
 test('manual message changes retain guarded review but operator-only accounts use releases', async () => {
   const dashboard = await readFile('public/js/viewer-dashboard.js', 'utf8');
-  const dialog = await readFile('public/js/operator-message-dialog.js', 'utf8');
+  const printerPage = await readFile('public/printer-page.js', 'utf8');
+  const printer = await readFile('public/printer.html', 'utf8');
 
-  assert.ok(dashboard.includes('canOperatePrinter(printer.id)'));
-  assert.ok(dashboard.includes('manualMessageChangeAllowed'));
-  assert.ok(dialog.includes("/preview`"));
-  assert.ok(dialog.includes("/set`"));
-  assert.ok(dialog.includes('expectedRevision: status.revision'));
-  assert.ok(dialog.includes('/api/printer/current-message?printerId='));
-  assert.ok(dialog.includes('Message change sent, but readback failed:'));
+  assert.equal(dashboard.includes('Set message'), false);
+  assert.equal(dashboard.includes('createOperatorMessageDialog'), false);
+  assert.ok(printerPage.includes("/preview`"));
+  assert.ok(printerPage.includes("/set`"));
+  assert.ok(printerPage.includes('expectedRevision: latestStatus?.revision'));
+  assert.ok(printerPage.includes('reason,'));
+  assert.ok(printer.includes('id="manualMessageReason"'));
+  assert.ok(printerPage.includes('/api/printer/current-message?printerId='));
 });
 
 test('production releases require an independent review and expose no direct operator send', async () => {
@@ -60,7 +62,7 @@ test('production releases require an independent review and expose no direct ope
   const releases = await readFile('public/js/release-workflow.js', 'utf8');
 
   assert.ok(editorHtml.includes('id="releaseWorkflowPanel"'));
-  assert.ok(editorHtml.includes('Approve and reserve run'));
+  assert.ok(editorHtml.includes('Approve release'));
   assert.ok(releases.includes('releaseApprovalCheck'));
   assert.ok(releases.includes("mode === 'approve'"));
   assert.ok(releases.includes('/review-claim'));
@@ -69,15 +71,35 @@ test('production releases require an independent review and expose no direct ope
   assert.equal(dashboardHtml.includes('Accept and send'), false);
 });
 
-test('operator dashboard exposes approved release send and first-print verification', async () => {
+test('individual printer page exposes release execution while dashboard stays read-only', async () => {
   const dashboard = await readFile('public/dashboard.html', 'utf8');
+  const printer = await readFile('public/printer.html', 'utf8');
+  const printerPage = await readFile('public/printer-page.js', 'utf8');
   const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
-  assert.ok(dashboard.includes('id="operatorReleaseList"'));
-  assert.ok(dashboard.includes('id="operatorReleaseConfirmationCheck"'));
-  assert.ok(dashboard.includes('id="verifyOperatorPrint"'));
+  const styles = await readFile('public/styles.css', 'utf8');
+  assert.equal(dashboard.includes('id="operatorReleaseList"'), false);
+  assert.equal(dashboard.includes('id="setMessageDialog"'), false);
+  assert.ok((await readFile('public/js/viewer-dashboard.js', 'utf8')).includes('Current running job'));
+  assert.ok((await readFile('public/js/viewer-dashboard.js', 'utf8')).includes('loadRunningReleases'));
+  assert.ok(printer.includes('id="currentOperatorRelease"'));
+  assert.ok(printer.includes('id="nextOperatorRelease"'));
+  assert.ok(printer.includes('id="upcomingReleaseSearch"'));
+  assert.ok(printer.includes('id="completedReleaseSearch"'));
+  assert.ok(printer.includes('id="viewCompletedReleases"'));
+  assert.ok(printer.includes('id="operatorReleaseConfirmationCheck"'));
+  assert.ok(printer.includes('id="verifyOperatorPrint"'));
+  assert.ok(printerPage.includes('printerId,'));
+  assert.ok(queue.includes('target.printerId === printerId'));
   assert.ok(queue.includes('/apply`'));
   assert.ok(queue.includes('/print-check`'));
-  assert.ok(dashboard.includes('First print verified'));
+  assert.ok(queue.includes('/end-run`'));
+  assert.ok(queue.includes('/return-for-review`'));
+  assert.ok(queue.includes("target.status !== 'completed'"));
+  assert.ok(queue.includes('/api/batch-releases?limit=500'));
+  assert.ok(queue.includes('completedTargets.length'));
+  assert.ok(printer.includes('First print verified'));
+  assert.match(styles, /\.operator-release-panel\s*\{[\s\S]*?color:\s*#172033/);
+  assert.match(styles, /\.operator-release-preview pre\s*\{[^}]*color:\s*#172033/);
 });
 
 test('new messages define fields that product masters infer', async () => {
@@ -86,11 +108,24 @@ test('new messages define fields that product masters infer', async () => {
   const releases = await readFile('public/js/release-workflow.js', 'utf8');
 
   assert.ok(html.includes('id="newMessageButton"'));
+  assert.ok(html.includes('id="addMessageField"'));
+  assert.ok(html.includes('id="messageTokenPalette"'));
+  assert.ok(html.includes('id="messageLineBuilder"'));
+  assert.equal(html.includes('id="messageFieldsJson"'), false);
+  assert.equal(html.includes('id="messagePreviewLines"'), false);
+  assert.ok(messageConfig.includes("draggable: 'true'"));
+  assert.ok(messageConfig.includes('dataTransfer.getData'));
   assert.equal(html.includes('id="masterRunField"'), false);
   assert.equal(html.includes('id="masterBatchField"'), false);
-  assert.ok(html.includes('id="masterFieldMappings"'));
+  assert.ok(html.includes('id="masterPrinterConfigurations"'));
+  assert.ok(html.includes('id="productMasterList"'));
+  assert.ok(html.includes('id="productMasterSearch"'));
   assert.ok(messageConfig.includes("method: creating ? 'POST' : 'PUT'"));
-  assert.ok(releases.includes('function renderMessageSummary()'));
+  assert.ok(releases.includes('function renderMasterPrinterConfigurations('));
+  assert.ok(releases.includes('function renderMasterRegister()'));
+  assert.ok(releases.includes("method: editing ? 'PUT' : 'POST'"));
+  assert.ok(releases.includes('printerConfigurations'));
+  assert.ok(releases.includes('renderConfiguredLines'));
   assert.ok(releases.includes('field.printerFieldName'));
   assert.ok(releases.includes("['run_code', 'Tracked product run (optional)']"));
 });

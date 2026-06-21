@@ -310,12 +310,21 @@ test('current-message endpoint tracks emulator selection and reports rejection s
     assert.equal(initial.printer, `127.0.0.1:${emulatorPort}`);
     assert.match(initial.rawResponseHex, /^02 /);
 
+    const unauditedSetResponse = await fetch(`${baseUrl}/api/printers/coder-1/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageId: '12-month', fields: { brew: 'BR1246', batch: 'B260617A' } })
+    });
+    assert.equal(unauditedSetResponse.status, 400);
+    assert.match((await unauditedSetResponse.json()).error, /reason/i);
+
     const setResponse = await fetch(`${baseUrl}/api/printers/coder-1/set`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messageId: '12-month',
-        fields: { brew: 'BR1246', batch: 'B260617A' }
+        fields: { brew: 'BR1246', batch: 'B260617A' },
+        reason: 'Test the audited manual message workflow'
       })
     });
     const setResult = await setResponse.json();

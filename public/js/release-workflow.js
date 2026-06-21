@@ -13,18 +13,22 @@ const nodes = {
   statusFilter: document.getElementById('releaseStatusFilter'),
   openMaster: document.getElementById('openProductMasterForm'),
   openRelease: document.getElementById('openBatchReleaseForm'),
+  masterRegister: document.getElementById('productMasterRegister'),
+  masterSearch: document.getElementById('productMasterSearch'),
+  masterList: document.getElementById('productMasterList'),
   formWorkspace: document.getElementById('releaseFormWorkspace'),
   masterSection: document.getElementById('productMasterSection'),
+  masterTitle: document.getElementById('productMasterTitle'),
   masterForm: document.getElementById('productMasterForm'),
   masterProductCode: document.getElementById('masterProductCode'),
   masterDisplayName: document.getElementById('masterDisplayName'),
   masterNextRun: document.getElementById('masterNextRun'),
   masterRunPrefix: document.getElementById('masterRunPrefix'),
   masterRunWidth: document.getElementById('masterRunWidth'),
-  masterMessage: document.getElementById('masterMessage'),
-  masterMessageSummary: document.getElementById('masterMessageSummary'),
-  masterFieldMappings: document.getElementById('masterFieldMappings'),
-  masterPrinters: document.getElementById('masterPrinters'),
+  masterEnabled: document.getElementById('masterEnabled'),
+  masterPrinterConfigurations: document.getElementById('masterPrinterConfigurations'),
+  cancelMaster: document.getElementById('cancelProductMasterEdit'),
+  saveMaster: document.getElementById('saveProductMaster'),
   releaseSection: document.getElementById('batchReleaseSection'),
   releaseTitle: document.getElementById('batchReleaseTitle'),
   releaseHelp: document.getElementById('batchReleaseHelp'),
@@ -54,7 +58,7 @@ const nodes = {
 
 const state = {
   masters: [], releases: [], printers: [], messages: [], review: null, reviewHeartbeat: null,
-  presenceSweep: null, editingReleaseId: null, openAuditId: null, audits: new Map()
+  presenceSweep: null, editingMasterId: null, editingReleaseId: null, openAuditId: null, audits: new Map()
 };
 
 function selectedMaster() {
@@ -63,7 +67,7 @@ function selectedMaster() {
 
 function checkboxList(container, printers, dataName) {
   clear(container);
-  container.appendChild(el('legend', { text: dataName === 'masterPrinter' ? 'Permitted printers' : 'Target printers' }));
+  container.appendChild(el('legend', { text: 'Target printers' }));
   for (const printer of printers) {
     container.appendChild(el('label', { className: 'message-job-target-option' }, [
       el('input', { type: 'checkbox', value: printer.id, dataset: { [dataName]: printer.id } }),
@@ -95,26 +99,160 @@ function defaultSource(field, index) {
   return FIELD_SOURCES[Math.min(index + 1, FIELD_SOURCES.length - 1)][0];
 }
 
-function renderMessageSummary() {
-  const message = state.messages.find((item) => item.id === nodes.masterMessage.value);
-  clear(nodes.masterFieldMappings);
+function renderConfiguredLines(configuration, sourceValues) {
+  const values = { bestBeforeDate: sourceValues.bestBeforeDate, currentTime: sourceValues.productionTime, productionTime: sourceValues.productionTime };
+  for (const mapping of configuration.fieldMappings || []) values[mapping.fieldKey] = sourceValues[mapping.source] || '';
+  return (configuration.previewLines || []).map((line) => line.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (_match, key) => values[key] ?? `[${key}]`));
+}
+
+function pad2(value) { return String(value).padStart(2, '0'); }
+
+function releasePreviewValues(configuration, release) {
+  const production = new Date(release.plannedProductionAt);
+  const bestBefore = new Date(production.valueOf());
+  const day = bestBefore.getUTCDate();
+  bestBefore.setUTCDate(1);
+  bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
+  bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
+  const dateValues = { DD: pad2(bestBefore.getUTCDate()), MM: pad2(bestBefore.getUTCMonth() + 1), YYYY: String(bestBefore.getUTCFullYear()), YY: String(bestBefore.getUTCFullYear()).slice(-2) };
+  const bestBeforeDate = (configuration.dateRule?.format || 'DD/MM/YYYY').replace(/YYYY|YY|DD|MM/g, (token) => dateValues[token]);
+  const hour = production.getUTCHours();
+  const timeFormat = configuration.timeRule?.format || 'HH:mm:ss';
+  const productionTime = timeFormat === 'HH:mm'
+    ? `${pad2(hour)}:${pad2(production.getUTCMinutes())}`
+    : timeFormat === 'hh:mm A'
+      ? `${pad2(hour % 12 || 12)}:${pad2(production.getUTCMinutes())} ${hour >= 12 ? 'PM' : 'AM'}`
+      : `${pad2(hour)}:${pad2(production.getUTCMinutes())}:${pad2(production.getUTCSeconds())}`;
+  return {
+    run_code: release.runCode || '[assigned when sent]',
+    brew_sheet_product: release.brewSheetProduct,
+    brew_number: release.brewNumber || '',
+    batch_number: release.batchNumber || '',
+    bestBeforeDate,
+    productionTime
+  };
+}
+
+function messagesForPrinter(printerId) {
+  return state.messages.filter((message) => (message.printerAssignments || [])
+    .some((assignment) => assignment.printerId === printerId && assignment.enabled));
+}
+
+function renderPrinterMappings(card, message, mappings = []) {
+  const summary = card.querySelector('[data-master-message-summary]');
+  const container = card.querySelector('[data-master-field-mappings]');
+  const preview = card.querySelector('[data-master-expected-preview]');
+  clear(container);
+  summary.textContent = message
+    ? `${message.fields.length} fields · ${message.dateRule?.months ?? 0} month offset · ${message.previewLines.length} print lines`
+    : 'Select a message assigned to this printer.';
   for (const [index, field] of (message?.fields || []).entries()) {
     const select = el('select', { required: 'required', dataset: { masterFieldKey: field.key } });
     for (const [value, label] of FIELD_SOURCES) select.appendChild(el('option', { value, text: label }));
-    select.value = defaultSource(field, index);
-    nodes.masterFieldMappings.appendChild(el('div', { className: 'master-field-row' }, [
-      el('div', {}, [el('strong', { text: field.label }), el('small', { text: `${field.key} · printer field ${field.printerFieldName}` })]),
+    select.value = mappings.find((mapping) => mapping.fieldKey === field.key)?.source || defaultSource(field, index);
+    container.appendChild(el('div', { className: 'master-field-row' }, [
+      el('div', {}, [el('strong', { text: field.label }), el('small', { text: `${field.printerFieldName} · {{${field.key}}}` })]),
       select
     ]));
   }
-  nodes.masterMessageSummary.textContent = message
-    ? `${message.fields.length} message fields · ${message.dateRule?.months || '?'} month best before · ${message.previewLines.length} print lines`
-    : 'Select a stored message to load its fields and print format.';
-  if (message && !message.fields.length) {
-    nodes.masterFieldMappings.appendChild(el('p', {
-      className: 'no-message-fields',
-      text: 'This message has no user fields. The product run is still reserved for traceability, but no field values will be sent.'
-    }));
+  if (message && !message.fields.length) container.appendChild(el('p', {
+    className: 'no-message-fields', text: 'No user fields. This printer will receive only the stored message selection.'
+  }));
+  const configuration = {
+    fieldMappings: [...container.querySelectorAll('[data-master-field-key]')]
+      .map((select) => ({ fieldKey: select.dataset.masterFieldKey, source: select.value })),
+    previewLines: message?.previewLines || []
+  };
+  preview.textContent = message ? renderConfiguredLines(configuration, {
+    run_code: '[Tracked product run]', brew_sheet_product: '[Brew-sheet product]', brew_number: '[Brew number]',
+    batch_number: '[Batch number]', bestBeforeDate: `[Date +${message.dateRule?.months ?? 0} months]`, productionTime: '[Production time]'
+  }).join('\n') : 'Select a message to preview its expected print.';
+}
+
+function renderMasterPrinterConfigurations(master = null) {
+  clear(nodes.masterPrinterConfigurations);
+  const configurations = master?.specification?.printerConfigurations || [];
+  const configuredPrinterIds = new Set(configurations.map((configuration) => configuration.printerId));
+  for (const printer of state.printers.filter((item) => item.enabled || configuredPrinterIds.has(item.id))) {
+    const existing = configurations.find((configuration) => configuration.printerId === printer.id);
+    const available = messagesForPrinter(printer.id);
+    const enabled = Boolean(existing);
+    const checkbox = el('input', { type: 'checkbox', checked: enabled ? 'checked' : null, dataset: { masterPrinterEnabled: printer.id } });
+    const select = el('select', { dataset: { masterPrinterMessage: printer.id }, disabled: enabled ? null : 'disabled' });
+    select.appendChild(el('option', { value: '', text: available.length ? 'Select stored message' : 'No assigned messages available' }));
+    for (const message of available) {
+      const assignment = message.printerAssignments.find((item) => item.printerId === printer.id);
+      select.appendChild(el('option', { value: message.id, text: `${message.displayName} · ${assignment.printerMessageName}` }));
+    }
+    if (existing?.messageId && !available.some((message) => message.id === existing.messageId)) {
+      const existingMessage = state.messages.find((message) => message.id === existing.messageId);
+      select.appendChild(el('option', { value: existing.messageId, text: `${existingMessage?.displayName || existing.messageId} · unavailable for this printer` }));
+    }
+    select.value = existing?.messageId || '';
+    const card = el('article', { className: `master-printer-card${enabled ? ' enabled' : ''}`, dataset: { masterPrinterCard: printer.id } }, [
+      el('div', { className: 'master-printer-card-heading' }, [
+        el('label', { className: 'checkbox-line' }, [checkbox, el('span', {}, [el('strong', { text: printer.name }), el('small', { text: printer.location || `${printer.host}:${printer.port}` })])]),
+        el('span', { className: 'master-printer-state', text: enabled ? 'Included' : 'Not used' })
+      ]),
+      el('label', {}, [el('span', { text: 'Stored message for this printer' }), select]),
+      el('div', { className: 'master-message-summary', dataset: { masterMessageSummary: printer.id } }),
+      el('div', { className: 'master-field-mappings', dataset: { masterFieldMappings: printer.id } }),
+      el('div', { className: 'master-config-preview' }, [el('span', { text: 'Parsed expected print' }), el('pre', { dataset: { masterExpectedPreview: printer.id } })])
+    ]);
+    nodes.masterPrinterConfigurations.appendChild(card);
+    renderPrinterMappings(card, state.messages.find((message) => message.id === select.value), existing?.fieldMappings || []);
+  }
+}
+
+function masterPrinterSummary(master) {
+  const configurations = master.specification?.printerConfigurations || [];
+  return configurations.map((configuration) => {
+    const printer = state.printers.find((item) => item.id === configuration.printerId);
+    const message = state.messages.find((item) => item.id === configuration.messageId);
+    return `${printer?.name || configuration.printerId}: ${message?.displayName || configuration.messageId}`;
+  }).join(' · ');
+}
+
+function printerRequirement(configuration, release) {
+  const printer = state.printers.find((item) => item.id === configuration.printerId);
+  const message = state.messages.find((item) => item.id === configuration.messageId);
+  const sources = Object.fromEntries(FIELD_SOURCES);
+  return el('article', { className: 'review-printer-requirement' }, [
+    el('div', {}, [
+      el('strong', { text: printer?.name || configuration.printerId }),
+      el('span', { text: message?.displayName || configuration.messageId })
+    ]),
+    el('pre', { text: renderConfiguredLines(configuration, releasePreviewValues(configuration, release)).join('\n') }),
+    configuration.fieldMappings?.length ? el('small', {
+      text: configuration.fieldMappings.map((mapping) => `${mapping.fieldKey}: ${sources[mapping.source] || mapping.source}`).join(' · ')
+    }) : el('small', { text: 'No user fields' })
+  ]);
+}
+
+function renderMasterRegister() {
+  clear(nodes.masterList);
+  const query = nodes.masterSearch.value.trim().toLowerCase();
+  const masters = state.masters.filter((master) => [master.productCode, master.displayName, masterPrinterSummary(master)]
+    .some((value) => String(value || '').toLowerCase().includes(query)));
+  if (!masters.length) {
+    nodes.masterList.appendChild(el('div', { className: 'release-empty' }, [
+      el('strong', { text: query ? 'No matching product masters' : 'No product masters yet' }),
+      el('p', { className: 'muted', text: query ? 'Try another product or printer name.' : 'Create the first versioned coding specification.' })
+    ]));
+    return;
+  }
+  for (const master of masters) {
+    nodes.masterList.appendChild(el('article', { className: 'master-register-row' }, [
+      el('div', { className: 'master-register-main' }, [
+        el('div', {}, [el('h4', { text: master.productCode }), el('p', { text: master.displayName })]),
+        el('div', { className: 'master-register-meta' }, [
+          el('span', { text: `Version ${master.currentVersion}` }), el('span', { text: `Next run ${master.nextRunNumber}` }),
+          el('span', { className: `badge ${master.enabled ? 'good' : 'neutral'}`, text: master.enabled ? 'Enabled' : 'Disabled' })
+        ]),
+        el('small', { text: masterPrinterSummary(master) || 'No printer configuration' })
+      ]),
+      el('button', { className: 'ghost bordered', type: 'button', dataset: { masterAction: 'edit', masterId: master.id }, text: 'Edit master' })
+    ]));
   }
 }
 
@@ -124,7 +262,7 @@ function renderReleasePrinters() {
 }
 
 function statusTone(status) {
-  if (['released', 'completed'].includes(status)) return 'good';
+  if (['released', 'running', 'completed'].includes(status)) return 'good';
   if (['rejected', 'failed', 'cancelled'].includes(status)) return 'bad';
   if (status === 'pending_review') return 'stale';
   return 'neutral';
@@ -224,7 +362,7 @@ function renderReleases() {
           el('span', { className: `badge ${statusTone(release.status)}`, text: release.status.replaceAll('_', ' ').toUpperCase() })
         ]),
         el('div', { className: 'release-facts' }, [
-          fact('Run', release.runCode || 'Reserved on approval'),
+          fact('Run', release.runCode || 'Assigned automatically when sent'),
           fact('Brew', release.brewNumber),
           fact('Batch', release.batchNumber),
           fact('Printers', release.printerIds.map((id) => state.printers.find((printer) => printer.id === id)?.name || id).join(', '))
@@ -247,29 +385,70 @@ function renderReleases() {
 
 async function createMaster(event) {
   event.preventDefault();
-  const printerIds = [...nodes.masterPrinters.querySelectorAll('[data-master-printer]:checked')].map((input) => input.value);
-  const fieldMappings = [...nodes.masterFieldMappings.querySelectorAll('[data-master-field-key]')]
-    .map((select) => ({ fieldKey: select.dataset.masterFieldKey, source: select.value }));
-  setNotice(nodes.notice, 'Creating immutable product master version...');
+  const printerConfigurations = [...nodes.masterPrinterConfigurations.querySelectorAll('[data-master-printer-card]')]
+    .filter((card) => card.querySelector('[data-master-printer-enabled]').checked)
+    .map((card) => ({
+      printerId: card.dataset.masterPrinterCard,
+      messageId: card.querySelector('[data-master-printer-message]').value,
+      fieldMappings: [...card.querySelectorAll('[data-master-field-key]')]
+        .map((select) => ({ fieldKey: select.dataset.masterFieldKey, source: select.value }))
+    }));
+  const editing = Boolean(state.editingMasterId);
+  setNotice(nodes.notice, editing ? 'Creating a new immutable master version...' : 'Creating the first immutable master version...');
   try {
-    await apiJson('/api/product-masters', { method: 'POST', body: {
+    if (!printerConfigurations.length) throw new Error('Include at least one printer and select its stored message.');
+    if (printerConfigurations.some((configuration) => !configuration.messageId)) throw new Error('Every included printer needs a stored message.');
+    await apiJson(editing ? `/api/product-masters/${encodeURIComponent(state.editingMasterId)}` : '/api/product-masters', { method: editing ? 'PUT' : 'POST', body: {
       productCode: nodes.masterProductCode.value,
       displayName: nodes.masterDisplayName.value,
       nextRunNumber: Number(nodes.masterNextRun.value),
+      enabled: nodes.masterEnabled.checked,
       specification: {
         runPrefix: nodes.masterRunPrefix.value,
         runWidth: Number(nodes.masterRunWidth.value),
-        messageId: nodes.masterMessage.value,
-        fieldMappings,
-        printerIds
+        printerConfigurations
       }
     }});
-    nodes.masterForm.reset();
-    nodes.masterRunPrefix.value = 'T'; nodes.masterRunWidth.value = '4'; nodes.masterNextRun.value = '1';
     await loadReleaseWorkflow();
-    nodes.formWorkspace.classList.add('hidden');
-    setNotice(nodes.notice, 'Product master created. Its first specification version is now fixed.', 'success');
+    resetMasterForm();
+    setNotice(nodes.notice, editing ? 'Product master updated as a new permanent version.' : 'Product master created. Its first specification version is now fixed.', 'success');
   } catch (error) { setNotice(nodes.notice, normalizeError(error), 'error'); }
+}
+
+function resetMasterForm({ hide = true } = {}) {
+  state.editingMasterId = null;
+  nodes.masterForm.reset();
+  nodes.masterTitle.textContent = 'New product master';
+  nodes.masterProductCode.readOnly = false;
+  nodes.masterRunPrefix.value = 'T';
+  nodes.masterRunWidth.value = '4';
+  nodes.masterNextRun.value = '1';
+  nodes.masterEnabled.checked = true;
+  nodes.saveMaster.textContent = 'Create product master';
+  renderMasterPrinterConfigurations();
+  if (hide) {
+    nodes.masterSection.classList.add('hidden');
+    if (nodes.releaseSection.classList.contains('hidden')) nodes.formWorkspace.classList.add('hidden');
+  }
+}
+
+function editMaster(master) {
+  state.editingMasterId = master.id;
+  nodes.formWorkspace.classList.remove('hidden');
+  nodes.masterSection.classList.remove('hidden');
+  nodes.releaseSection.classList.add('hidden');
+  nodes.masterTitle.textContent = `Edit ${master.productCode}`;
+  nodes.masterProductCode.value = master.productCode;
+  nodes.masterProductCode.readOnly = true;
+  nodes.masterDisplayName.value = master.displayName;
+  nodes.masterNextRun.value = String(master.nextRunNumber);
+  nodes.masterRunPrefix.value = master.specification.runPrefix;
+  nodes.masterRunWidth.value = String(master.specification.runWidth);
+  nodes.masterEnabled.checked = master.enabled;
+  nodes.saveMaster.textContent = 'Create new master version';
+  renderMasterPrinterConfigurations(master);
+  nodes.masterDisplayName.focus();
+  nodes.masterSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function createRelease(event) {
@@ -304,7 +483,7 @@ function resetReleaseForm() {
   nodes.releaseForm.reset();
   nodes.releaseMaster.disabled = false;
   nodes.releaseTitle.textContent = 'New batch release';
-  nodes.releaseHelp.textContent = 'Run numbers are reserved only after independent approval.';
+  nodes.releaseHelp.textContent = 'The product run is assigned automatically when the operator sends the approved release.';
   nodes.saveRelease.textContent = 'Save draft';
   nodes.cancelReleaseEdit.classList.add('hidden');
   setDefaultProductionTime();
@@ -379,14 +558,20 @@ async function openReview(release, mode) {
     el('div', { className: 'release-review-summary' }, [
       fact('Product', release.brewSheetProduct), fact('Pinned product master', `${master?.productCode || ''} · version ${release.productMasterVersion || '?'}`),
       fact('Brew number', release.brewNumber), fact('Batch number', release.batchNumber),
-      fact('Planned production', new Date(release.plannedProductionAt).toLocaleString()), fact('Next run', `${master?.specification?.runPrefix || ''}${String(master?.nextRunNumber || '').padStart(master?.specification?.runWidth || 4, '0')} (reserved on approval)`)
+      fact('Planned production', new Date(release.plannedProductionAt).toLocaleString()), fact('Tracked run', release.runCode || 'Assigned automatically when the operator sends it')
     ]),
-    el('div', { className: 'review-printer-list' }, [el('span', { text: 'Target printers' }), el('strong', { text: release.printerIds.map((id) => state.printers.find((printer) => printer.id === id)?.name || id).join(', ') })])
+    el('div', { className: 'review-printer-list' }, [el('span', { text: 'Target printers' }), el('strong', { text: release.printerIds.map((id) => state.printers.find((printer) => printer.id === id)?.name || id).join(', ') })]),
+    el('section', { className: 'review-printer-requirements' }, [
+      el('h3', { text: 'Approved coding requirement by printer' }),
+      ...(release.productMasterSpecification?.printerConfigurations || [])
+        .filter((configuration) => release.printerIds.includes(configuration.printerId))
+        .map((configuration) => printerRequirement(configuration, release))
+    ])
   );
   nodes.approvalAttestation.classList.toggle('hidden', mode !== 'approve');
   nodes.rejectionField.classList.toggle('hidden', mode !== 'reject');
   nodes.approvalCheck.checked = false; nodes.rejectionReason.value = '';
-  nodes.confirmDialog.textContent = mode === 'approve' ? 'Approve and reserve run' : 'Reject release';
+  nodes.confirmDialog.textContent = mode === 'approve' ? 'Approve release' : 'Reject release';
   nodes.confirmDialog.className = mode === 'approve' ? 'primary' : 'danger';
   setNotice(nodes.dialogNotice);
   nodes.dialog.showModal();
@@ -417,7 +602,7 @@ async function performReview() {
     stopReviewClaim(false);
     nodes.dialog.close();
     await loadReleaseWorkflow();
-    setNotice(nodes.notice, mode === 'approve' ? 'Release approved and product run reserved.' : 'Release returned with a rejection reason.', 'success');
+    setNotice(nodes.notice, mode === 'approve' ? 'Release approved. Its product run will be assigned automatically when it is sent.' : 'Release returned with a rejection reason.', 'success');
   } catch (error) { setNotice(nodes.dialogNotice, normalizeError(error), 'error'); }
   finally { nodes.confirmDialog.disabled = false; }
 }
@@ -466,27 +651,51 @@ async function loadReleaseWorkflow() {
   const [masters, releases, printers, messages = []] = await Promise.all(requests);
   state.masters = masters; state.releases = releases; state.printers = printers; state.messages = messages;
   nodes.openMaster.classList.toggle('hidden', !hasCapability('manageProductMasters'));
+  nodes.masterRegister.classList.toggle('hidden', !hasCapability('manageProductMasters'));
   nodes.openRelease.classList.toggle('hidden', !hasCapability('createBatchReleases'));
-  checkboxList(nodes.masterPrinters, printers.filter((printer) => printer.enabled), 'masterPrinter');
-  clear(nodes.masterMessage);
-  for (const message of messages) nodes.masterMessage.appendChild(el('option', { value: message.id, text: message.displayName }));
-  renderMessageSummary();
-  renderMasterOptions(); renderReleases();
+  renderMasterPrinterConfigurations(state.masters.find((master) => master.id === state.editingMasterId));
+  renderMasterRegister(); renderMasterOptions(); renderReleases();
 }
 
 function setupReleaseWorkflow() {
   nodes.masterForm.addEventListener('submit', createMaster);
   nodes.releaseForm.addEventListener('submit', createRelease);
   nodes.releaseMaster.addEventListener('change', renderReleasePrinters);
-  nodes.masterMessage.addEventListener('change', renderMessageSummary);
+  nodes.masterSearch.addEventListener('input', renderMasterRegister);
+  nodes.masterList.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-master-action="edit"]');
+    const master = state.masters.find((item) => item.id === button?.dataset.masterId);
+    if (master) editMaster(master);
+  });
+  nodes.masterPrinterConfigurations.addEventListener('change', (event) => {
+    const card = event.target.closest('[data-master-printer-card]');
+    if (!card) return;
+    if (event.target.matches('[data-master-printer-enabled]')) {
+      const enabled = event.target.checked;
+      card.classList.toggle('enabled', enabled);
+      card.querySelector('.master-printer-state').textContent = enabled ? 'Included' : 'Not used';
+      card.querySelector('[data-master-printer-message]').disabled = !enabled;
+    }
+    if (event.target.matches('[data-master-printer-message]')) {
+      renderPrinterMappings(card, state.messages.find((message) => message.id === event.target.value));
+    }
+    if (event.target.matches('[data-master-field-key]')) {
+      const mappings = [...card.querySelectorAll('[data-master-field-key]')]
+        .map((select) => ({ fieldKey: select.dataset.masterFieldKey, source: select.value }));
+      const messageId = card.querySelector('[data-master-printer-message]').value;
+      renderPrinterMappings(card, state.messages.find((message) => message.id === messageId), mappings);
+    }
+  });
   nodes.search.addEventListener('input', renderReleases);
   nodes.statusFilter.addEventListener('change', renderReleases);
   nodes.openMaster.addEventListener('click', () => {
+    resetMasterForm({ hide: false });
     nodes.formWorkspace.classList.remove('hidden');
     nodes.masterSection.classList.remove('hidden');
     nodes.releaseSection.classList.add('hidden');
     nodes.masterProductCode.focus();
   });
+  nodes.cancelMaster.addEventListener('click', () => resetMasterForm());
   nodes.openRelease.addEventListener('click', () => {
     resetReleaseForm();
     nodes.formWorkspace.classList.remove('hidden');

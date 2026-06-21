@@ -34,8 +34,10 @@ function messageFromRow(row, db) {
     fields,
     dateRule: {
       type: row.date_rule_type || 'offset-months',
-      months: row.date_rule_months
+      months: row.date_rule_months,
+      format: row.date_format || 'DD/MM/YYYY'
     },
+    timeRule: { type: 'production-time', format: row.time_format || 'HH:mm:ss' },
     previewLines: parseJson(row.preview_lines_json, []),
     printerAssignments
   };
@@ -95,13 +97,15 @@ function replaceMessageAssignments(message, db = getDb()) {
 function upsertMessage(message, db = getDb()) {
   const now = nowIso();
   db.prepare(`
-    INSERT INTO messages (id, display_name, enabled, date_rule_type, date_rule_months, preview_lines_json, created_at, updated_at)
-    VALUES (@id, @displayName, @enabled, @dateRuleType, @dateRuleMonths, @previewLinesJson, @now, @now)
+    INSERT INTO messages (id, display_name, enabled, date_rule_type, date_rule_months, date_format, time_format, preview_lines_json, created_at, updated_at)
+    VALUES (@id, @displayName, @enabled, @dateRuleType, @dateRuleMonths, @dateFormat, @timeFormat, @previewLinesJson, @now, @now)
     ON CONFLICT(id) DO UPDATE SET
       display_name = excluded.display_name,
       enabled = excluded.enabled,
       date_rule_type = excluded.date_rule_type,
       date_rule_months = excluded.date_rule_months,
+      date_format = excluded.date_format,
+      time_format = excluded.time_format,
       preview_lines_json = excluded.preview_lines_json,
       updated_at = excluded.updated_at
   `).run({
@@ -109,7 +113,9 @@ function upsertMessage(message, db = getDb()) {
     displayName: message.displayName,
     enabled: message.enabled === false ? 0 : 1,
     dateRuleType: message.dateRule?.type || 'offset-months',
-    dateRuleMonths: Number(message.dateRule?.months || 12),
+    dateRuleMonths: Number(message.dateRule?.months ?? 12),
+    dateFormat: message.dateRule?.format || 'DD/MM/YYYY',
+    timeFormat: message.timeRule?.format || 'HH:mm:ss',
     previewLinesJson: JSON.stringify(message.previewLines || []),
     now
   });

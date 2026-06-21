@@ -8,8 +8,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_MESSAGES_PATH = path.join(__dirname, '..', 'data', 'messages.json');
 const DEFAULT_DATE_FORMAT = 'DD/MM/YYYY';
+const DEFAULT_TIME_FORMAT = 'HH:mm:ss';
+const DATE_FORMATS = new Set(['DD/MM/YYYY', 'DD/MM/YY', 'YYYY-MM-DD']);
+const TIME_FORMATS = new Set(['HH:mm:ss', 'HH:mm', 'hh:mm A']);
 const FIELD_KEY_PATTERN = /^[a-z][a-z0-9-]*$/;
-const MESSAGE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const MESSAGE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PRINTER_FIELD_PATTERN = /^[A-Z0-9 _-]{1,30}$/;
 const PRINTABLE_ASCII_PATTERN = /^[\x20-\x7E]+$/;
 
@@ -101,7 +104,7 @@ function validateDefinition(definition, index, printerIds) {
     if (printerFieldNames.has(field.printerFieldName)) {
       throw new Error(`Duplicate printer field name ${field.printerFieldName} in message ${definition.id}.`);
     }
-    if (field.required !== true) throw new Error(`Field ${field.key} must be required in this release.`);
+    if (typeof field.required !== 'boolean') throw new Error(`Field ${field.key} required must be boolean.`);
     if (!Number.isInteger(field.maxLength) || field.maxLength < 1 || field.maxLength > 50) {
       throw new Error(`Field ${field.key} maxLength must be 1-50.`);
     }
@@ -123,13 +126,26 @@ function validateDefinition(definition, index, printerIds) {
   if (definition.dateRule.type !== 'offset-months') {
     throw new Error(`Message ${definition.id} dateRule.type must be offset-months.`);
   }
-  if (!Number.isInteger(definition.dateRule.months) || definition.dateRule.months <= 0) {
-    throw new Error(`Message ${definition.id} dateRule.months must be a positive integer.`);
+  if (!Number.isInteger(definition.dateRule.months) || definition.dateRule.months < 0 || definition.dateRule.months > 120) {
+    throw new Error(`Message ${definition.id} dateRule.months must be between 0 and 120.`);
   }
+  definition.dateRule.format ||= DEFAULT_DATE_FORMAT;
+  if (!DATE_FORMATS.has(definition.dateRule.format)) throw new Error(`Unsupported date format ${definition.dateRule.format}.`);
+  definition.timeRule ||= { type: 'production-time', format: DEFAULT_TIME_FORMAT };
+  if (definition.timeRule.type !== 'production-time') throw new Error(`Message ${definition.id} timeRule.type must be production-time.`);
+  definition.timeRule.format ||= DEFAULT_TIME_FORMAT;
+  if (!TIME_FORMATS.has(definition.timeRule.format)) throw new Error(`Unsupported time format ${definition.timeRule.format}.`);
   if (!Array.isArray(definition.previewLines) || !definition.previewLines.length) {
     throw new Error(`Message ${definition.id} previewLines must be a non-empty array.`);
   }
-  for (const line of definition.previewLines) assertString(line, `Message ${definition.id} preview line`);
+  if (definition.previewLines.length > 4) throw new Error(`Message ${definition.id} cannot define more than 4 preview lines.`);
+  const allowedTokens = new Set([...fieldKeys, 'bestBeforeDate', 'currentTime', 'productionTime']);
+  for (const line of definition.previewLines) {
+    assertString(line, `Message ${definition.id} preview line`);
+    for (const match of line.matchAll(/\{\{([a-zA-Z0-9_-]+)\}\}/g)) {
+      if (!allowedTokens.has(match[1])) throw new Error(`Unknown preview token ${match[1]} in message ${definition.id}.`);
+    }
+  }
 }
 
 function validateMessages(messages, options = {}) {
@@ -223,11 +239,15 @@ function validateMessageFields(message, fields = {}) {
     if (field.required && (typeof value !== 'string' || !value.trim())) {
       throw new Error(`${field.label} is required.`);
     }
+    if ((value === undefined || value === null) && !field.required) {
+      normalized[field.key] = '';
+      continue;
+    }
     if (typeof value !== 'string') throw new Error(`${field.label} must be a string.`);
     const trimmed = value.trim();
     const transformed = normalizeTransform(field.transform) === 'uppercase' ? trimmed.toUpperCase() : trimmed;
     if (transformed.length > field.maxLength) throw new Error(`${field.label} must be ${field.maxLength} characters or fewer.`);
-    if (!PRINTABLE_ASCII_PATTERN.test(transformed)) throw new Error(`${field.label} must contain printable ASCII characters only.`);
+    if (transformed && !PRINTABLE_ASCII_PATTERN.test(transformed)) throw new Error(`${field.label} must contain printable ASCII characters only.`);
     normalized[field.key] = transformed;
   }
 
@@ -278,8 +298,18 @@ function pad2(value) {
 }
 
 function formatDateParts(parts, format = DEFAULT_DATE_FORMAT) {
-  if (format !== DEFAULT_DATE_FORMAT) throw new Error(`Unsupported date format ${format}.`);
-  return `${pad2(parts.day)}/${pad2(parts.month)}/${parts.year}`;
+  if (!DATE_FORMATS.has(format)) throw new Error(`Unsupported date format ${format}.`);
+  const values = { DD: pad2(parts.day), MM: pad2(parts.month), YYYY: String(parts.year), YY: String(parts.year).slice(-2) };
+  return format.replace(/YYYY|YY|DD|MM/g, (token) => values[token]);
+}
+
+function formatTimeParts(parts, format = DEFAULT_TIME_FORMAT) {
+  if (!TIME_FORMATS.has(format)) throw new Error(`Unsupported time format ${format}.`);
+  if (format === 'HH:mm:ss') return `${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}`;
+  if (format === 'HH:mm') return `${pad2(parts.hour)}:${pad2(parts.minute)}`;
+  const period = parts.hour >= 12 ? 'PM' : 'AM';
+  const hour = parts.hour % 12 || 12;
+  return `${pad2(hour)}:${pad2(parts.minute)} ${period}`;
 }
 
 function renderPreview(message, fields, options = {}) {
@@ -288,9 +318,10 @@ function renderPreview(message, fields, options = {}) {
   const bestBefore = addCalendarMonthsClamped(production, message.dateRule.months);
   const tokens = {
     ...normalized,
-    bestBeforeDate: formatDateParts(bestBefore, options.dateFormat || DEFAULT_DATE_FORMAT),
-    currentTime: `${pad2(production.hour)}:${pad2(production.minute)}:${pad2(production.second)}`
+    bestBeforeDate: formatDateParts(bestBefore, options.dateFormat || message.dateRule.format || DEFAULT_DATE_FORMAT),
+    currentTime: formatTimeParts(production, options.timeFormat || message.timeRule?.format || DEFAULT_TIME_FORMAT)
   };
+  tokens.productionTime = tokens.currentTime;
 
   const lines = message.previewLines.map((line) =>
     line.replace(/\{\{([a-zA-Z0-9-]+)\}\}/g, (_match, key) => tokens[key] ?? '')

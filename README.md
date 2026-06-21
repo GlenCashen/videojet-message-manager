@@ -82,7 +82,7 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
-    "schemaVersion": 7
+    "schemaVersion": 12
   }
 }
 ```
@@ -93,11 +93,19 @@ Sessions are stored in SQLite, so logins survive a process restart. Expired sess
 
 Production coding is prepared through controlled releases. QA owns versioned product masters. Planners and packaging leaders create drafts from brew-sheet data. A different QA or Packaging Leader must review a submitted release before it becomes available for production.
 
-Approval atomically reserves the next run number for that product only. For example, `TBUNDRC` and `SMGOLD` maintain independent sequences. Cancelled or failed approvals never reuse an already reserved number. Every release stays pinned to the product-master version used when the draft was created.
+Each product-master version defines its coding requirement separately for every permitted printer. A printer configuration selects one message assigned to that printer and maps each of that message's user fields to an approved release value. A single product run can therefore render different messages and layouts for can, bottle, and case coders. Editing a master creates a new immutable version; existing releases remain pinned to their reviewed version.
+
+Development migration 12 clears existing product masters, batch releases, and their audit entries so this per-printer model starts clean. Messages, printers, users, and general printer history are retained.
+
+Logical messages are built in the editor rather than entered as JSON. Message IDs use lowercase kebab-case. Each user field defines its display name, printer field name, maximum length, uppercase handling, and whether it is required. Date and time tokens have explicit formats, and one to four expected-print lines can combine typed text with inserted or dragged field tokens. Optional blank fields are sent as empty WSI field updates and must be confirmed on each real printer model before production use.
+
+Approval authorizes the release without assigning its run number. When the operator sends it for the first time, the system automatically reserves the next run number from that product's master sequence and renders the approved message fields. Operators do not choose or edit the run number. For example, `TBUNDRC` and `SMGOLD` maintain independent sequences, and an attempted number is never reused when printer delivery is uncertain. Every release stays pinned to the product-master version used when the draft was created.
 
 Opening an independent review creates a renewable 45-second review claim. Other reviewers see who is active and cannot approve or reject the same release until that claim is released or expires.
 
-Approved releases enter the assigned operators' dashboard queue. Each printer target requires an operator confirmation before the approved payload is sent, followed by printer readback and an explicit first-print check. Targets complete independently and failures remain available for controlled retry. The legacy message-job creation and execution endpoints return HTTP 410.
+Approved releases enter the assigned printer pages' execution queues. Each printer target requires an operator confirmation before the approved payload is sent, followed by printer readback and an explicit first-print check. A successful first-print check marks the release `running`. It remains running until the operator explicitly ends it or successfully sends another release to the same printer, which automatically ends the previous run. Failed first-print checks can be returned for correction and independent review. Completed releases remain available for a controlled reapply with a required reason. The legacy message-job creation and execution endpoints return HTTP 410.
+
+The main dashboard is monitoring-only: printer cards show live state, expected output, and the current running release. Manual message changes and release send/verify/end/reapply controls are available only from the individual printer page. This keeps every state-changing action anchored to the physical printer being operated.
 
 If the server restarts during a send, the target is recovered as `failed`/attention required instead of remaining permanently locked. The operator must confirm the printer state before choosing a controlled retry.
 
@@ -111,10 +119,12 @@ If the server restarts during a send, the target is recovered as `failed`/attent
 - `POST /api/batch-releases/:id/review-claim` - claim or renew an active independent review
 - `DELETE /api/batch-releases/:id/review-claim` - release the current user's review claim
 - `POST /api/batch-releases/:id/submit` - submit for independent review
-- `POST /api/batch-releases/:id/approve` - approve and reserve the product run
+- `POST /api/batch-releases/:id/approve` - approve without consuming the product run sequence
 - `POST /api/batch-releases/:id/reject` - return with a required reason
 - `POST /api/batch-releases/:id/targets/:printerId/apply` - send an approved target to its assigned printer
 - `POST /api/batch-releases/:id/targets/:printerId/print-check` - record the operator's first-print verification
+- `POST /api/batch-releases/:id/targets/:printerId/end-run` - explicitly end a running printer target
+- `POST /api/batch-releases/:id/return-for-review` - return a failed or changed release for correction and review
 
 ## First run
 
@@ -127,6 +137,10 @@ npm start
 ```
 
 The bootstrap Admin is created only when the user table is empty.
+
+For development UI testing, `npm run seed:releases` recreates its own seed records using the first enabled product master: 100 completed releases and 15 approved releases ready for execution. Set `SEED_MASTER_CODE`, `SEED_COMPLETED_RELEASES`, or `SEED_RELEASED_RELEASES` to override the defaults. The command deletes only releases whose notes start with `Development release seed:`.
+
+For local development, omitting `SESSION_SECRET` uses a secret generated and stored in the local database. Production still requires an explicit strong `SESSION_SECRET` environment variable.
 
 ## Troubleshooting
 

@@ -11,7 +11,8 @@
     "migrate:json": "node server/migrate-json-to-sqlite.js",
     "db:status": "node server/db-status.js",
     "db:check": "node server/db-check.js",
-    "db:backup": "node server/db-backup.js"
+    "db:backup": "node server/db-backup.js",
+    "seed:releases": "node server/seed-releases.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

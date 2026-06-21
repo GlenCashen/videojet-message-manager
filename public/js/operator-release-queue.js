@@ -1,66 +1,106 @@
 import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
+import { releaseExpectedOutput } from './release-preview.js';
 
-function createOperatorReleaseQueue({ elements, getPrinter }) {
+function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) {
   const state = { releases: [], selected: null, busy: false };
 
   function targetStatusLabel(status) {
     return {
       pending: 'Ready to send', applying: 'Sending', awaiting_print_check: 'First print check',
-      completed: 'Completed', failed: 'Attention required'
+      running: 'Running', completed: 'Completed', failed: 'Attention required'
     }[status] || status;
   }
 
   function targetTone(status) {
-    if (status === 'completed') return 'good';
+    if (['running', 'completed'].includes(status)) return 'good';
     if (status === 'failed') return 'bad';
     if (['applying', 'awaiting_print_check'].includes(status)) return 'stale';
     return 'neutral';
   }
 
   function rows() {
-    return state.releases.flatMap((release) => (release.executionTargets || []).map((target) => ({ release, target })));
+    return state.releases.flatMap((release) => (release.executionTargets || [])
+      .filter((target) => !printerId || target.printerId === printerId)
+      .map((target) => ({ release, target })));
+  }
+
+  function plannedTime(row) {
+    const value = new Date(row.release.plannedProductionAt).valueOf();
+    return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+  }
+
+  function matchesSearch({ release }, query) {
+    const search = query.trim().toLowerCase();
+    if (!search) return true;
+    return [release.brewSheetProduct, release.brewNumber, release.batchNumber, release.runCode]
+      .some((value) => String(value || '').toLowerCase().includes(search));
+  }
+
+  function renderTarget(container, { release, target }, { spotlight = false } = {}) {
+    const printer = getPrinter(target.printerId);
+    const actionText = {
+      awaiting_print_check: 'Verify first print', failed: 'Review attention', running: 'View running job', completed: 'Reapply job'
+    }[target.status] || 'Review and send';
+    const expected = releaseExpectedOutput(release, target.printerId);
+    container.appendChild(el('article', { className: `operator-release-item target-${target.status}${spotlight ? ' release-spotlight-card' : ''}` }, [
+      el('div', { className: 'operator-release-item-main' }, [
+        el('div', {}, [
+          el('span', { className: `badge ${targetTone(target.status)}`, text: targetStatusLabel(target.status) }),
+          el('h3', { text: release.brewSheetProduct }),
+          el('p', { className: 'muted', text: `${printer?.name || target.printerId} · ${printer?.location || 'No line location'} · ${release.runCode || 'Tracked run pending'}` })
+        ]),
+        el('div', { className: 'operator-release-compact-facts' }, [
+          el('span', { text: 'Brew' }), el('strong', { text: release.brewNumber || '-' }),
+          el('span', { text: 'Batch' }), el('strong', { text: release.batchNumber || '-' }),
+          el('span', { text: 'Planned' }), el('strong', { text: new Date(release.plannedProductionAt).toLocaleString() })
+        ])
+      ]),
+      spotlight ? el('div', { className: 'release-card-preview' }, [
+        el('span', { text: expected.provisional ? 'Planned expected print' : 'Expected print' }),
+        el('pre', { text: expected.rendered })
+      ]) : null,
+      target.error ? el('p', { className: 'operator-release-error', text: target.error }) : null,
+      el('button', {
+        className: 'primary', type: 'button', disabled: target.status === 'applying' ? 'disabled' : null,
+        dataset: { releaseId: release.id, printerId: target.printerId },
+        text: target.status === 'applying' ? 'Sending...' : actionText
+      })
+    ]));
   }
 
   function render() {
-    clear(elements.list);
-    const targets = rows().filter(({ target }) => target.status !== 'completed');
-    if (!targets.length) {
-      elements.list.appendChild(el('div', { className: 'operator-release-empty' }, [
-        el('strong', { text: 'No approved releases need action' }),
-        el('p', { className: 'muted', text: 'Newly approved releases for your assigned printers will appear here.' })
-      ]));
-      return;
-    }
-    for (const { release, target } of targets) {
-      const printer = getPrinter(target.printerId);
-      const actionText = target.status === 'awaiting_print_check' ? 'Verify first print' : (target.status === 'failed' ? 'Review and retry' : 'Review and send');
-      elements.list.appendChild(el('article', { className: `operator-release-item target-${target.status}` }, [
-        el('div', { className: 'operator-release-item-main' }, [
-          el('div', {}, [
-            el('span', { className: `badge ${targetTone(target.status)}`, text: targetStatusLabel(target.status) }),
-            el('h3', { text: release.brewSheetProduct }),
-            el('p', { className: 'muted', text: `${printer?.name || target.printerId} · ${printer?.location || 'No line location'} · ${release.runCode || 'Tracked run pending'}` })
-          ]),
-          el('div', { className: 'operator-release-compact-facts' }, [
-            el('span', { text: 'Brew' }), el('strong', { text: release.brewNumber || '-' }),
-            el('span', { text: 'Batch' }), el('strong', { text: release.batchNumber || '-' }),
-            el('span', { text: 'Planned' }), el('strong', { text: new Date(release.plannedProductionAt).toLocaleString() })
-          ])
-        ]),
-        target.error ? el('p', { className: 'operator-release-error', text: target.error }) : null,
-        el('button', {
-          className: 'primary', type: 'button', disabled: target.status === 'applying' ? 'disabled' : null,
-          dataset: { releaseId: release.id, printerId: target.printerId },
-          text: target.status === 'applying' ? 'Sending...' : actionText
-        })
-      ]));
-    }
+    const targets = rows();
+    const activeTargets = targets.filter(({ target }) => target.status !== 'completed').sort((a, b) => plannedTime(a) - plannedTime(b));
+    const completedTargets = targets.filter(({ target }) => target.status === 'completed').sort((a, b) => plannedTime(b) - plannedTime(a));
+    const current = activeTargets.find(({ target }) => target.status === 'running')
+      || activeTargets.find(({ target }) => ['awaiting_print_check', 'applying', 'failed'].includes(target.status));
+    const next = activeTargets.find(({ target }) => target.status === 'pending');
+    const upcomingTargets = activeTargets.filter((row) => row !== current && row !== next);
+    clear(elements.current);
+    clear(elements.next);
+    clear(elements.upcomingList);
+    clear(elements.completedList);
+    elements.completedButton.textContent = `Release history (${completedTargets.length})`;
+    elements.upcomingButton.textContent = `View release schedule (${activeTargets.length})`;
+    if (current) renderTarget(elements.current, current, { spotlight: true });
+    else elements.current.appendChild(el('div', { className: 'operator-release-empty' }, [el('strong', { text: 'No job is running' }), el('p', { className: 'muted', text: 'Start an approved release from the next job or release schedule.' })]));
+    if (next) renderTarget(elements.next, next, { spotlight: true });
+    else elements.next.appendChild(el('div', { className: 'operator-release-empty' }, [el('strong', { text: 'No approved release is waiting' }), el('p', { className: 'muted', text: 'Newly approved work for this printer will appear here.' })]));
+
+    const scheduleQuery = elements.upcomingSearch.value;
+    const historyQuery = elements.completedSearch.value;
+    const scheduleRows = [next, ...upcomingTargets].filter(Boolean).filter((row) => matchesSearch(row, scheduleQuery));
+    const historyRows = completedTargets.filter((row) => matchesSearch(row, historyQuery));
+    if (!scheduleRows.length) elements.upcomingList.appendChild(el('p', { className: 'operator-release-empty muted', text: scheduleQuery ? 'No releases match this search.' : 'No additional approved releases.' }));
+    if (!historyRows.length) elements.completedList.appendChild(el('p', { className: 'operator-release-empty muted', text: historyQuery ? 'No completed releases match this search.' : 'No completed releases yet.' }));
+    for (const row of scheduleRows) renderTarget(elements.upcomingList, row);
+    for (const row of historyRows) renderTarget(elements.completedList, row);
   }
 
   function setBusy(value) {
     state.busy = value;
-    for (const button of [elements.close, elements.cancel, elements.send, elements.verify, elements.report]) button.disabled = value;
+    for (const button of [elements.close, elements.cancel, elements.send, elements.verify, elements.report, elements.returnRelease, elements.endRun]) button.disabled = value;
   }
 
   function fact(label, value) {
@@ -79,7 +119,10 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
   function open(release, target) {
     state.selected = { release, target };
     const printer = getPrinter(target.printerId);
-    elements.title.textContent = target.status === 'awaiting_print_check' ? 'Verify first printed code' : 'Send approved release';
+    elements.title.textContent = {
+      awaiting_print_check: 'Verify first printed code', running: 'Production run in progress',
+      completed: 'Reapply completed release', failed: 'Release requires attention'
+    }[target.status] || 'Send approved release';
     elements.subtitle.textContent = `${printer?.name || target.printerId} · ${printer?.location || 'No line location'}`;
     clear(elements.facts);
     elements.facts.append(
@@ -88,17 +131,37 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
       fact('Physical line', printer?.location || 'Not configured'), fact('Printer', printer?.name || target.printerId),
       fact('Planned production', new Date(release.plannedProductionAt).toLocaleString()), fact('Approved by', release.reviewedByUsername)
     );
-    elements.preview.textContent = release.expectedOutput?.rendered || 'No approved output available';
+    elements.preview.textContent = releaseExpectedOutput(release, target.printerId).rendered;
     elements.confirmCheck.checked = false;
     elements.failureReason.value = '';
     elements.confirmation.classList.remove('hidden');
     elements.send.classList.remove('hidden');
     elements.verify.classList.add('hidden');
     elements.report.classList.add('hidden');
+    elements.returnRelease.classList.add('hidden');
+    elements.endRun.classList.add('hidden');
     elements.failureField.classList.add('hidden');
+    elements.reasonLabel.textContent = 'Print problem';
+    elements.send.textContent = 'Send approved release';
     setNotice(elements.dialogNotice);
     if (target.status === 'awaiting_print_check') showPrintCheck();
-    elements.dialog.showModal();
+    if (target.status === 'running') {
+      elements.confirmation.classList.add('hidden');
+      elements.send.classList.add('hidden');
+      elements.endRun.classList.remove('hidden');
+      setNotice(elements.dialogNotice, 'This approved release is currently running on the printer.', 'success');
+    }
+    if (target.status === 'completed') {
+      elements.failureField.classList.remove('hidden');
+      elements.reasonLabel.textContent = 'Reason for reapplying this completed job';
+      elements.send.textContent = 'Confirm reapply';
+    }
+    if (target.status === 'failed' && target.verifiedAt) {
+      elements.failureField.classList.remove('hidden');
+      elements.reasonLabel.textContent = 'Reason for returning this release';
+      elements.returnRelease.classList.remove('hidden');
+    }
+    if (!elements.dialog.open) elements.dialog.showModal();
   }
 
   function replaceRelease(release) {
@@ -112,16 +175,60 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
     if (state.busy || !state.selected) return;
     if (!elements.confirmCheck.checked) return setNotice(elements.dialogNotice, 'Complete the operator confirmation before sending.', 'error');
     const { release, target } = state.selected;
+    const reapply = target.status === 'completed';
+    const reason = elements.failureReason.value.trim();
+    if (reapply && !reason) return setNotice(elements.dialogNotice, 'Enter why this completed job is being reapplied.', 'error');
     setBusy(true);
     setNotice(elements.dialogNotice, 'Sending the approved release and checking printer readback...');
     try {
-      const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/apply`, { method: 'POST', body: {} });
+      const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/apply`, { method: 'POST', body: { reapply, reason } });
       replaceRelease(response.release);
       state.selected.release = response.release;
       state.selected.target = response.release.executionTargets.find((item) => item.printerId === target.printerId);
-      showPrintCheck();
+      open(state.selected.release, state.selected.target);
     } catch (error) {
       if (error.data?.release) replaceRelease(error.data.release);
+      if (error.data?.code === 'RELEASE_DEFINITION_CHANGED') {
+        elements.failureField.classList.remove('hidden');
+        elements.reasonLabel.textContent = 'Reason for returning this release';
+        elements.failureReason.value = normalizeError(error);
+        elements.returnRelease.classList.remove('hidden');
+      }
+      setNotice(elements.dialogNotice, normalizeError(error), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function returnForReview() {
+    if (state.busy || !state.selected) return;
+    const reason = elements.failureReason.value.trim();
+    if (!reason) return setNotice(elements.dialogNotice, 'Enter a reason for returning this release.', 'error');
+    setBusy(true);
+    try {
+      await apiJson(`/api/batch-releases/${encodeURIComponent(state.selected.release.id)}/return-for-review`, { method: 'POST', body: { reason } });
+      elements.dialog.close();
+      state.selected = null;
+      await load();
+      setNotice(elements.notice, 'Release returned for correction and independent re-review.', 'success');
+    } catch (error) {
+      setNotice(elements.dialogNotice, normalizeError(error), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endRun() {
+    if (state.busy || !state.selected) return;
+    const { release, target } = state.selected;
+    setBusy(true);
+    try {
+      const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/end-run`, { method: 'POST', body: {} });
+      replaceRelease(response.release);
+      elements.dialog.close();
+      state.selected = null;
+      setNotice(elements.notice, `${release.brewSheetProduct} run ended.`, 'success');
+    } catch (error) {
       setNotice(elements.dialogNotice, normalizeError(error), 'error');
     } finally {
       setBusy(false);
@@ -139,7 +246,7 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
         method: 'POST', body: { passed, reason }
       });
       replaceRelease(response.release);
-      setNotice(elements.notice, passed ? `${release.brewSheetProduct} completed on ${getPrinter(target.printerId)?.name || target.printerId}.` : 'Print problem recorded. The target now requires attention.', passed ? 'success' : 'error');
+      setNotice(elements.notice, passed ? `${release.brewSheetProduct} is now running on ${getPrinter(target.printerId)?.name || target.printerId}.` : 'Print problem recorded. The target now requires attention.', passed ? 'success' : 'error');
       elements.dialog.close();
       state.selected = null;
     } catch (error) {
@@ -157,7 +264,7 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
 
   async function load() {
     try {
-      state.releases = await apiJson('/api/batch-releases?limit=100');
+      state.releases = await apiJson('/api/batch-releases?limit=500');
       render();
       setNotice(elements.notice);
     } catch (error) {
@@ -165,17 +272,38 @@ function createOperatorReleaseQueue({ elements, getPrinter }) {
     }
   }
 
-  elements.list.addEventListener('click', (event) => {
+  function selectRelease(event) {
     const button = event.target.closest('[data-release-id][data-printer-id]');
     if (!button) return;
     const release = state.releases.find((item) => item.id === button.dataset.releaseId);
     const target = release?.executionTargets.find((item) => item.printerId === button.dataset.printerId);
-    if (release && target) open(release, target);
+    if (release && target) {
+      if (elements.completedDialog.open) elements.completedDialog.close();
+      if (elements.upcomingDialog.open) elements.upcomingDialog.close();
+      open(release, target);
+    }
+  }
+
+  elements.current.addEventListener('click', selectRelease);
+  elements.next.addEventListener('click', selectRelease);
+  elements.upcomingList.addEventListener('click', selectRelease);
+  elements.completedList.addEventListener('click', selectRelease);
+  elements.upcomingButton.addEventListener('click', () => {
+    if (!elements.upcomingDialog.open) elements.upcomingDialog.showModal();
   });
+  elements.upcomingClose.addEventListener('click', () => elements.upcomingDialog.close());
+  elements.completedButton.addEventListener('click', () => {
+    if (!elements.completedDialog.open) elements.completedDialog.showModal();
+  });
+  elements.completedClose.addEventListener('click', () => elements.completedDialog.close());
+  elements.upcomingSearch.addEventListener('input', render);
+  elements.completedSearch.addEventListener('input', render);
   elements.refresh.addEventListener('click', load);
   elements.send.addEventListener('click', send);
   elements.verify.addEventListener('click', () => printCheck(true));
   elements.report.addEventListener('click', () => printCheck(false));
+  elements.returnRelease.addEventListener('click', returnForReview);
+  elements.endRun.addEventListener('click', endRun);
   elements.close.addEventListener('click', close);
   elements.cancel.addEventListener('click', close);
   elements.dialog.addEventListener('cancel', (event) => { if (state.busy) event.preventDefault(); });

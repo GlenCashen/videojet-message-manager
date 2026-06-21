@@ -41,7 +41,7 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
-  assert.equal(status.schemaVersion, 9);
+  assert.equal(status.schemaVersion, 12);
 });
 
 test('foreign keys reject orphaned assignments', () => {
@@ -106,7 +106,8 @@ test('repositories persist printers, users, messages and expected output', () =>
         maxLength: 30
       }
     ],
-    dateRule: { type: 'offset-months', months: 9 },
+    dateRule: { type: 'offset-months', months: 9, format: 'YYYY-MM-DD' },
+    timeRule: { type: 'production-time', format: 'HH:mm' },
     previewLines: ['{{brew}}'],
     printerAssignments: [
       {
@@ -132,7 +133,10 @@ test('repositories persist printers, users, messages and expected output', () =>
   assert.equal(listPrinters(db)[0].model, '1620');
   assert.equal(listPrinters(db)[0].capabilities.currentMessageReadback, true);
   assert.equal(getUserByUsername('operator', db).roles.includes('qa'), true);
-  assert.equal(listMessagesForPrinter('coder-1', db)[0].printerMessageName, '9 MONTH');
+  const storedMessage = listMessagesForPrinter('coder-1', db)[0];
+  assert.equal(storedMessage.printerMessageName, '9 MONTH');
+  assert.equal(storedMessage.dateRule.format, 'YYYY-MM-DD');
+  assert.equal(storedMessage.timeRule.format, 'HH:mm');
   assert.equal(listExpectedOutputs(db)['coder-1'].rendered, 'ABC');
 });
 

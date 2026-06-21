@@ -2,9 +2,7 @@ import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
-import { canOperatePrinter, currentSession, loadSession } from './session.js';
-import { createOperatorMessageDialog } from './operator-message-dialog.js';
-import { createOperatorReleaseQueue } from './operator-release-queue.js';
+import { currentSession, loadSession } from './session.js';
 import {
   faultCountLabel,
   formatAge,
@@ -23,60 +21,14 @@ const elements = {
   liveBadge: document.getElementById('serverConnectionBadge')
 };
 
-const messageDialog = createOperatorMessageDialog({
-  elements: {
-    dialog: document.getElementById('setMessageDialog'),
-    title: document.getElementById('setMessageDialogTitle'),
-    subtitle: document.getElementById('setMessageDialogSubtitle'),
-    notice: document.getElementById('setMessageDialogNotice'),
-    close: document.getElementById('closeSetMessageDialog'),
-    form: document.getElementById('dashboardSetMessageForm'),
-    messageName: document.getElementById('dashboardMessageName'),
-    fields: document.getElementById('dashboardMessageFields'),
-    preview: document.getElementById('dashboardExpectedPreview'),
-    reviewSummary: document.getElementById('dashboardReviewSummary'),
-    cancel: document.getElementById('cancelSetMessage'),
-    review: document.getElementById('reviewSetMessage'),
-    confirm: document.getElementById('confirmDashboardSetMessage')
-  },
-  getStatus: (printerId) => state.statuses[printerId],
-  onStatus: (status) => {
-    mergeStatus(status);
-    render();
-  }
-});
-
 const state = {
   printers: {},
   order: [],
   statuses: {},
+  runningByPrinter: {},
   serverConnected: false,
   lastServerEventAt: Date.now()
 };
-
-const releaseQueue = createOperatorReleaseQueue({
-  elements: {
-    list: document.getElementById('operatorReleaseList'),
-    notice: document.getElementById('operatorReleaseNotice'),
-    refresh: document.getElementById('refreshOperatorReleases'),
-    dialog: document.getElementById('operatorReleaseDialog'),
-    title: document.getElementById('operatorReleaseDialogTitle'),
-    subtitle: document.getElementById('operatorReleaseDialogSubtitle'),
-    close: document.getElementById('closeOperatorReleaseDialog'),
-    dialogNotice: document.getElementById('operatorReleaseDialogNotice'),
-    facts: document.getElementById('operatorReleaseFacts'),
-    preview: document.getElementById('operatorReleasePreview'),
-    confirmation: document.getElementById('operatorReleaseConfirmation'),
-    confirmCheck: document.getElementById('operatorReleaseConfirmationCheck'),
-    failureField: document.getElementById('operatorPrintFailureField'),
-    failureReason: document.getElementById('operatorPrintFailureReason'),
-    cancel: document.getElementById('cancelOperatorRelease'),
-    send: document.getElementById('sendOperatorRelease'),
-    report: document.getElementById('reportOperatorPrintFailure'),
-    verify: document.getElementById('verifyOperatorPrint')
-  },
-  getPrinter: (printerId) => state.printers[printerId]
-});
 
 function mergeStatus(status) {
   const id = status.printerId || status.id;
@@ -159,7 +111,7 @@ function createCard(printer) {
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';
   const lightState = printerState(status.decodedStatus);
-  const manualMessageChangeAllowed = currentSession()?.user?.roles?.some((role) => ['qa', 'engineering', 'admin'].includes(role));
+  const running = state.runningByPrinter[printer.id];
 
   return el('article', {
     className: cardClass(status),
@@ -187,6 +139,13 @@ function createCard(printer) {
         el('strong', { text: faultCountLabel(status.decodedStatus) })
       ])
     ]),
+    running ? el('section', { className: 'viewer-running-release' }, [
+      el('span', { text: 'Current running job' }),
+      el('strong', { text: `${running.release.brewSheetProduct} · ${running.release.runCode || 'Run pending'}` }),
+      el('small', { text: `Started ${running.target.runningAt ? new Date(running.target.runningAt).toLocaleString() : 'recently'}` })
+    ]) : el('section', { className: 'viewer-running-release idle' }, [
+      el('span', { text: 'Current running job' }), el('strong', { text: 'No release running' })
+    ]),
     el('div', { className: 'viewer-expected' }, [
       el('span', { text: 'Expected print' }),
       el('pre', { text: expectedOutputText(status) })
@@ -194,14 +153,7 @@ function createCard(printer) {
     createReadback(printer, status),
     isStale(status) ? el('p', { className: 'viewer-warning', text: 'Data stale. Showing last known printer state.' }) : null,
     el('div', { className: 'viewer-card-actions' }, [
-      canOperatePrinter(printer.id) && manualMessageChangeAllowed ? el('button', {
-        className: 'primary',
-        type: 'button',
-        disabled: !printer.enabled ? 'disabled' : null,
-        dataset: { action: 'set-message', printerId: printer.id },
-        text: 'Set message'
-      }) : null,
-      el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'View details')
+      el('a', { className: 'card-open-link', href: printerHref(printer.id) }, 'Open printer')
     ])
   ]);
 }
@@ -256,7 +208,7 @@ async function loadInitialData() {
     ]);
     applyFleet(printers);
     for (const status of statuses) mergeStatus(status);
-    await releaseQueue.load();
+    await loadRunningReleases();
     setNotice(elements.message);
     render();
   } catch (error) {
@@ -265,17 +217,21 @@ async function loadInitialData() {
 }
 
 elements.grid.addEventListener('click', (event) => {
-  const setButton = event.target.closest('[data-action="set-message"]');
-  if (setButton) {
-    event.stopPropagation();
-    const printer = state.printers[setButton.dataset.printerId];
-    if (printer) messageDialog.open(printer);
-    return;
-  }
   if (event.target.closest('a, button')) return;
   const card = event.target.closest('[data-href]');
   if (card) window.location.href = card.dataset.href;
 });
+
+async function loadRunningReleases() {
+  const releases = await apiJson('/api/batch-releases?limit=100');
+  state.runningByPrinter = {};
+  for (const release of releases) {
+    for (const target of release.executionTargets || []) {
+      if (target.status === 'running') state.runningByPrinter[target.printerId] = { release, target };
+    }
+  }
+  render();
+}
 
 elements.grid.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -303,7 +259,7 @@ subscribeToPrinterEvents({
     mergeStatus(status);
     render();
   },
-  onBatchReleaseExecution: () => releaseQueue.refresh()
+  onBatchReleaseExecution: () => loadRunningReleases().catch((error) => setNotice(elements.message, normalizeError(error), 'error'))
 });
 
 setInterval(() => {

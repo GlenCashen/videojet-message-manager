@@ -13,7 +13,7 @@
     <header class="viewer-header">
       <div>
         <h1>Printer operations</h1>
-        <p class="muted">Live status for your assigned printers, with message changes available without leaving the dashboard.</p>
+        <p class="muted">Live status and current production runs for your assigned printers.</p>
       </div>
       <div class="header-badges">
         <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
@@ -26,94 +26,12 @@
     <div id="topNavigation" class="nav-shell"></div>
 
     <p id="dashboardMessage" class="notice hidden" aria-live="polite"></p>
-    <section class="operator-release-panel" aria-labelledby="operatorReleaseTitle">
-      <div class="operator-release-heading">
-        <div>
-          <p class="breadcrumb">Controlled production</p>
-          <h2 id="operatorReleaseTitle">Approved release queue</h2>
-          <p class="muted">Review, send and verify approved coding releases for your assigned printers.</p>
-        </div>
-        <button id="refreshOperatorReleases" class="ghost bordered" type="button">Refresh releases</button>
-      </div>
-      <p id="operatorReleaseNotice" class="notice hidden" aria-live="polite"></p>
-      <div id="operatorReleaseList" class="operator-release-list"><p class="muted">Loading approved releases...</p></div>
-    </section>
     <section id="viewerGrid" class="viewer-grid" aria-label="Printer status cards">
       <article class="viewer-card">
         <p class="muted">Loading available printers...</p>
       </article>
     </section>
 
-    <dialog id="setMessageDialog" class="message-dialog" aria-labelledby="setMessageDialogTitle">
-      <div class="message-dialog-shell">
-        <header class="message-dialog-header">
-          <div>
-            <p class="breadcrumb">Set printer message</p>
-            <h2 id="setMessageDialogTitle">Loading printer...</h2>
-            <p id="setMessageDialogSubtitle" class="muted"></p>
-          </div>
-          <button id="closeSetMessageDialog" class="ghost dialog-close" type="button" aria-label="Close set message dialog">Close</button>
-        </header>
-
-        <p id="setMessageDialogNotice" class="notice hidden" aria-live="polite"></p>
-
-        <form id="dashboardSetMessageForm" class="message-dialog-layout">
-          <div class="message-dialog-fields">
-            <label for="dashboardMessageName">Message
-              <select id="dashboardMessageName"></select>
-            </label>
-            <div id="dashboardMessageFields" class="message-fields"></div>
-          </div>
-
-          <section class="message-dialog-preview" aria-labelledby="dashboardPreviewTitle">
-            <div>
-              <h3 id="dashboardPreviewTitle">Expected print</h3>
-              <p class="muted">Review this exact output before sending.</p>
-            </div>
-            <pre id="dashboardExpectedPreview">Select a message and complete its required fields.</pre>
-            <div id="dashboardReviewSummary" class="review-content hidden"></div>
-          </section>
-
-          <div class="message-dialog-actions">
-            <button id="cancelSetMessage" class="secondary" type="button">Cancel</button>
-            <button id="reviewSetMessage" class="primary" type="submit">Review message</button>
-            <button id="confirmDashboardSetMessage" class="primary hidden" type="button">Confirm and send</button>
-          </div>
-        </form>
-      </div>
-    </dialog>
-
-    <dialog id="operatorReleaseDialog" class="message-dialog" aria-labelledby="operatorReleaseDialogTitle">
-      <div class="message-dialog-shell operator-release-dialog-shell">
-        <header class="message-dialog-header">
-          <div>
-            <p class="breadcrumb">Approved production release</p>
-            <h2 id="operatorReleaseDialogTitle">Review release</h2>
-            <p id="operatorReleaseDialogSubtitle" class="muted"></p>
-          </div>
-          <button id="closeOperatorReleaseDialog" class="ghost dialog-close" type="button">Close</button>
-        </header>
-        <p id="operatorReleaseDialogNotice" class="notice hidden" aria-live="polite"></p>
-        <div id="operatorReleaseFacts" class="operator-release-facts"></div>
-        <section class="operator-release-preview">
-          <h3>Approved expected print</h3>
-          <pre id="operatorReleasePreview"></pre>
-        </section>
-        <label id="operatorReleaseConfirmation" class="release-attestation">
-          <input id="operatorReleaseConfirmationCheck" type="checkbox">
-          <span>I have checked the product, batch, physical line, printer and approved expected print.</span>
-        </label>
-        <label id="operatorPrintFailureField" class="hidden">Print problem
-          <textarea id="operatorPrintFailureReason" rows="3" maxlength="500" placeholder="Describe what is wrong with the first printed code"></textarea>
-        </label>
-        <div class="actions operator-release-dialog-actions">
-          <button id="cancelOperatorRelease" class="secondary" type="button">Cancel</button>
-          <button id="sendOperatorRelease" class="primary" type="button">Send approved release</button>
-          <button id="reportOperatorPrintFailure" class="danger hidden" type="button">Report print problem</button>
-          <button id="verifyOperatorPrint" class="primary hidden" type="button">First print verified</button>
-        </div>
-      </div>
-    </dialog>
   </main>
   <script type="module" src="/js/viewer-dashboard.js"></script>
 </body>

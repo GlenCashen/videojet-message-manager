@@ -96,6 +96,11 @@ test('rejects duplicate IDs', () => {
   assert.throws(() => validateMessages([definitions[0], { ...definitions[1], id: '9-month' }]), /Duplicate message id/);
 });
 
+test('enforces lowercase kebab-case message IDs and known print tokens', () => {
+  assert.throws(() => validateMessages([{ ...definitions[0], id: 'bad--message' }]), /Message id/);
+  assert.throws(() => validateMessages([{ ...definitions[0], previewLines: ['{{missingField}}'] }]), /Unknown preview token/);
+});
+
 test('rejects duplicate printer assignment', () => {
   assert.throws(() => validateMessages([{
     ...definitions[0],
@@ -154,6 +159,15 @@ test('normalizes uppercase by default and preserves transform none', () => {
   });
 });
 
+test('allows an optional user field to normalize to an empty string', () => {
+  const message = {
+    ...getMessageById(definitions, '9-month'),
+    fields: [{ key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: false, maxLength: 30, transform: 'uppercase' }],
+    previewLines: ['{{batch}}']
+  };
+  assert.deepEqual(validateMessageFields(message, {}), { batch: '' });
+});
+
 test('renders 9-month preview', () => {
   const message = getMessageById(definitions, '9-month');
   const preview = renderPreview(message, { brew: 'BR1246', batch: 'B260617A' }, { productionDate: '2026-06-17T14:32:08+10:00' });
@@ -167,6 +181,17 @@ test('renders 12-month preview', () => {
   const preview = renderPreview(message, { brew: 'BR1246', batch: 'B260617A' }, { productionDate: '2026-06-17T14:32:08+10:00' });
   assert.equal(preview.bestBeforeDate, '17/06/2027');
   assert.equal(preview.rendered, 'BR1246 B260617A\nBBD: 17/06/2027 14:32:08');
+});
+
+test('renders configured date and time formats', () => {
+  const message = {
+    ...getMessageById(definitions, '12-month'),
+    dateRule: { type: 'offset-months', months: 12, format: 'YYYY-MM-DD' },
+    timeRule: { type: 'production-time', format: 'hh:mm A' }
+  };
+  const preview = renderPreview(message, { brew: 'BR1246', batch: 'B260617A' }, { productionDate: '2026-06-17T14:32:08+10:00' });
+  assert.equal(preview.bestBeforeDate, '2027-06-17');
+  assert.equal(preview.currentTime, '02:32 PM');
 });
 
 test('clamps month-end dates', () => {
@@ -192,6 +217,17 @@ test('sends multi-field WSI commands in order', async () => {
     { key: 'brew', printerFieldName: 'BREW', acknowledged: true },
     { key: 'batch', printerFieldName: 'BATCH', acknowledged: true }
   ]);
+});
+
+test('sends an empty update for an optional blank printer field', async () => {
+  const optionalMessage = {
+    ...getMessageById(definitions, '12-month'),
+    fields: [{ key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: false, maxLength: 30, transform: 'uppercase' }],
+    previewLines: ['{{batch}}']
+  };
+  const { args, commands } = updateArgs({ message: optionalMessage, fields: {} });
+  await executeMessageUpdate(args);
+  assert.equal(commands[0], 'UBATCH\n');
 });
 
 test('1710 updates skip unsupported current-message readback', async () => {

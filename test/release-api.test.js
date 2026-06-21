@@ -92,13 +92,14 @@ test('QA, planner and packaging leader complete release approval without contact
         displayName: 'Bundaberg Rum and Cola',
         nextRunNumber: 50,
         specification: {
-          runPrefix: 'T', runWidth: 4, bestBeforeMonths: 15,
-          messageId: 'tbundrc-code',
-          fieldMappings: [
-            { fieldKey: 'brew', source: 'run_code' },
-            { fieldKey: 'batch', source: 'brew_sheet_product' }
-          ],
-          printerIds: ['coder-1']
+          runPrefix: 'T', runWidth: 4,
+          printerConfigurations: [{
+            printerId: 'coder-1', messageId: 'tbundrc-code',
+            fieldMappings: [
+              { fieldKey: 'brew', source: 'run_code' },
+              { fieldKey: 'batch', source: 'brew_sheet_product' }
+            ]
+          }]
         }
       }
     });
@@ -142,20 +143,26 @@ test('QA, planner and packaging leader complete release approval without contact
       method: 'POST', role: 'packaging_leader', body: {}
     });
     assert.equal(approved.response.ok, true, JSON.stringify(approved.data));
-    assert.equal(approved.data.release.runCode, 'T0050');
-    assert.equal(approved.data.release.expectedOutput.rendered, 'T0050TBUNDRC-50\nBBD: 18/09/2027 04:32:08');
+    assert.equal(approved.data.release.runCode, null);
+    assert.equal(approved.data.release.expectedOutput, null);
     assert.deepEqual((await jsonFetch(`${baseUrl}/api/debug/wsi-counters`, { role: 'admin' })).data, {});
 
     const applied = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/apply`, {
       method: 'POST', role: 'operator', body: {}
     });
     assert.equal(applied.response.ok, true, JSON.stringify(applied.data));
+    assert.equal(applied.data.release.runCode, 'T0050');
+    assert.equal(applied.data.release.expectedOutput.rendered, 'T0050TBUNDRC-50\nBBD: 18/09/2027 04:32:08');
     assert.equal(applied.data.release.executionTargets[0].status, 'awaiting_print_check');
     const printChecked = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/print-check`, {
       method: 'POST', role: 'operator', body: { passed: true }
     });
     assert.equal(printChecked.response.ok, true, JSON.stringify(printChecked.data));
-    assert.equal(printChecked.data.release.status, 'completed');
+    assert.equal(printChecked.data.release.status, 'running');
+    const ended = await jsonFetch(`${baseUrl}/api/batch-releases/${draftResult.data.release.id}/targets/coder-1/end-run`, {
+      method: 'POST', role: 'operator', body: {}
+    });
+    assert.equal(ended.data.release.status, 'completed');
 
     const rejectedDraft = await jsonFetch(`${baseUrl}/api/batch-releases`, {
       method: 'POST', role: 'planner', body: {

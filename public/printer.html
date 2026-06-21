@@ -1,13 +1,11 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Videojet Coder Operator</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-
 <body>
   <main class="shell operator-shell">
     <header class="app-header">
@@ -18,134 +16,134 @@
       </div>
       <div class="header-badges">
         <div id="serverConnectionBadge" class="live-indicator connecting" aria-live="polite">
-          <span class="live-indicator-light" aria-hidden="true"></span>
-          <span>CONNECTING</span>
+          <span class="live-indicator-light" aria-hidden="true"></span><span>CONNECTING</span>
         </div>
-
         <a class="secondary button-link" href="/dashboard">Back</a>
       </div>
     </header>
     <div id="topNavigation" class="nav-shell"></div>
-
     <p id="operatorMessage" class="notice hidden" aria-live="polite"></p>
 
-    <div class="operator-layout">
-      <div class="operator-main-column">
-        <section id="operatorControlsPanel" class="panel operator-panel primary-workflow" aria-labelledby="sendTitle">
-          <div class="section-heading compact-heading">
-            <div>
-              <h2 id="sendTitle">Set printer message</h2>
-              <p class="muted">Queued per coder so only one WSI command sequence runs at a time.</p>
-            </div>
+    <section class="printer-command-grid" aria-label="Printer operation summary">
+      <article class="panel printer-status-hero" aria-labelledby="statusTitle">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="breadcrumb">Live printer state</p>
+            <h2 id="statusTitle">Printer status</h2>
+            <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
           </div>
-          <form id="operatorSetForm" class="grid">
-            <label for="operatorMessageName">Message
-              <select id="operatorMessageName"></select>
-            </label>
-            <div id="messageFields" class="wide message-fields"></div>
-            <section class="wide preview-panel print-preview" aria-labelledby="previewTitle">
-              <h3 id="previewTitle">Live expected print preview</h3>
-              <p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p>
-            </section>
-            <div class="actions wide">
-              <button id="operatorSetButton" class="primary" type="submit">Set message</button>
-            </div>
-          </form>
-          <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle">
-            <h3 id="reviewTitle">Apply to coder?</h3>
-            <div id="reviewContent" class="review-content"></div>
-            <div class="actions">
-              <button id="cancelReviewButton" class="secondary" type="button">Cancel</button>
-              <button id="confirmSetButton" class="primary" type="button">Confirm set message</button>
-            </div>
-          </section>
-        </section>
-
-        <section class="panel operator-panel expected-output-panel" aria-labelledby="storedExpectedTitle">
-          <div class="section-heading compact-heading">
-            <div>
-              <h2 id="storedExpectedTitle">Expected printed message</h2>
-              <p id="operatorExpectedSource" class="muted">Set a message to record expected output.</p>
-            </div>
+          <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
+        </div>
+        <div id="operatorStatus" class="operator-summary-card operator-status status-unknown">
+          <div class="printer-state-primary">
+            <div id="operatorTrafficLight"></div>
+            <div><span>Current state</span><strong id="operatorAlarmStatus">-</strong></div>
           </div>
-          <pre id="operatorExpectedOutput">No expected output recorded</pre>
-        </section>
-
-        <section class="panel operator-panel" aria-labelledby="faultTitle">
-          <div class="section-heading compact-heading">
-            <div>
-              <h2 id="faultTitle">Active faults</h2>
-              <p class="muted">Current fault bits reported by the printer.</p>
-            </div>
+          <div class="printer-status-facts">
+            <div><span>Communication</span><strong id="operatorConnection">Not checked</strong></div>
+            <div><span>Selected message</span><strong id="operatorSelectedMessage">-</strong></div>
+            <div><span>Active faults</span><strong id="operatorFaults">-</strong></div>
+            <div><span>Last update</span><strong id="operatorCheckedAt">No update yet</strong></div>
           </div>
-          <div id="activeFaultPanel" class="fault-panel">
-            <p class="muted">No active printer faults</p>
+          <div class="printer-status-meta">
+            <span>Source <strong id="operatorDataSource">Last known status</strong></span>
+            <span>Access <strong id="operatorAccessLevel">Loading</strong></span>
           </div>
-          <details class="fault-history-section">
-            <summary>Fault history</summary>
-            <div id="faultHistoryList" class="fault-history-list">
-              <p class="muted">No fault history recorded.</p>
+          <details class="diagnostics">
+            <summary>Connection diagnostics</summary>
+            <div class="operator-diagnostics">
+              <div class="detail"><span>Raw status</span><strong id="operatorPrinterStatus">-</strong></div>
+              <div class="detail"><span>Host</span><strong id="operatorHost">-</strong></div>
+              <div class="detail"><span>Mode</span><strong id="operatorMode">-</strong></div>
+              <div class="detail"><span>Model</span><strong id="operatorModel">-</strong></div>
             </div>
           </details>
-        </section>
-      </div>
+        </div>
+      </article>
 
-      <aside class="operator-side-column">
-        <section class="panel operator-panel" aria-labelledby="statusTitle">
-          <div class="section-heading compact-heading">
-            <div>
-              <h2 id="statusTitle">Printer summary</h2>
-              <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
-            </div>
-            <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
+      <article class="panel current-job-panel" aria-labelledby="currentReleaseTitle">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="breadcrumb">Production control</p>
+            <h2 id="currentReleaseTitle">Current job</h2>
+            <p class="muted">The release currently applied to this printer.</p>
           </div>
-          <div id="operatorStatus" class="operator-summary-card operator-status status-unknown">
-            <div class="summary-row">
-              <span>Communication</span>
-              <strong id="operatorConnection">Not checked</strong>
-            </div>
-            <div class="summary-row traffic-summary-row">
-              <span>Printer state</span>
-              <div>
-                <div id="operatorTrafficLight"></div>
-                <strong id="operatorAlarmStatus">-</strong>
-              </div>
-            </div>
-            <div class="summary-row">
-              <span>Selected message</span>
-              <strong id="operatorSelectedMessage">-</strong>
-            </div>
-            <div class="summary-row">
-              <span>Faults</span>
-              <strong id="operatorFaults">-</strong>
-            </div>
-            <div class="summary-row">
-              <span>Last update</span>
-              <strong id="operatorCheckedAt">No update yet</strong>
-            </div>
-            <div class="summary-row subtle-row">
-              <span>Data source</span>
-              <strong id="operatorDataSource">Last known status</strong>
-            </div>
-            <div class="summary-row subtle-row">
-              <span>Access</span>
-              <strong id="operatorAccessLevel">Loading</strong>
-            </div>
-            <details class="diagnostics">
-              <summary>Diagnostics</summary>
-              <div class="operator-diagnostics">
-                <div class="detail"><span>Raw status</span><strong id="operatorPrinterStatus">-</strong></div>
-                <div class="detail"><span>Host</span><strong id="operatorHost">-</strong></div>
-                <div class="detail"><span>Mode</span><strong id="operatorMode">-</strong></div>
-                <div class="detail"><span>Model</span><strong id="operatorModel">-</strong></div>
-              </div>
-            </details>
-          </div>
+        </div>
+        <p id="operatorReleaseNotice" class="notice hidden" aria-live="polite"></p>
+        <div id="currentOperatorRelease" class="release-spotlight"><p class="muted">Loading current job...</p></div>
+        <section class="current-expected-output" aria-labelledby="storedExpectedTitle">
+          <div><h3 id="storedExpectedTitle">Expected printed message</h3><p id="operatorExpectedSource" class="muted">No active expected output.</p></div>
+          <pre id="operatorExpectedOutput">No expected output recorded</pre>
         </section>
-      </aside>
-    </div>
+      </article>
+    </section>
+
+    <section class="panel next-release-panel" aria-labelledby="nextReleaseTitle">
+      <div class="operator-release-heading">
+        <div>
+          <p class="breadcrumb">Up next</p>
+          <h2 id="nextReleaseTitle">Next scheduled release</h2>
+          <p class="muted">The earliest approved release waiting for this printer.</p>
+        </div>
+        <div class="operator-release-heading-actions">
+          <button id="viewUpcomingReleases" class="secondary" type="button">View release schedule</button>
+          <button id="viewCompletedReleases" class="secondary" type="button">Release history</button>
+          <button id="openManualMessage" class="ghost bordered" type="button">Manual message</button>
+          <button id="refreshOperatorReleases" class="ghost bordered" type="button">Refresh</button>
+        </div>
+      </div>
+      <div id="nextOperatorRelease" class="release-spotlight release-spotlight-next"><p class="muted">Loading next release...</p></div>
+    </section>
+
+    <section class="panel operator-panel" aria-labelledby="faultTitle">
+      <div class="section-heading compact-heading"><div><h2 id="faultTitle">Active faults</h2><p class="muted">Current fault bits reported by the printer.</p></div></div>
+      <div id="activeFaultPanel" class="fault-panel"><p class="muted">No active printer faults</p></div>
+      <details class="fault-history-section"><summary>Fault history</summary><div id="faultHistoryList" class="fault-history-list"><p class="muted">No fault history recorded.</p></div></details>
+    </section>
+
+    <dialog id="upcomingReleaseDialog" class="message-dialog" aria-labelledby="upcomingReleaseDialogTitle">
+      <div class="message-dialog-shell release-browser-shell">
+        <header class="message-dialog-header"><div><p class="breadcrumb">Approved schedule</p><h2 id="upcomingReleaseDialogTitle">Upcoming releases</h2><p class="muted">Search and open an approved release for this printer.</p></div><button id="closeUpcomingReleases" class="ghost dialog-close" type="button">Close</button></header>
+        <label class="release-search"><span>Search schedule</span><input id="upcomingReleaseSearch" type="search" autocomplete="off" placeholder="Product, brew, batch or run"></label>
+        <div id="upcomingReleaseList" class="operator-release-list release-browser-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="completedReleaseDialog" class="message-dialog" aria-labelledby="completedReleaseDialogTitle">
+      <div class="message-dialog-shell release-browser-shell">
+        <header class="message-dialog-header"><div><p class="breadcrumb">Release history</p><h2 id="completedReleaseDialogTitle">Completed releases</h2><p class="muted">Search previous jobs and reapply one through the controlled workflow.</p></div><button id="closeCompletedReleases" class="ghost dialog-close" type="button">Close</button></header>
+        <label class="release-search"><span>Search history</span><input id="completedReleaseSearch" type="search" autocomplete="off" placeholder="Product, brew, batch or run"></label>
+        <div id="completedReleaseList" class="operator-release-list release-browser-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="manualMessageDialog" class="message-dialog" aria-labelledby="manualMessageDialogTitle">
+      <div id="operatorControlsPanel" class="message-dialog-shell manual-message-shell">
+        <header class="message-dialog-header"><div><p class="breadcrumb">Audited exception</p><h2 id="manualMessageDialogTitle">Set message manually</h2><p class="muted">Use only when an approved production release does not apply.</p></div><button id="closeManualMessage" class="ghost dialog-close" type="button">Close</button></header>
+        <p class="notice warning manual-warning">This bypasses the release workflow. Your identity, reason, message and field values will be recorded in the audit log.</p>
+        <form id="operatorSetForm" class="grid">
+          <label for="operatorMessageName">Message<select id="operatorMessageName"></select></label>
+          <label class="wide" for="manualMessageReason">Reason for manual change *<textarea id="manualMessageReason" rows="3" minlength="5" maxlength="500" required placeholder="Explain why the approved release workflow cannot be used"></textarea></label>
+          <div id="messageFields" class="wide message-fields"></div>
+          <section class="wide preview-panel print-preview" aria-labelledby="previewTitle"><h3 id="previewTitle">Expected print preview</h3><p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p></section>
+          <div class="actions wide"><button id="operatorSetButton" class="primary" type="submit">Review manual change</button></div>
+        </form>
+        <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle"><h3 id="reviewTitle">Apply to coder?</h3><div id="reviewContent" class="review-content"></div><div class="actions"><button id="cancelReviewButton" class="secondary" type="button">Back</button><button id="confirmSetButton" class="primary" type="button">Confirm audited change</button></div></section>
+      </div>
+    </dialog>
+
+    <dialog id="operatorReleaseDialog" class="message-dialog" aria-labelledby="operatorReleaseDialogTitle">
+      <div class="message-dialog-shell operator-release-dialog-shell">
+        <header class="message-dialog-header"><div><p class="breadcrumb">Approved production release</p><h2 id="operatorReleaseDialogTitle">Review release</h2><p id="operatorReleaseDialogSubtitle" class="muted"></p></div><button id="closeOperatorReleaseDialog" class="ghost dialog-close" type="button">Close</button></header>
+        <p id="operatorReleaseDialogNotice" class="notice hidden" aria-live="polite"></p>
+        <div id="operatorReleaseFacts" class="operator-release-facts"></div>
+        <section class="operator-release-preview"><h3>Approved expected print</h3><pre id="operatorReleasePreview"></pre></section>
+        <label id="operatorReleaseConfirmation" class="release-attestation"><input id="operatorReleaseConfirmationCheck" type="checkbox"><span>I have checked the product, batch, physical line, printer and approved expected print.</span></label>
+        <label id="operatorPrintFailureField" class="hidden"><span id="operatorReleaseReasonLabel">Print problem</span><textarea id="operatorPrintFailureReason" rows="3" maxlength="500" placeholder="Describe what is wrong with the first printed code"></textarea></label>
+        <div class="actions operator-release-dialog-actions"><button id="cancelOperatorRelease" class="secondary" type="button">Cancel</button><button id="sendOperatorRelease" class="primary" type="button">Send approved release</button><button id="returnOperatorRelease" class="secondary hidden" type="button">Return for correction</button><button id="reportOperatorPrintFailure" class="danger hidden" type="button">Report print problem</button><button id="verifyOperatorPrint" class="primary hidden" type="button">First print verified</button><button id="endOperatorRun" class="danger hidden" type="button">End run</button></div>
+      </div>
+    </dialog>
   </main>
   <script type="module" src="/printer-page.js"></script>
 </body>
-
 </html>

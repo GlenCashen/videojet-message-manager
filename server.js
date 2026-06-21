@@ -76,12 +76,16 @@ import {
   beginBatchReleaseTarget,
   claimBatchReleaseReview,
   createBatchRelease,
+  endBatchReleaseTargetRun,
+  endOtherRunningTargets,
   finishBatchReleaseTarget,
   getBatchRelease,
   listBatchReleases,
   recoverInterruptedBatchReleaseTargets,
   rejectBatchRelease,
   releaseBatchReleaseReview,
+  reserveBatchReleaseRun,
+  returnBatchReleaseForReview,
   submitBatchRelease,
   updateBatchRelease,
   verifyBatchReleaseTarget
@@ -112,12 +116,13 @@ const ENABLE_DEV_IDENTITY = process.env.ENABLE_DEV_IDENTITY === 'true';
 const DEV_USER_ROLE = process.env.DEV_USER_ROLE || 'viewer';
 const DEV_USER_PRINTER_IDS = (process.env.DEV_USER_PRINTER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
 const SESSION_SECRET = process.env.SESSION_SECRET || '';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const FAULT_HISTORY_LIMIT = Number(process.env.FAULT_HISTORY_LIMIT || 1000);
 const FAULT_HISTORY_PATH = process.env.FAULT_HISTORY_PATH || undefined;
 const FAULT_HISTORY_API_MAX_LIMIT = 500;
 const auth = createSessionManager({
   secret: SESSION_SECRET || undefined,
-  secure: process.env.NODE_ENV === 'production'
+  secure: IS_PRODUCTION
 });
 await importJsonToSqlite();
 const recoveredReleaseExecutions = recoverInterruptedBatchReleaseTargets();
@@ -126,8 +131,11 @@ if (recoveredReleaseExecutions) {
 }
 const startupPrinters = await readPrinters();
 const bootstrap = await ensureBootstrapAdmin({ printers: startupPrinters, enableDevIdentity: ENABLE_DEV_IDENTITY });
-if (!ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
+if (IS_PRODUCTION && !ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
   throw new Error('SESSION_SECRET is required when development identity is disabled.');
+}
+if (!IS_PRODUCTION && !ENABLE_DEV_IDENTITY && bootstrap.users.length && !SESSION_SECRET) {
+  console.warn('SESSION_SECRET is not set; using the database-managed local session secret.');
 }
 if (bootstrap.created) {
   console.log(`Bootstrap admin created for ${bootstrap.users[0].username}. Password must be changed on first login.`);
@@ -995,30 +1003,53 @@ async function validateProductMasterInput(input) {
   const printers = await readPrinters();
   const printerMap = new Map(printers.map((printer) => [printer.id, printer]));
   const messages = await loadMessages(undefined, { printers });
-  let selectedMessage = null;
-  for (const printerId of specification.printerIds || []) {
+  const requestedConfigurations = Array.isArray(specification.printerConfigurations) && specification.printerConfigurations.length
+    ? specification.printerConfigurations
+    : (specification.printerIds || []).map((printerId) => ({
+      printerId, messageId: specification.messageId, fieldMappings: specification.fieldMappings
+    }));
+  if (!requestedConfigurations.length) throw new Error('Select at least one permitted printer.');
+  if (new Set(requestedConfigurations.map((configuration) => configuration.printerId)).size !== requestedConfigurations.length) {
+    throw new Error('Each printer can appear only once in a product master.');
+  }
+  const printerConfigurations = [];
+  for (const requested of requestedConfigurations) {
+    const printerId = requested.printerId;
     const printer = printerMap.get(printerId);
     if (!printer) throw new Error(`Printer ${printerId} was not found.`);
-    const message = getMessageForPrinter(messages, specification.messageId, printerId);
-    selectedMessage = selectedMessage || message;
+    const message = getMessageForPrinter(messages, requested.messageId, printerId);
+    if (!message.previewLines.length || message.previewLines.length > 4) throw new Error(`${message.displayName} must define between one and four preview lines.`);
+    const allowedSources = new Set(['run_code', 'brew_sheet_product', 'brew_number', 'batch_number']);
+    const mappings = Array.isArray(requested.fieldMappings) ? requested.fieldMappings : [];
+    const mappingByKey = new Map(mappings.map((mapping) => [mapping.fieldKey, mapping.source]));
+    for (const field of message.fields) {
+      const source = mappingByKey.get(field.key);
+      if (!allowedSources.has(source)) throw new Error(`Choose a release value source for ${printer.name} field ${field.label}.`);
+    }
+    printerConfigurations.push({
+      printerId,
+      messageId: message.id,
+      fieldMappings: message.fields.map((field) => ({ fieldKey: field.key, source: mappingByKey.get(field.key) })),
+      dateRule: message.dateRule,
+      timeRule: message.timeRule,
+      previewLines: message.previewLines
+    });
   }
-  if (!selectedMessage) throw new Error('Select at least one permitted printer.');
-  if (selectedMessage.previewLines.length !== 2) throw new Error('Production release messages must define exactly two preview lines.');
-  const allowedSources = new Set(['run_code', 'brew_sheet_product', 'brew_number', 'batch_number']);
-  const mappings = Array.isArray(specification.fieldMappings) ? specification.fieldMappings : [];
-  const mappingByKey = new Map(mappings.map((mapping) => [mapping.fieldKey, mapping.source]));
-  for (const field of selectedMessage.fields) {
-    const source = mappingByKey.get(field.key);
-    if (!allowedSources.has(source)) throw new Error(`Choose a release value source for message field ${field.label}.`);
-  }
+  const primary = printerConfigurations[0];
   return {
     ...input,
     specification: {
       ...specification,
-      fieldMappings: selectedMessage.fields.map((field) => ({ fieldKey: field.key, source: mappingByKey.get(field.key) })),
-      bestBeforeMonths: selectedMessage.dateRule.months,
-      firstLineTemplate: selectedMessage.previewLines[0],
-      secondLineTemplate: selectedMessage.previewLines[1]
+      printerConfigurations,
+      printerIds: printerConfigurations.map((configuration) => configuration.printerId),
+      messageId: primary.messageId,
+      fieldMappings: primary.fieldMappings,
+      bestBeforeMonths: primary.dateRule.months,
+      dateRule: primary.dateRule,
+      timeRule: primary.timeRule,
+      previewLines: primary.previewLines,
+      firstLineTemplate: primary.previewLines[0],
+      secondLineTemplate: primary.previewLines[1] || ''
     }
   };
 }
@@ -1027,7 +1058,7 @@ function visibleBatchRelease(user, release) {
   const capabilities = getCapabilities(user);
   if (!capabilities.viewBatchReleases) return null;
   if (!user.roles?.includes('operator') || capabilities.viewAllPrinters) return release;
-  if (!['released', 'applying', 'awaiting_print_check', 'completed', 'failed'].includes(release.status)) return null;
+  if (!['released', 'applying', 'awaiting_print_check', 'running', 'completed', 'failed'].includes(release.status)) return null;
   const assigned = new Set(user.printerIds || []);
   const printerIds = release.printerIds.filter((id) => assigned.has(id));
   const executionTargets = (release.executionTargets || []).filter((target) => assigned.has(target.printerId));
@@ -1240,16 +1271,39 @@ async function releaseExecutionContext(release, printerId, user) {
     error.statusCode = 409;
     throw error;
   }
-  if (!release.expectedOutput?.messageId) throw new Error('The approved release has no executable message payload.');
+  const specification = release.productMasterSpecification;
+  const configuration = specification?.printerConfigurations?.find((item) => item.printerId === printerId) || (specification?.messageId ? {
+    printerId, messageId: specification.messageId, fieldMappings: specification.fieldMappings,
+    dateRule: specification.dateRule || { months: specification.bestBeforeMonths, format: 'DD/MM/YYYY' },
+    timeRule: specification.timeRule, previewLines: specification.previewLines || [specification.firstLineTemplate, specification.secondLineTemplate].filter(Boolean)
+  } : null);
+  if (!configuration?.messageId) throw new Error('The approved release has no executable message specification for this printer.');
   const messages = await loadMessages(undefined, { printers });
-  const message = getMessageForPrinter(messages, release.expectedOutput.messageId, printerId);
-  const preview = renderPreview(message, release.expectedOutput.fields || {}, { productionDate: release.plannedProductionAt });
-  if (preview.rendered !== release.expectedOutput.rendered) {
+  const message = getMessageForPrinter(messages, configuration.messageId, printerId);
+  const approvedLines = configuration.previewLines;
+  const mappedKeys = new Set((configuration.fieldMappings || []).map((mapping) => mapping.fieldKey));
+  const definitionMatches = JSON.stringify(message.previewLines) === JSON.stringify(approvedLines)
+    && Number(message.dateRule?.months) === Number(configuration.dateRule?.months)
+    && (message.dateRule?.format || 'DD/MM/YYYY') === (configuration.dateRule?.format || 'DD/MM/YYYY')
+    && (message.timeRule?.format || 'HH:mm:ss') === (configuration.timeRule?.format || 'HH:mm:ss')
+    && [...mappedKeys].every((fieldKey) => message.fields.some((field) => field.key === fieldKey));
+  if (!definitionMatches) {
     const error = new Error('The stored message definition no longer matches the approved release. Return it for a new review.');
+    error.code = 'RELEASE_DEFINITION_CHANGED';
     error.statusCode = 409;
     throw error;
   }
-  return { printer, target, message };
+  const expectedOutput = release.expectedOutput?.byPrinter?.[printerId] || release.expectedOutput || null;
+  if (expectedOutput) {
+    const preview = renderPreview(message, expectedOutput.fields || {}, { productionDate: release.plannedProductionAt });
+    if (preview.rendered !== expectedOutput.rendered) {
+      const error = new Error('The approved release output no longer matches the stored message. Return it for a new review.');
+      error.code = 'RELEASE_DEFINITION_CHANGED';
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+  return { printer, target, message, expectedOutput };
 }
 
 app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) => {
@@ -1258,7 +1312,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
   try {
     user = requireUser(req, res);
     if (!user) return;
-    const release = getBatchRelease(req.params.id);
+    let release = getBatchRelease(req.params.id);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     const { printer } = await releaseExecutionContext(release, req.params.printerId, user);
     if (stateChangingOperations.has(printer.id)) {
@@ -1266,23 +1320,36 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
       error.statusCode = 409;
       throw error;
     }
+    release = reserveBatchReleaseRun(release.id);
+    const execution = await releaseExecutionContext(release, req.params.printerId, user);
 
-    beginBatchReleaseTarget(release.id, printer.id, user);
+    beginBatchReleaseTarget(release.id, printer.id, user, { reapply: req.body?.reapply === true, reason: req.body?.reason });
     began = true;
     stateChangingOperations.add(printer.id);
     addLog({
       action: 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
-      printerId: printer.id, details: { printerId: printer.id, brewSheetProduct: release.brewSheetProduct, ok: true }
+      printerId: printer.id, details: {
+        printerId: printer.id, brewSheetProduct: release.brewSheetProduct, runCode: release.runCode,
+        reapply: req.body?.reapply === true, reason: req.body?.reason || null, ok: true
+      }
     });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: 'applying' });
 
     const result = await setPrinterMessage(printer, {
-      messageId: release.expectedOutput.messageId,
-      fields: release.expectedOutput.fields || {},
+      messageId: execution.expectedOutput.messageId,
+      fields: execution.expectedOutput.fields || {},
       productionDate: release.plannedProductionAt
     });
     insertMessageUpdateEvent(result, user);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
+    const endedReleaseIds = result.ok && result.messageMatches !== false ? endOtherRunningTargets(printer.id, release.id) : [];
+    for (const endedReleaseId of endedReleaseIds) {
+      addLog({
+        action: 'batch-release-run-ended-by-switch', ...auditActor(user), targetType: 'batch-release',
+        targetId: endedReleaseId, printerId: printer.id,
+        details: { printerId: printer.id, replacedByReleaseId: release.id, ok: true }
+      });
+    }
     const updated = finishBatchReleaseTarget(release.id, printer.id, result);
     addLog({
       action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-application-failed',
@@ -1295,7 +1362,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
   } catch (error) {
     const failure = error instanceof MessageUpdateError && error.result
       ? { ...error.result, ok: false, error: error.message, checkedAt: new Date().toISOString() }
-      : { ok: false, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() };
+      : { ok: false, code: error.code || null, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() };
     if (began) {
       const updated = finishBatchReleaseTarget(req.params.id, req.params.printerId, failure);
       insertMessageUpdateEvent(failure, user || {});
@@ -1330,6 +1397,44 @@ app.post('/api/batch-releases/:id/targets/:printerId/print-check', (req, res) =>
     });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
     res.json({ ok: true, release: visibleBatchRelease(user, release) });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/targets/:printerId/end-run', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canOperatePrinter(user, req.params.printerId)) return forbidden(res, 'You do not have permission to operate this printer.');
+    const release = endBatchReleaseTargetRun(req.params.id, req.params.printerId, user);
+    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    addLog({
+      action: 'batch-release-run-ended', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
+      printerId: req.params.printerId, details: { printerId: req.params.printerId, runCode: release.runCode, status: release.status, ok: true }
+    });
+    broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
+    res.json({ ok: true, release: visibleBatchRelease(user, release) });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/batch-releases/:id/return-for-review', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const current = getBatchRelease(req.params.id);
+    if (!current) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    const assignedOperator = current.printerIds.some((printerId) => canOperatePrinter(user, printerId));
+    if (!assignedOperator && !getCapabilities(user).reviewBatchReleases) return forbidden(res, 'You do not have permission to return this release for review.');
+    const release = returnBatchReleaseForReview(req.params.id, req.body?.reason, user);
+    addLog({
+      action: 'batch-release-returned-for-review', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
+      details: { reason: release.rejectionReason, runCode: release.runCode, status: release.status, ok: true }
+    });
+    broadcast('batch-release-execution', { releaseId: release.id, status: release.status });
+    res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });
   }
@@ -1892,6 +1997,13 @@ app.post('/api/printers/:id/set', async (req, res) => {
     if (user.roles?.includes('operator') && !privilegedManualSet) {
       return forbidden(res, 'Operators must use an approved production release to change a printer message.');
     }
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 5) {
+      return res.status(400).json({ ok: false, error: 'A clear reason is required for a manual message change.' });
+    }
+    if (reason.length > 500) {
+      return res.status(400).json({ ok: false, error: 'The manual message reason must be 500 characters or fewer.' });
+    }
     const printers = await readPrinters();
     syncStatusPrinters(printers);
     const printer = printers.find((item) => item.id === req.params.id);
@@ -1923,18 +2035,18 @@ app.post('/api/printers/:id/set', async (req, res) => {
     }
 
     stateChangingOperations.add(printer.id);
-    addLog({ action: 'message-update-start', printerId: printer.id, ok: true, requestedMessage: req.body?.messageId || req.body?.messageName });
+    addLog({ action: 'message-update-start', ...auditActor(user), targetType: 'printer', targetId: printer.id, printerId: printer.id, ok: true, requestedMessage: req.body?.messageId || req.body?.messageName, details: { reason, mode: 'manual-exception' } });
     const result = await setPrinterMessage(printer, req.body || {});
     insertMessageUpdateEvent(result, user);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
-    addLog({ action: result.messageMatches === false ? 'message-update-mismatch' : 'message-update-success', printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, ...result });
+    addLog({ action: result.messageMatches === false ? 'message-update-mismatch' : 'message-update-success', ...auditActor(user), targetType: 'printer', targetId: printer.id, printerId: printer.id, operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedMessage, selectedMessage: result.selectedMessage, rawStatus: result.rawStatus, decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults, details: { reason, mode: 'manual-exception' }, ...result });
     broadcast('printer-status', result);
     res.status(result.ok ? 200 : 409).json(result);
   } catch (error) {
     if (error instanceof MessageUpdateError && error.result) {
       const result = { ...error.result, checkedAt: new Date().toISOString() };
       insertMessageUpdateEvent(result, currentUser(req) || {});
-      addLog({ action: 'message-update-failure', printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
+      addLog({ action: 'message-update-failure', ...auditActor(currentUser(req) || {}), targetType: 'printer', targetId: req.params.id, printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection, details: { reason: String(req.body?.reason || '').trim(), mode: 'manual-exception' } });
       return res.status(502).json(result);
     }
     if (error.statusCode === 400) {
