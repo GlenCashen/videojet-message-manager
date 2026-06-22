@@ -695,7 +695,7 @@ async function refreshPrinterStatus(printer, operation = 'check') {
   });
 }
 
-async function setPrinterMessage(printer, body) {
+async function resolvePrinterMessageRequest(printer, body) {
   let message;
   let fields;
   try {
@@ -707,6 +707,23 @@ async function setPrinterMessage(printer, body) {
     error.statusCode = error.statusCode || 400;
     throw error;
   }
+  return { message, fields };
+}
+
+function printerAgentMessage(message) {
+  return {
+    id: message.id,
+    displayName: message.displayName,
+    printerMessageName: message.printerMessageName,
+    fields: message.fields,
+    dateRule: message.dateRule,
+    timeRule: message.timeRule,
+    previewLines: message.previewLines
+  };
+}
+
+async function setPrinterMessage(printer, body) {
+  const { message, fields } = await resolvePrinterMessageRequest(printer, body);
   const target = printerTarget(printer);
   const capabilities = runtimePrinterCapabilities(printer);
 
@@ -997,13 +1014,34 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
       return res.status(409).json({ ok: false, error: 'Printer-agent payload hash does not match the queued job.' });
     }
     if (['completed', 'failed'].includes(current.status) && current.claimedByAgentId === agent.id) {
-      const release = getBatchRelease(current.releaseId);
-      return res.json({ ok: true, duplicate: true, releaseId: current.releaseId, printerId: current.printerId, status: release?.status });
+      const release = current.releaseId ? getBatchRelease(current.releaseId) : null;
+      return res.json({ ok: true, duplicate: true, releaseId: current.releaseId, printerId: current.printerId, status: release?.status || current.status });
     }
-    const result = req.body?.result || { ok: false, error: 'Printer agent returned no result.' };
+    const reportedResult = req.body?.result || { ok: false, error: 'Printer agent returned no result.' };
+    const result = {
+      ...reportedResult,
+      printerId: reportedResult.printerId || current.printerId,
+      operationId: reportedResult.operationId || current.id,
+      requestedMessage: reportedResult.requestedMessage || current.payload?.message?.printerMessageName
+    };
     const job = completePrinterAgentJob(req.params.id, agent.id, result);
-    insertMessageUpdateEvent(result, { username: `agent:${agent.id}`, developmentIdentity: true });
+    const actor = job.jobType === 'manual'
+      ? { id: job.context.actorUserId || null, username: job.context.actorUsername || `agent:${agent.id}`, developmentIdentity: !job.context.actorUserId }
+      : { username: `agent:${agent.id}`, developmentIdentity: true };
+    insertMessageUpdateEvent(result, actor);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(job.printerId, result.expectedOutput);
+    if (job.jobType === 'manual') {
+      addLog({
+        action: result.ok && result.messageMatches !== false ? 'message-update-success' : 'message-update-failure',
+        ...auditActor(actor), targetType: 'printer', targetId: job.printerId, printerId: job.printerId,
+        operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedOutput?.printerMessageName,
+        selectedMessage: result.selectedMessage, rawStatus: result.rawStatus,
+        decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults,
+        details: { reason: job.context.reason, mode: 'manual-exception', agentId: agent.id, jobId: job.id }
+      });
+      broadcast('printer-status', result);
+      return res.json({ ok: true, jobId: job.id, printerId: job.printerId, status: job.status });
+    }
     if (result.ok && result.messageMatches !== false) endOtherRunningTargets(job.printerId, job.releaseId);
     const release = finishBatchReleaseTarget(job.releaseId, job.printerId, result);
     addLog({
@@ -1506,15 +1544,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
           releaseId: release.id,
           printerId: printer.id,
           plannedProductionAt: release.plannedProductionAt,
-          message: {
-            id: execution.message.id,
-            displayName: execution.message.displayName,
-            printerMessageName: execution.message.printerMessageName,
-            fields: execution.message.fields,
-            dateRule: execution.message.dateRule,
-            timeRule: execution.message.timeRule,
-            previewLines: execution.message.previewLines
-          },
+          message: printerAgentMessage(execution.message),
           fields: execution.expectedOutput.fields || {},
           expectedRendered: execution.expectedOutput.rendered
         }
@@ -2025,6 +2055,34 @@ app.post('/api/printers/:id/set', async (req, res) => {
         currentOperation: active?.operation || latest.currentOperation,
         operationId: active?.operationId || latest.currentOperationId,
         status: latest
+      });
+    }
+
+    if (PRINTER_EXECUTION_MODE === 'agent') {
+      const { message, fields } = await resolvePrinterMessageRequest(printer, req.body || {});
+      const productionDate = req.body?.productionDate || new Date().toISOString();
+      const expected = renderPreview(message, fields, { productionDate });
+      const job = enqueuePrinterAgentJob({
+        jobType: 'manual',
+        printerId: printer.id,
+        context: { reason, actorUserId: user.developmentIdentity ? null : user.id, actorUsername: user.username },
+        payload: {
+          protocolVersion: 1,
+          printerId: printer.id,
+          plannedProductionAt: productionDate,
+          message: printerAgentMessage(message),
+          fields,
+          expectedRendered: expected.rendered
+        }
+      });
+      addLog({
+        action: 'message-update-agent-job-queued', ...auditActor(user), targetType: 'printer', targetId: printer.id,
+        printerId: printer.id, requestedMessage: message.printerMessageName,
+        details: { reason, mode: 'manual-exception', jobId: job.id, payloadHash: job.payloadHash, ok: true }
+      });
+      return res.status(202).json({
+        ok: true, queued: true, job: { id: job.id, payloadHash: job.payloadHash },
+        printerId: printer.id, requestedMessage: message.printerMessageName
       });
     }
 

@@ -74,6 +74,7 @@ let faultState = { activeFaults: [], history: [] };
 let lastServerEventAt = Date.now();
 let serverConnected = false;
 let manualBusy = false;
+let pendingManualJobId = null;
 let previewTimer = null;
 let previewRequestId = 0;
 
@@ -615,9 +616,12 @@ function showUpdateResult(result) {
   }
 
   if (result.selectedMessage) {
+    const requestedMessage = result.requestedMessage || result.expectedMessage || result.expectedOutput?.printerMessageName;
     setNotice(
       elements.message,
-      `MESSAGE MISMATCH\n\nRequested: ${result.requestedMessage}\nPrinter reports: ${result.selectedMessage}\n\nDo not start production.`,
+      requestedMessage
+        ? `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${result.selectedMessage}\n\nDo not start production.`
+        : `Printer state changed unexpectedly\n\nPrinter reports: ${result.selectedMessage}\n\nRefresh and review the requested message before production.`,
       'error'
     );
     return;
@@ -645,6 +649,8 @@ async function confirmPrinterUpdate() {
     return;
   }
 
+  hideReview();
+  elements.manualDialog.close();
   setBusy(true);
   setNotice(elements.message, 'Queued message request...');
   try {
@@ -654,9 +660,12 @@ async function confirmPrinterUpdate() {
       reason,
       expectedRevision: latestStatus?.revision
     });
-    hideReview();
-    elements.manualDialog.close();
     elements.manualReason.value = '';
+    if (result.queued) {
+      pendingManualJobId = result.job?.id || null;
+      setNotice(elements.message, 'Manual change queued. Waiting for the printer agent to verify it.');
+      return;
+    }
     showUpdateResult(result);
     if (result.verificationAvailable !== false && printer?.capabilities?.currentMessageReadback !== false) {
       try {
@@ -666,10 +675,11 @@ async function confirmPrinterUpdate() {
           selectedMessage: readback.currentMessage,
           checkedAt: readback.checkedAt
         });
-        if (readback.currentMessage !== result.requestedMessage) {
+        const requestedMessage = result.requestedMessage || definition.printerMessageName;
+        if (readback.currentMessage !== requestedMessage) {
           setNotice(
             elements.message,
-            `MESSAGE MISMATCH\n\nRequested: ${result.requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
+            `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
             'error'
           );
         } else {
@@ -681,7 +691,7 @@ async function confirmPrinterUpdate() {
     }
   } catch (error) {
     hideReview();
-    if (error.data?.fieldResults || error.data?.selectedMessage) showUpdateResult(error.data);
+    if (error.data?.fieldResults || (error.data?.selectedMessage && error.data?.requestedMessage)) showUpdateResult(error.data);
     else {
       setNotice(elements.message, normalizeError(error), 'error');
     }
@@ -741,6 +751,10 @@ subscribeToPrinterEvents({
   onPrinterStatus: (value) => {
     markServerConnected();
     applyPrinterStatus(value);
+    if (pendingManualJobId && value.operationId === pendingManualJobId) {
+      pendingManualJobId = null;
+      showUpdateResult(value);
+    }
   },
 
   onOperationFailed: (value) => {

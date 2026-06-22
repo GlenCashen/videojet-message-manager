@@ -50,15 +50,7 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-  assert.equal(status.schemaVersion, 17);
-=======
   assert.equal(status.schemaVersion, 19);
->>>>>>> Stashed changes
-=======
-  assert.equal(status.schemaVersion, 18);
->>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 });
 
 test('foreign keys reject orphaned assignments', () => {
@@ -215,11 +207,6 @@ test('message update events use a unique event id for repeated printer updates',
   assert.equal(new Set(events.map((event) => event.id)).size, 2);
 });
 
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   const db = openDatabase(':memory:');
   runMigrations(db);
@@ -266,8 +253,6 @@ test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   assert.equal(completed.status, 'completed');
   assert.equal(completePrinterAgentJob(queued.id, 'line-agent', { ok: true }, db).status, 'completed');
   assert.equal(getPrinterAgentJob(queued.id, db).result.messageMatches, true);
-<<<<<<< HEAD
-
   const manual = enqueuePrinterAgentJob({
     printerId: 'coder-1',
     jobType: 'manual',
@@ -279,13 +264,6 @@ test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   assert.equal(manual.context.reason, 'Test audited change');
   db.close();
 });
-
->>>>>>> Stashed changes
-=======
-  db.close();
-});
-
->>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 test('SQLite-backed sessions survive a manager restart', () => {
   const db = getDb();
   seedPrinters(db);

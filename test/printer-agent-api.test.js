@@ -89,6 +89,63 @@ test('printer-agent API requires credentials and accepts its configured identity
     assert.equal(statusBody.find((status) => status.printerId === 'coder-1').selectedMessage, 'TEST MESSAGE');
     assert.notEqual(statusBody.find((status) => status.printerId === 'coder-2')?.selectedMessage, 'NOT ALLOWED');
 
+    const cookie = 'devRole=admin; devPrinterIds=';
+    const messageResponse = await fetch(`${baseUrl}/api/printers/coder-1/messages`, { headers: { Cookie: cookie } });
+    assert.equal(messageResponse.status, 200);
+    const messages = await messageResponse.json();
+    const message = messages[0];
+    assert.ok(message?.id);
+    const fields = Object.fromEntries((message.fields || []).map((field) => [
+      field.key,
+      field.key === 'brew' ? '123' : field.key === 'run' ? 'T0001' : 'BTCH-55'
+    ]));
+    const currentStatus = statusBody.find((status) => status.printerId === 'coder-1');
+    const manual = await fetch(`${baseUrl}/api/printers/coder-1/set`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ messageId: message.id, fields, reason: 'Integration test manual change', expectedRevision: currentStatus.revision })
+    });
+    assert.equal(manual.status, 202);
+    const manualBody = await manual.json();
+    assert.equal(manualBody.queued, true);
+    assert.equal(manualBody.requestedMessage, message.printerMessageName);
+
+    const claimed = await fetch(`${baseUrl}/api/printer-agent/v1/jobs/claim`, {
+      method: 'POST', headers, body: '{}'
+    });
+    assert.equal(claimed.status, 200);
+    const claimedJob = (await claimed.json()).job;
+    assert.equal(claimedJob.id, manualBody.job.id);
+    assert.equal(claimedJob.payload.message.printerMessageName, message.printerMessageName);
+
+    const checkedAt = new Date().toISOString();
+    const completionResult = {
+      ok: true,
+      printerId: 'coder-1',
+      selectedMessage: message.printerMessageName,
+      messageMatches: true,
+      verificationAvailable: true,
+      communicationSucceeded: true,
+      rawStatus: '0000001',
+      fieldResults: [],
+      checkedAt,
+      expectedOutput: {
+        messageId: message.id,
+        displayName: message.displayName,
+        printerMessageName: message.printerMessageName,
+        fields,
+        rendered: claimedJob.payload.expectedRendered,
+        generatedAt: checkedAt,
+        source: 'agent'
+      }
+    };
+    const completed = await fetch(`${baseUrl}/api/printer-agent/v1/jobs/${claimedJob.id}/complete`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ payloadHash: claimedJob.payloadHash, result: completionResult })
+    });
+    assert.equal(completed.status, 200);
+    assert.equal((await completed.json()).status, 'completed');
+
     const emptyClaim = await fetch(`${baseUrl}/api/printer-agent/v1/jobs/claim`, {
       method: 'POST',
       headers,

@@ -63,6 +63,17 @@ test('manual message changes retain guarded review but operator-only accounts us
   assert.ok(printerPage.includes('/api/printer/current-message?printerId='));
 });
 
+test('audited manual change closes before submission and tracks queued agent completion', async () => {
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const confirmStart = page.indexOf('async function confirmPrinterUpdate()');
+  const confirmEnd = page.indexOf('\nfunction markServerConnected()', confirmStart);
+  const block = page.slice(confirmStart, confirmEnd);
+  assert.ok(block.indexOf('elements.manualDialog.close()') < block.indexOf('await postJson('));
+  assert.match(block, /if \(result\.queued\)/);
+  assert.match(page, /value\.operationId === pendingManualJobId/);
+  assert.doesNotMatch(page, /Requested: \$\{result\.requestedMessage\}/);
+});
+
 test('production releases require an independent review and expose no direct operator send', async () => {
   const editorHtml = await readFile('public/index.html', 'utf8');
   const productionHtml = await readFile('public/production-releases.html', 'utf8');
