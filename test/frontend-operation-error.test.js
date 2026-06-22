@@ -19,6 +19,13 @@ test('message update catch path does not synthesize printer offline state', asyn
   assert.equal(confirmBlock.includes('online: false'), false);
 });
 
+test('release completion events refresh an open send dialog immediately', async () => {
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+  assert.ok(queue.includes('refreshOpenDialog'));
+  assert.ok(queue.includes('refresh: () => load({ refreshOpenDialog: true })'));
+  assert.equal(queue.includes('return { load, refresh: load }'), false);
+});
+
 test('top navigation does not expose Users as a top-level link', async () => {
   const navigation = await readFile('public/js/navigation.js', 'utf8');
   assert.equal(navigation.includes("navLink('/editor#users', 'Users'"), false);
@@ -124,6 +131,8 @@ test('individual printer page exposes release execution while dashboard stays re
   assert.ok(printer.includes('First print verified'));
   assert.ok(queue.includes('Confirm the first printed code matches the expected printed code'));
   assert.ok(queue.includes('physically checked the printer'));
+  assert.ok(queue.includes('Retry approved message'));
+  assert.ok(queue.includes('partiallyCompleted'));
   assert.match(styles, /\.operator-release-panel\s*\{[\s\S]*?color:\s*#172033/);
   assert.match(styles, /\.operator-release-preview pre\s*\{[^}]*color:\s*#172033/);
 });

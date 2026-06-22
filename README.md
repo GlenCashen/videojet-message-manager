@@ -13,7 +13,6 @@ Set the correct model for every printer in the editor. A 1620 uses `Q` and `E`. 
 ```powershell
 npm install
 npm run migrate
-npm run migrate:json
 npm start
 ```
 
@@ -38,7 +37,7 @@ Live printer polling state is still rebuilt in memory after restart. This includ
 
 The database is opened with foreign keys enabled, WAL journaling and a 5 second busy timeout.
 
-## Migration commands
+## Schema commands
 
 Create or update the schema:
 
@@ -46,13 +45,7 @@ Create or update the schema:
 npm run migrate
 ```
 
-Import existing JSON data once:
-
-```powershell
-npm run migrate:json
-```
-
-The JSON importer reads any existing files in `data/`, including `printers.json`, `messages.json`, `users.json`, `fault-history.json`, `audit-log.json` and `printer-state.json`. After a successful import it records a migration marker in SQLite, then copies source JSON files to `data/json-backup/<timestamp>/`. Later startup skips JSON import so stale JSON cannot overwrite database data.
+An empty database is initialized with the current printer and message configuration. Historical users, faults and audit records are never imported from JSON.
 
 ## Backup and restore
 
@@ -82,14 +75,24 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
+<<<<<<< HEAD
 <<<<<<< Updated upstream
     "schemaVersion": 12
 =======
     "schemaVersion": 19
 >>>>>>> Stashed changes
+=======
+    "schemaVersion": 18
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
   }
 }
 ```
+
+## Split production deployment
+
+Production supports a separate Printer Agent on the isolated printer network. The main server owns releases and queues immutable approved jobs; the outbound-polling agent is the only process that knows printer IP addresses or opens WSI connections.
+
+See [Deployment and Operations](docs/DEPLOYMENT_AND_OPERATIONS.md) for the network topology, mTLS setup, firewall rules, service configuration, acceptance testing, backups, upgrades, credential rotation and recovery procedures.
 
 Sessions are stored in SQLite, so logins survive a process restart. Expired sessions are cleaned up when read, logout deletes the session row, and disabled users are rejected even if an old session cookie remains.
 
@@ -98,8 +101,6 @@ Sessions are stored in SQLite, so logins survive a process restart. Expired sess
 Production coding is prepared through controlled releases. QA owns versioned product masters. Planners and packaging leaders create drafts from brew-sheet data. A different QA or Packaging Leader must review a submitted release before it becomes available for production.
 
 Each product-master version defines its coding requirement separately for every permitted printer. A printer configuration selects one message assigned to that printer and maps each of that message's user fields to an approved release value. A single product run can therefore render different messages and layouts for can, bottle, and case coders. Editing a master creates a new immutable version; existing releases remain pinned to their reviewed version.
-
-Development migration 12 clears existing product masters, batch releases, and their audit entries so this per-printer model starts clean. Messages, printers, users, and general printer history are retained.
 
 Logical messages are built in the editor rather than entered as JSON. Message IDs use lowercase kebab-case. Each user field defines its display name, printer field name, maximum length, uppercase handling, and whether it is required. Date and time tokens have explicit formats, and one to four expected-print lines can combine typed text with inserted or dragged field tokens. Optional blank fields are sent as empty WSI field updates and must be confirmed on each real printer model before production use.
 
@@ -111,7 +112,7 @@ Approved releases enter the assigned printer pages' execution queues. Each print
 
 The main dashboard is monitoring-only: printer cards show live state, expected output, and the current running release. Manual message changes and release send/verify/end/reapply controls are available only from the individual printer page. This keeps every state-changing action anchored to the physical printer being operated.
 
-If the server restarts during a send, the target is recovered as `failed`/attention required instead of remaining permanently locked. The operator must confirm the printer state before choosing a controlled retry.
+In local mode, if the server restarts during a send, the target is recovered as `failed`/attention required instead of remaining permanently locked. In agent mode, the agent durably records an in-flight job before contacting a printer. After a restart it reports the result if known, or reports an uncertain state and requires operator confirmation; it never silently sends the same job again.
 
 - `GET /api/product-masters` - list product specifications
 - `POST /api/product-masters` - QA/Admin create a versioned master

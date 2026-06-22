@@ -214,7 +214,11 @@ Do not run both local and agent execution against the same physical printers.
 
 ## 9. Initial acceptance test
 
+<<<<<<< HEAD
 1. Confirm `/api/health` on the main server reports `printerExecutionMode: "agent"` and schema version 19 or later.
+=======
+1. Confirm `/api/health` on the main server reports `printerExecutionMode: "agent"` and schema version 18 or later.
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 2. Start the agent and confirm its heartbeat appears in `printerAgents` with a recent `seenAt` time.
 3. Verify the main server cannot connect to any printer VLAN address.
 4. Create and independently approve a test release.

@@ -11,7 +11,16 @@ const { insertAuditEvent, listAuditEvents } = await import('../server/repositori
 const { upsertExpectedOutput, listExpectedOutputs } = await import('../server/repositories/expected-output-repository.js');
 const { insertFaultEvents, listFaultEvents } = await import('../server/repositories/fault-repository.js');
 const { insertMessageUpdateEvent } = await import('../server/repositories/message-update-repository.js');
+const {
+  claimPrinterAgentJob,
+  completePrinterAgentJob,
+  enqueuePrinterAgentJob,
+  getPrinterAgentJob,
+  hashPayload
+} = await import('../server/repositories/printer-agent-job-repository.js');
 const { upsertMessage, listMessagesForPrinter } = await import('../server/repositories/message-repository.js');
+const { createProductMaster } = await import('../server/repositories/product-master-repository.js');
+const { createBatchRelease } = await import('../server/repositories/batch-release-repository.js');
 const { deletePrinter, replacePrinters, listPrinters } = await import('../server/repositories/printer-repository.js');
 const { upsertUserRecord, getUserByUsername, replaceRoles, replacePrinterAssignments } = await import('../server/repositories/user-repository.js');
 
@@ -41,11 +50,15 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
+<<<<<<< HEAD
 <<<<<<< Updated upstream
   assert.equal(status.schemaVersion, 17);
 =======
   assert.equal(status.schemaVersion, 19);
 >>>>>>> Stashed changes
+=======
+  assert.equal(status.schemaVersion, 18);
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 });
 
 test('foreign keys reject orphaned assignments', () => {
@@ -202,8 +215,11 @@ test('message update events use a unique event id for repeated printer updates',
   assert.equal(new Set(events.map((event) => event.id)).size, 2);
 });
 
+<<<<<<< HEAD
 <<<<<<< Updated upstream
 =======
+=======
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   const db = openDatabase(':memory:');
   runMigrations(db);
@@ -250,6 +266,7 @@ test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   assert.equal(completed.status, 'completed');
   assert.equal(completePrinterAgentJob(queued.id, 'line-agent', { ok: true }, db).status, 'completed');
   assert.equal(getPrinterAgentJob(queued.id, db).result.messageMatches, true);
+<<<<<<< HEAD
 
   const manual = enqueuePrinterAgentJob({
     printerId: 'coder-1',
@@ -264,6 +281,11 @@ test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
 });
 
 >>>>>>> Stashed changes
+=======
+  db.close();
+});
+
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
 test('SQLite-backed sessions survive a manager restart', () => {
   const db = getDb();
   seedPrinters(db);

@@ -5,13 +5,20 @@ function jobFromRow(row) {
   if (!row) return null;
   return {
     id: row.id,
+<<<<<<< HEAD
     jobType: row.job_type || 'release',
     releaseId: row.release_id || null,
+=======
+    releaseId: row.release_id,
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
     printerId: row.printer_id,
     status: row.status,
     payload: JSON.parse(row.payload_json),
     payloadHash: row.payload_hash,
+<<<<<<< HEAD
     context: row.context_json ? JSON.parse(row.context_json) : {},
+=======
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
     claimedByAgentId: row.claimed_by_agent_id || null,
     claimedAt: row.claimed_at || null,
     completedAt: row.completed_at || null,
@@ -25,6 +32,7 @@ function hashPayload(payloadJson) {
   return crypto.createHash('sha256').update(payloadJson).digest('hex');
 }
 
+<<<<<<< HEAD
 function enqueuePrinterAgentJob({ releaseId = null, printerId, payload, jobType = releaseId ? 'release' : 'manual', context = {} }, db = getDb()) {
   if (!['release', 'manual'].includes(jobType)) throw new Error('Printer-agent job type must be release or manual.');
   const existing = releaseId
@@ -45,6 +53,22 @@ function enqueuePrinterAgentJob({ releaseId = null, printerId, payload, jobType 
       id, job_type, release_id, printer_id, status, payload_json, payload_hash, context_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)
   `).run(id, jobType, releaseId, printerId, payloadJson, hashPayload(payloadJson), contextJson, now, now);
+=======
+function enqueuePrinterAgentJob({ releaseId, printerId, payload }, db = getDb()) {
+  const existing = db.prepare(`
+    SELECT * FROM printer_agent_jobs
+    WHERE release_id = ? AND printer_id = ? AND status IN ('queued', 'claimed')
+  `).get(releaseId, printerId);
+  if (existing) return jobFromRow(existing);
+  const id = crypto.randomUUID();
+  const payloadJson = JSON.stringify(payload);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO printer_agent_jobs (
+      id, release_id, printer_id, status, payload_json, payload_hash, created_at, updated_at
+    ) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)
+  `).run(id, releaseId, printerId, payloadJson, hashPayload(payloadJson), now, now);
+>>>>>>> 0d7c9eaa13678d2e3a33365ea4836d59219d55c7
   return jobFromRow(db.prepare('SELECT * FROM printer_agent_jobs WHERE id = ?').get(id));
 }
 
