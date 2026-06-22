@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "start:agent": "node printer-agent.js",
     "test": "node --test",
     "migrate": "node server/migrate.js",
     "db:status": "node server/db-status.js",
@@ -17,6 +18,7 @@
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "csv-parse": "^7.0.0",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2"
   }
 }

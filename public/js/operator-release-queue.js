@@ -158,11 +158,19 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
       elements.send.textContent = 'Confirm reapply';
     }
     if (target.status === 'failed' && target.verifiedAt) {
-      elements.confirmation.classList.add('hidden');
-      elements.send.classList.add('hidden');
+      const partiallyCompleted = release.executionTargets.some((item) => item.printerId !== target.printerId && ['completed', 'running'].includes(item.status));
+      elements.confirmation.classList.remove('hidden');
+      elements.confirmation.querySelector('span').textContent = 'I have physically checked this printer and confirm it is safe to resend the same approved message.';
+      elements.send.classList.remove('hidden');
       elements.failureField.classList.remove('hidden');
-      elements.reasonLabel.textContent = 'Reason for returning this release';
-      elements.returnRelease.classList.remove('hidden');
+      elements.reasonLabel.textContent = 'Physical check result and reason for retry';
+      elements.send.textContent = 'Retry approved message';
+      if (partiallyCompleted) {
+        setNotice(elements.dialogNotice, 'Another printer target is already completed or running, so this release cannot be edited. Retry the same approved message here, or create a new release if the approved data itself is wrong.', 'error');
+      } else {
+        elements.returnRelease.classList.remove('hidden');
+        setNotice(elements.dialogNotice, 'Retry the same approved message after checking the printer, or return the release for correction if the approved data is wrong.', 'error');
+      }
     }
     if (target.status === 'failed' && !target.verifiedAt) {
       elements.confirmation.classList.remove('hidden');
@@ -275,12 +283,17 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     state.selected = null;
   }
 
-  async function load() {
-    if (state.loading || state.busy || document.hidden || elements.dialog.open) return;
+  async function load({ refreshOpenDialog = false } = {}) {
+    if (state.loading || state.busy || document.hidden || (elements.dialog.open && !refreshOpenDialog)) return;
     state.loading = true;
     try {
       state.releases = await apiJson('/api/batch-releases?limit=500');
       render();
+      if (refreshOpenDialog && state.selected) {
+        const release = state.releases.find((item) => item.id === state.selected.release.id);
+        const target = release?.executionTargets.find((item) => item.printerId === state.selected.target.printerId);
+        if (release && target) open(release, target);
+      }
       setNotice(elements.notice);
     } catch (error) {
       setNotice(elements.notice, normalizeError(error), 'error');
@@ -328,7 +341,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   window.setInterval(load, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
-  return { load, refresh: load };
+  return { load, refresh: () => load({ refreshOpenDialog: true }) };
 }
 
 export { createOperatorReleaseQueue };

@@ -17,6 +17,7 @@ import * as printerUserFields from './migrations/013_printer_user_fields.js';
 import * as canonicalPrinterFields from './migrations/014_canonical_printer_fields.js';
 import * as packagingCategories from './migrations/015_packaging_categories.js';
 import * as removeRetiredSchema from './migrations/017_remove_retired_schema.js';
+import * as printerAgentJobs from './migrations/018_printer_agent_jobs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +25,8 @@ const DEFAULT_DB_PATH = path.join(__dirname, '..', 'data', 'videojet.db');
 const migrations = [
   initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving,
   batchReleases, releaseReviewClaims, releaseExecutionTargets, releaseRunningState, messageFormatRules,
-  resetDevelopmentMasters, printerUserFields, canonicalPrinterFields, packagingCategories, removeRetiredSchema
+  resetDevelopmentMasters, printerUserFields, canonicalPrinterFields, packagingCategories, removeRetiredSchema,
+  printerAgentJobs
 ]
   .sort((a, b) => a.version - b.version);
 

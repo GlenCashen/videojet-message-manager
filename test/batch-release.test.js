@@ -356,6 +356,45 @@ test('failed first print returns to an editable release and preserves the consum
   db.close();
 });
 
+test('a failed target can be safely retried when another printer target is already running', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-partial', 'planner');
+  const reviewer = actor('qa-partial', 'qa');
+  const operator = actor('operator-partial', 'operator');
+  const input = masterInput('PARTIAL', 1);
+  input.specification.printerConfigurations.push({
+    ...input.specification.printerConfigurations[0],
+    printerId: 'coder-2',
+    messageId: 'partial-case-message'
+  });
+  const master = createProductMaster(input, reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'PARTIAL-01'), planner, db);
+  submitBatchRelease(draft.id, planner, db);
+  approveBatchRelease(draft.id, reviewer, db);
+  reserveBatchReleaseRun(draft.id, db);
+
+  beginBatchReleaseTarget(draft.id, 'coder-1', operator, {}, db);
+  finishBatchReleaseTarget(draft.id, 'coder-1', { ok: true, messageMatches: true }, db);
+  verifyBatchReleaseTarget(draft.id, 'coder-1', { passed: true }, operator, db);
+  beginBatchReleaseTarget(draft.id, 'coder-2', operator, {}, db);
+  finishBatchReleaseTarget(draft.id, 'coder-2', { ok: true, messageMatches: true }, db);
+  const failed = verifyBatchReleaseTarget(draft.id, 'coder-2', { passed: false, reason: 'Case print is unclear' }, operator, db);
+
+  assert.equal(failed.status, 'running');
+  assert.equal(failed.executionTargets.find((target) => target.printerId === 'coder-2').status, 'failed');
+  assert.throws(
+    () => returnBatchReleaseForReview(draft.id, 'Change the approved data', operator, db),
+    /partially completed release/i
+  );
+  const retrying = beginBatchReleaseTarget(draft.id, 'coder-2', operator, {
+    reason: 'Physical printer check completed; resend approved case message.'
+  }, db);
+  assert.equal(retrying.executionTargets.find((target) => target.printerId === 'coder-2').status, 'applying');
+  assert.equal(retrying.executionTargets.find((target) => target.printerId === 'coder-1').status, 'running');
+  db.close();
+});
+
 test('switching releases ends the previous running target on that printer', () => {
   const db = openDatabase(':memory:');
   runMigrations(db);
