@@ -41,7 +41,11 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
+<<<<<<< Updated upstream
   assert.equal(status.schemaVersion, 17);
+=======
+  assert.equal(status.schemaVersion, 19);
+>>>>>>> Stashed changes
 });
 
 test('foreign keys reject orphaned assignments', () => {
@@ -198,6 +202,68 @@ test('message update events use a unique event id for repeated printer updates',
   assert.equal(new Set(events.map((event) => event.id)).size, 2);
 });
 
+<<<<<<< Updated upstream
+=======
+test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  seedPrinters(db);
+  const actor = { username: 'queue-test' };
+  const master = createProductMaster({
+    productCode: 'AGENTTEST',
+    packagingCategory: 'cans',
+    displayName: 'Agent queue test',
+    specification: {
+      defaultBrewSheetProduct: 'AGENTTEST',
+      printerConfigurations: [{ printerId: 'coder-1', messageId: 'agent-message', fieldMappings: [] }]
+    }
+  }, actor, db);
+  const release = createBatchRelease({
+    productMasterId: master.id,
+    brewSheetProduct: 'AGENTTEST-1',
+    brewNumber: '001',
+    plannedProductionAt: '2026-06-22T00:00:00.000Z'
+  }, actor, db);
+  const payload = {
+    protocolVersion: 1,
+    releaseId: release.id,
+    printerId: 'coder-1',
+    fields: { batch: 'AGENTTEST-1' }
+  };
+
+  const queued = enqueuePrinterAgentJob({ releaseId: release.id, printerId: 'coder-1', payload }, db);
+  assert.deepEqual(queued.payload, payload);
+  assert.equal(queued.payloadHash, hashPayload(JSON.stringify(payload)));
+  assert.equal(claimPrinterAgentJob('wrong-network', ['coder-2'], db), null);
+
+  const claimed = claimPrinterAgentJob('line-agent', ['coder-1'], db);
+  assert.equal(claimed.id, queued.id);
+  assert.equal(claimed.claimedByAgentId, 'line-agent');
+  assert.equal(claimPrinterAgentJob('line-agent', ['coder-1'], db).id, queued.id);
+  assert.equal(claimPrinterAgentJob('second-agent', ['coder-1'], db), null);
+  assert.throws(
+    () => completePrinterAgentJob(queued.id, 'second-agent', { ok: true }, db),
+    /not claimed by the reporting agent/i
+  );
+
+  const completed = completePrinterAgentJob(queued.id, 'line-agent', { ok: true, messageMatches: true }, db);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completePrinterAgentJob(queued.id, 'line-agent', { ok: true }, db).status, 'completed');
+  assert.equal(getPrinterAgentJob(queued.id, db).result.messageMatches, true);
+
+  const manual = enqueuePrinterAgentJob({
+    printerId: 'coder-1',
+    jobType: 'manual',
+    context: { reason: 'Test audited change', actor: { username: 'qa-test' } },
+    payload: { protocolVersion: 1, printerId: 'coder-1', message: { id: 'manual-message' }, fields: {} }
+  }, db);
+  assert.equal(manual.releaseId, null);
+  assert.equal(manual.jobType, 'manual');
+  assert.equal(manual.context.reason, 'Test audited change');
+  db.close();
+});
+
+>>>>>>> Stashed changes
 test('SQLite-backed sessions survive a manager restart', () => {
   const db = getDb();
   seedPrinters(db);

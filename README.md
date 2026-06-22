@@ -82,7 +82,11 @@ To restore, stop the application, copy the chosen backup over `data/videojet.db`
     "connected": true,
     "journalMode": "wal",
     "foreignKeys": true,
+<<<<<<< Updated upstream
     "schemaVersion": 12
+=======
+    "schemaVersion": 19
+>>>>>>> Stashed changes
   }
 }
 ```
