@@ -60,6 +60,12 @@ import {
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import {
+  claimPrinterAgentJob,
+  completePrinterAgentJob,
+  enqueuePrinterAgentJob,
+  getPrinterAgentJob
+} from './server/repositories/printer-agent-job-repository.js';
+import {
   createPrinterUserField,
   deletePrinterUserField,
   listPrinterUserFields,
@@ -120,15 +126,39 @@ const DEV_USER_ROLE = process.env.DEV_USER_ROLE || 'viewer';
 const DEV_USER_PRINTER_IDS = (process.env.DEV_USER_PRINTER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean);
 const SESSION_SECRET = process.env.SESSION_SECRET || '';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PRINTER_EXECUTION_MODE = process.env.PRINTER_EXECUTION_MODE || (IS_PRODUCTION ? 'agent' : 'local');
 const FAULT_HISTORY_LIMIT = Number(process.env.FAULT_HISTORY_LIMIT || 1000);
 const FAULT_HISTORY_PATH = process.env.FAULT_HISTORY_PATH || undefined;
 const FAULT_HISTORY_API_MAX_LIMIT = 500;
+if (!['local', 'agent'].includes(PRINTER_EXECUTION_MODE)) throw new Error('PRINTER_EXECUTION_MODE must be local or agent.');
+
+function printerAgentCredentials() {
+  if (process.env.PRINTER_AGENT_TOKEN) {
+    return new Map([[process.env.PRINTER_AGENT_ID || 'printer-agent-1', {
+      tokenHash: crypto.createHash('sha256').update(process.env.PRINTER_AGENT_TOKEN).digest('hex'),
+      printerIds: String(process.env.PRINTER_AGENT_PRINTER_IDS || '*').split(',').map((value) => value.trim()).filter(Boolean)
+    }]]);
+  }
+  if (!process.env.PRINTER_AGENT_CREDENTIALS) return new Map();
+  const parsed = JSON.parse(process.env.PRINTER_AGENT_CREDENTIALS);
+  return new Map(Object.entries(parsed).map(([agentId, value]) => [agentId, {
+    tokenHash: crypto.createHash('sha256').update(String(value.token || '')).digest('hex'),
+    printerIds: Array.isArray(value.printerIds) ? value.printerIds.map(String) : ['*']
+  }]));
+}
+
+const configuredPrinterAgents = printerAgentCredentials();
+const REQUIRE_AGENT_MTLS = process.env.REQUIRE_AGENT_MTLS === 'true';
+if (IS_PRODUCTION && PRINTER_EXECUTION_MODE === 'agent' && !configuredPrinterAgents.size) {
+  throw new Error('At least one printer-agent credential is required in production agent mode.');
+}
 const auth = createSessionManager({
   secret: SESSION_SECRET || undefined,
   secure: IS_PRODUCTION
 });
+if (process.env.TRUST_PROXY === 'true') app.set('trust proxy', 1);
 await seedCurrentConfiguration();
-const recoveredReleaseExecutions = recoverInterruptedBatchReleaseTargets();
+const recoveredReleaseExecutions = PRINTER_EXECUTION_MODE === 'local' ? recoverInterruptedBatchReleaseTargets() : 0;
 if (recoveredReleaseExecutions) {
   console.warn(`${recoveredReleaseExecutions} interrupted release execution(s) require operator attention.`);
 }
@@ -145,6 +175,24 @@ if (bootstrap.created) {
 }
 
 app.use(express.json({ limit: '32kb' }));
+
+function requirePrinterAgent(req, res) {
+  const agentId = String(req.get('x-printer-agent-id') || '').trim();
+  const token = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  const credential = configuredPrinterAgents.get(agentId);
+  const suppliedHash = crypto.createHash('sha256').update(token).digest();
+  const expectedHash = credential ? Buffer.from(credential.tokenHash, 'hex') : crypto.randomBytes(32);
+  if (!credential || !token || !crypto.timingSafeEqual(suppliedHash, expectedHash)) {
+    res.status(401).json({ ok: false, error: 'Printer-agent authentication failed.' });
+    return null;
+  }
+  if (REQUIRE_AGENT_MTLS && req.get('x-client-cert-verified') !== 'SUCCESS') {
+    res.status(401).json({ ok: false, error: 'A verified printer-agent client certificate is required.' });
+    return null;
+  }
+  return { id: agentId, printerIds: credential.printerIds };
+}
+
 app.get('/', (_req, res) => res.redirect('/dashboard'));
 
 app.get('/login', (req, res) => {
@@ -213,6 +261,7 @@ const coderQueue = new CoderQueue();
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const readbackCapabilities = new ReadbackCapabilityRegistry();
 const stateChangingOperations = new Set();
+const printerAgentHeartbeats = new Map();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const emulatorManager = new EmulatorManager({
   host: EMULATOR_HOST,
@@ -234,7 +283,7 @@ async function syncEmulatorManager(printers, knownMessages = null) {
   }
 }
 
-await syncEmulatorManager(startupPrinters);
+if (PRINTER_EXECUTION_MODE === 'local') await syncEmulatorManager(startupPrinters);
 let persistedPrinterState = await loadPrinterState();
 const faultHistory = await createFaultHistoryStore({ filePath: FAULT_HISTORY_PATH, limit: FAULT_HISTORY_LIMIT });
 
@@ -473,6 +522,11 @@ function printerConfig(body = {}) {
 }
 
 function printerTarget(printer) {
+  if (PRINTER_EXECUTION_MODE !== 'local') {
+    const error = new Error('Direct printer communication is disabled on the main server.');
+    error.statusCode = 503;
+    throw error;
+  }
   if (printer.mode === 'emulator') return emulatorManager.endpoint(printer);
   return { ip: printer.host, port: printer.port };
 }
@@ -671,6 +725,7 @@ async function setPrinterMessage(printer, body) {
 
 app.get('/api/config', (_req, res) => {
   res.json({
+    printerExecutionMode: PRINTER_EXECUTION_MODE,
     printerIp: DEFAULT_PRINTER_IP,
     printerPort: DEFAULT_PRINTER_PORT,
     timeoutMs: COMMAND_TIMEOUT_MS,
@@ -681,7 +736,12 @@ app.get('/api/config', (_req, res) => {
 
 app.get('/api/health', (_req, res) => {
   try {
-    res.json({ ok: true, database: databaseStatus() });
+    res.json({
+      ok: true,
+      database: databaseStatus(),
+      printerExecutionMode: PRINTER_EXECUTION_MODE,
+      printerAgents: [...printerAgentHeartbeats.values()]
+    });
   } catch (_error) {
     res.status(500).json({ ok: false, database: { connected: false } });
   }
@@ -870,6 +930,89 @@ app.get('/api/messages', async (req, res) => {
     res.json(enabledMessages(await loadMessages(undefined, { printers })));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/printer-agent/v1/heartbeat', async (req, res) => {
+  try {
+    const agent = requirePrinterAgent(req, res);
+    if (!agent) return;
+    const knownPrinterIds = new Set((await readPrinters()).map((printer) => printer.id));
+    const allowedPrinterIds = new Set(agent.printerIds.includes('*') ? knownPrinterIds : agent.printerIds);
+    for (const reported of Array.isArray(req.body?.statuses) ? req.body.statuses : []) {
+      const printerId = String(reported?.printerId || '');
+      if (!knownPrinterIds.has(printerId) || !allowedPrinterIds.has(printerId)) continue;
+      if (reported.online === true && reported.rawStatus) {
+        statusCache.applySuccess(printerId, {
+          selectedMessage: reported.selectedMessage,
+          messageVerification: reported.messageVerification,
+          rawStatus: reported.rawStatus,
+          responseTimeMs: reported.responseTimeMs
+        });
+      } else {
+        statusCache.applyFailure(printerId, new Error(reported.lastError || 'Printer Agent could not read printer status.'));
+      }
+    }
+    const heartbeat = {
+      agentId: agent.id,
+      printerIds: agent.printerIds,
+      version: String(req.body?.version || 'unknown').slice(0, 50),
+      hostname: String(req.body?.hostname || '').slice(0, 120),
+      seenAt: new Date().toISOString(),
+      statusCount: Array.isArray(req.body?.statuses) ? req.body.statuses.length : 0
+    };
+    printerAgentHeartbeats.set(agent.id, heartbeat);
+    res.json({ ok: true, executionMode: PRINTER_EXECUTION_MODE, serverTime: heartbeat.seenAt });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/printer-agent/v1/jobs/claim', async (req, res) => {
+  try {
+    const agent = requirePrinterAgent(req, res);
+    if (!agent) return;
+    const knownPrinterIds = (await readPrinters()).map((printer) => printer.id);
+    const allowedPrinterIds = agent.printerIds.includes('*')
+      ? knownPrinterIds
+      : agent.printerIds.filter((printerId) => knownPrinterIds.includes(printerId));
+    const job = claimPrinterAgentJob(agent.id, allowedPrinterIds);
+    if (!job) return res.status(204).end();
+    res.json({ ok: true, job: { id: job.id, payload: job.payload, payloadHash: job.payloadHash } });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
+  }
+});
+
+app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
+  try {
+    const agent = requirePrinterAgent(req, res);
+    if (!agent) return;
+    const current = getPrinterAgentJob(req.params.id);
+    if (!current) return res.status(404).json({ ok: false, error: 'Printer-agent job was not found.' });
+    if (req.body?.payloadHash !== current.payloadHash) {
+      return res.status(409).json({ ok: false, error: 'Printer-agent payload hash does not match the queued job.' });
+    }
+    if (['completed', 'failed'].includes(current.status) && current.claimedByAgentId === agent.id) {
+      const release = getBatchRelease(current.releaseId);
+      return res.json({ ok: true, duplicate: true, releaseId: current.releaseId, printerId: current.printerId, status: release?.status });
+    }
+    const result = req.body?.result || { ok: false, error: 'Printer agent returned no result.' };
+    const job = completePrinterAgentJob(req.params.id, agent.id, result);
+    insertMessageUpdateEvent(result, { username: `agent:${agent.id}`, developmentIdentity: true });
+    if (result.ok && result.expectedOutput) await persistExpectedOutput(job.printerId, result.expectedOutput);
+    if (result.ok && result.messageMatches !== false) endOtherRunningTargets(job.printerId, job.releaseId);
+    const release = finishBatchReleaseTarget(job.releaseId, job.printerId, result);
+    addLog({
+      action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-printer-state-uncertain',
+      actor: `agent:${agent.id}`, targetType: 'batch-release', targetId: job.releaseId, printerId: job.printerId,
+      details: { agentId: agent.id, jobId: job.id, payloadHash: job.payloadHash, status: release.status, ok: result.ok === true }
+    });
+    broadcast('printer-status', result);
+    broadcast('batch-release-execution', { releaseId: job.releaseId, printerId: job.printerId, status: release.status });
+    res.json({ ok: true, releaseId: job.releaseId, printerId: job.printerId, status: release.status });
+  } catch (error) {
+    res.status(error.statusCode || 409).json({ ok: false, error: error.message });
   }
 });
 
@@ -1290,11 +1433,7 @@ async function releaseExecutionContext(release, printerId, user) {
     throw error;
   }
   const specification = release.productMasterSpecification;
-  const configuration = specification?.printerConfigurations?.find((item) => item.printerId === printerId) || (specification?.messageId ? {
-    printerId, messageId: specification.messageId, fieldMappings: specification.fieldMappings,
-    dateRule: specification.dateRule || { months: specification.bestBeforeMonths, format: 'DD/MM/YYYY' },
-    timeRule: specification.timeRule, previewLines: specification.previewLines || [specification.firstLineTemplate, specification.secondLineTemplate].filter(Boolean)
-  } : null);
+  const configuration = specification?.printerConfigurations?.find((item) => item.printerId === printerId) || null;
   if (!configuration?.messageId) throw new Error('The approved release has no executable message specification for this printer.');
   const messages = await loadMessages(undefined, { printers });
   const message = getMessageForPrinter(messages, configuration.messageId, printerId);
@@ -1333,7 +1472,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     let release = getBatchRelease(req.params.id);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     const { printer } = await releaseExecutionContext(release, req.params.printerId, user);
-    if (stateChangingOperations.has(printer.id)) {
+    if (PRINTER_EXECUTION_MODE === 'local' && stateChangingOperations.has(printer.id)) {
       const error = new Error('A message update is already in progress on this printer.');
       error.statusCode = 409;
       throw error;
@@ -1345,7 +1484,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
 
     beginBatchReleaseTarget(release.id, printer.id, user, { reapply: req.body?.reapply === true, reason: req.body?.reason });
     began = true;
-    stateChangingOperations.add(printer.id);
+    if (PRINTER_EXECUTION_MODE === 'local') stateChangingOperations.add(printer.id);
     addLog({
       action: 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
       printerId: printer.id, details: {
@@ -1354,6 +1493,41 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
       }
     });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: 'applying' });
+
+    if (PRINTER_EXECUTION_MODE === 'agent') {
+      const job = enqueuePrinterAgentJob({
+        releaseId: release.id,
+        printerId: printer.id,
+        payload: {
+          protocolVersion: 1,
+          releaseId: release.id,
+          printerId: printer.id,
+          plannedProductionAt: release.plannedProductionAt,
+          message: {
+            id: execution.message.id,
+            displayName: execution.message.displayName,
+            printerMessageName: execution.message.printerMessageName,
+            fields: execution.message.fields,
+            dateRule: execution.message.dateRule,
+            timeRule: execution.message.timeRule,
+            previewLines: execution.message.previewLines
+          },
+          fields: execution.expectedOutput.fields || {},
+          expectedRendered: execution.expectedOutput.rendered
+        }
+      });
+      addLog({
+        action: 'batch-release-agent-job-queued', ...auditActor(user), targetType: 'batch-release',
+        targetId: release.id, printerId: printer.id,
+        details: { jobId: job.id, payloadHash: job.payloadHash, printerId: printer.id, ok: true }
+      });
+      return res.status(202).json({
+        ok: true,
+        queued: true,
+        job: { id: job.id, payloadHash: job.payloadHash },
+        release: visibleBatchRelease(user, getBatchRelease(release.id))
+      });
+    }
 
     const result = await setPrinterMessage(printer, {
       messageId: execution.expectedOutput.messageId,
@@ -2104,7 +2278,7 @@ const monitor = new Monitor({
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Videojet control running on http://localhost:${PORT}`);
   console.log(`Default printer: ${DEFAULT_PRINTER_IP}:${DEFAULT_PRINTER_PORT}`);
-  if (POLL_INTERVAL_MS > 0) {
+  if (PRINTER_EXECUTION_MODE === 'local' && POLL_INTERVAL_MS > 0) {
     monitor.start();
     setInterval(() => broadcast('heartbeat', { time: new Date().toISOString() }), SSE_HEARTBEAT_MS);
     console.log(`Server-side monitoring every ${POLL_INTERVAL_MS} ms`);

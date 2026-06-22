@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "start:agent": "node printer-agent.js",
     "test": "node --test",
     "migrate": "node server/migrate.js",
     "db:status": "node server/db-status.js",
