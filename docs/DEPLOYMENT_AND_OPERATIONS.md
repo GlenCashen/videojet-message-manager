@@ -348,4 +348,4 @@ $env:ENABLE_DEV_IDENTITY="true"
 npm start
 ```
 
-To exercise the split locally, run the main server with `PRINTER_EXECUTION_MODE=agent`, set matching agent credentials, then run the agent with `PRINTER_AGENT_ALLOW_HTTP=true` and `MAIN_SERVER_URL=http://127.0.0.1:8080`.
+To exercise the split locally, run the main server with `PRINTER_EXECUTION_MODE=agent`, set matching agent credentials, then run the agent with `PRINTER_AGENT_ALLOW_HTTP=true` and `MAIN_SERVER_URL=http://127.0.0.1:8080`. Printers marked `mode: "emulator"` in the agent configuration are hosted by the agent itself. The agent registers each claimed job's stored message and user fields before applying it, so no second local-mode main server should be run for emulator sockets.

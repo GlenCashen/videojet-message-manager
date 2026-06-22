@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
+import 'dotenv/config';
 import { fileURLToPath } from 'node:url';
 import { createPrinter, deletePrinter, readPrinters, updatePrinter } from './printer-store.js';
 import { createSessionManager } from './server/auth.js';
@@ -270,6 +271,7 @@ const emulatorManager = new EmulatorManager({
   onError: (message) => console.error(message)
 });
 async function syncEmulatorManager(printers, knownMessages = null) {
+  if (PRINTER_EXECUTION_MODE !== 'local') return;
   await emulatorManager.sync(printers);
   const messages = knownMessages || await loadMessages(undefined, { printers });
   for (const printer of printers.filter((item) => item.mode === 'emulator')) {
@@ -502,6 +504,7 @@ async function persistExpectedOutput(printerId, expectedOutput) {
     [printerId]: persistedRecordFromExpected(expectedOutput)
   };
   await savePrinterState(persistedPrinterState);
+  statusCache.restoreExpectedOutput(printerId, expectedOutput);
 }
 
 function validateAscii(value, label, maxLength) {
@@ -1555,7 +1558,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     res.status(result.ok && result.messageMatches !== false ? 200 : 409).json({ ok: result.ok && result.messageMatches !== false, release: visibleBatchRelease(user, updated), result });
   } catch (error) {
     const failure = error instanceof MessageUpdateError && error.result
-      ? { ...error.result, ok: false, error: error.message, checkedAt: new Date().toISOString() }
+      ? { ...error.result, ok: false, error: error.result.error || error.message, checkedAt: new Date().toISOString() }
       : { ok: false, code: error.code || null, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() };
     if (began) {
       const updated = finishBatchReleaseTarget(req.params.id, req.params.printerId, failure);

@@ -4,7 +4,9 @@ import http from 'node:http';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
+import 'dotenv/config';
 import { CoderQueue } from './server/coder-queue.js';
+import { EmulatorManager } from './server/emulator-manager.js';
 import { MessageUpdateError, executeMessageUpdate } from './server/message-store.js';
 import { printerCapabilities } from './server/printer-capabilities.js';
 import { StatusCache } from './server/status-cache.js';
@@ -46,6 +48,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const queue = new CoderQueue();
 const statusCache = new StatusCache();
+const emulatorManager = new EmulatorManager({
+  delay,
+  onError: (message) => console.error(message)
+});
 let stopping = false;
 let lastHeartbeatAt = 0;
 
@@ -133,6 +139,12 @@ async function execute(job, printers) {
   const printer = printers.find((item) => item.id === job.payload.printerId && item.enabled);
   if (!printer) throw new Error(`Printer ${job.payload.printerId} is not enabled in the local agent configuration.`);
   const message = job.payload.message;
+  if (printer.mode === 'emulator') {
+    emulatorManager.configurePrinter(printer.id, {
+      messageNames: [message.printerMessageName],
+      fieldNames: (message.fields || []).map((field) => field.printerFieldName)
+    });
+  }
   const capabilities = printerCapabilities(printer.model, printer.readbackMode);
   const result = await queue.run(printer.id, { operation: 'release-apply', jobId: job.id }, () => executeMessageUpdate({
     printer,
@@ -155,7 +167,9 @@ async function execute(job, printers) {
 }
 
 function failureResult(error, job) {
-  if (error instanceof MessageUpdateError && error.result) return { ...error.result, ok: false, error: error.message };
+  if (error instanceof MessageUpdateError && error.result) {
+    return { ...error.result, ok: false, error: error.result.error || error.message };
+  }
   return {
     ok: false,
     code: error.code || 'AGENT_EXECUTION_FAILED',
@@ -203,6 +217,7 @@ async function heartbeat(printers) {
 async function main() {
   const printers = (await readJson(CONFIG_PATH, [])).map(validatePrinter);
   if (!printers.length) throw new Error(`No printers are configured in ${CONFIG_PATH}.`);
+  await emulatorManager.sync(printers);
   await recoverInterrupted(await readJson(STATE_PATH, { active: null }));
   console.log(`Printer agent ${AGENT_ID} started with ${printers.length} configured printer(s).`);
 
@@ -231,6 +246,7 @@ async function main() {
       await delay(POLL_MS);
     }
   }
+  await emulatorManager.close();
 }
 
 process.on('SIGINT', () => { stopping = true; });
