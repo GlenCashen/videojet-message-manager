@@ -1,3 +1,5 @@
+import { operatorNoticeText } from './operator-errors.js';
+
 function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
@@ -5,7 +7,7 @@ function clear(node) {
 function append(parent, ...children) {
   for (const child of children.flat()) {
     if (child === null || child === undefined) continue;
-    parent.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    parent.appendChild(typeof child === 'string' ? document.createTextNode(operatorNoticeText(child)) : child);
   }
   return parent;
 }
@@ -15,7 +17,7 @@ function el(tag, options = {}, children = []) {
   for (const [key, value] of Object.entries(options)) {
     if (value === null || value === undefined) continue;
     if (key === 'className') node.className = value;
-    else if (key === 'text') node.textContent = value;
+    else if (key === 'text') node.textContent = operatorNoticeText(value);
     else if (key === 'dataset') Object.assign(node.dataset, value);
     else node.setAttribute(key, value);
   }
@@ -23,9 +25,10 @@ function el(tag, options = {}, children = []) {
 }
 
 function setNotice(node, message = '', type = 'info') {
-  node.textContent = message;
+  const displayMessage = operatorNoticeText(message);
+  node.textContent = displayMessage;
   node.className = `notice ${type}`;
-  node.classList.toggle('hidden', !message);
+  node.classList.toggle('hidden', !displayMessage);
 }
 
 function formatDate(value) {
@@ -35,8 +38,8 @@ function formatDate(value) {
 }
 
 function normalizeError(error) {
-  if (error instanceof Error) return error.message;
-  return String(error || 'Unknown error');
+  if (error instanceof Error) return operatorNoticeText(error.message);
+  return operatorNoticeText(String(error || 'Unknown error'));
 }
 
 export { clear, el, formatDate, normalizeError, setNotice };
