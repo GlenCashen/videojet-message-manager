@@ -1,29 +1,14 @@
 [
   {
     "id": "coder-1",
-    "name": "Can Coder",
-    "location": "Packaging line",
-    "host": "127.0.0.1",
+    "name": "Videojet Test Printer",
+    "location": "Printer WiFi",
+    "host": "192.168.100.2",
     "port": 3100,
-    "enabled": true,
-    "mode": "emulator"
-  },
-  {
-    "id": "coder-2",
-    "name": "Bottle Coder",
-    "location": "Packaging line",
-    "host": "127.0.0.1",
-    "port": 3101,
-    "enabled": true,
-    "mode": "emulator"
-  },
-  {
-    "id": "coder-4",
-    "name": "Case Coder",
-    "location": "Packaging line",
-    "host": "127.0.0.1",
-    "port": 3103,
-    "enabled": true,
-    "mode": "emulator"
+    "model": "1620",
+    "readbackMode": "enabled",
+    "mode": "real",
+    "enabled": true
   }
 ]
+
