@@ -63,6 +63,7 @@ test('preview endpoint does not issue WSI commands', async () => {
     env: {
       ...process.env,
       NODE_ENV: 'test',
+      PRINTER_EXECUTION_MODE: 'local',
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
@@ -117,6 +118,7 @@ test('fault history API records activation and clear from emulator checks', asyn
     env: {
       ...process.env,
       NODE_ENV: 'test',
+      PRINTER_EXECUTION_MODE: 'local',
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
@@ -206,6 +208,7 @@ test('current-message endpoint tracks emulator selection and reports rejection s
     env: {
       ...process.env,
       NODE_ENV: 'test',
+      PRINTER_EXECUTION_MODE: 'local',
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),

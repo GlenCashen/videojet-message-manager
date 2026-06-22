@@ -52,11 +52,14 @@ function startServer({ role, printerIds = '', extraEnv = {} }) {
     env: {
       ...process.env,
       NODE_ENV: 'test',
+      PRINTER_EXECUTION_MODE: 'local',
       PORT: String(port),
       POLL_INTERVAL_MS: '0',
       EMULATOR_PORT: String(emulatorPort),
       DB_PATH: dbPath,
       ENABLE_DEV_IDENTITY: 'true',
+      BOOTSTRAP_ADMIN_USERNAME: '',
+      BOOTSTRAP_ADMIN_PASSWORD: '',
       DEV_USER_ROLE: role,
       DEV_USER_PRINTER_IDS: printerIds,
       ...extraEnv

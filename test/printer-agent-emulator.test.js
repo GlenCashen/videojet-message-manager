@@ -111,10 +111,17 @@ test('printer agent owns local emulators and registers claimed message definitio
     if (child.exitCode === null) child.kill('SIGTERM');
   });
 
-  await Promise.race([
-    completion,
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`Agent did not complete the job.\n${output.join('')}`)), 8000))
-  ]);
+  let timeout;
+  try {
+    await Promise.race([
+      completion,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Agent did not complete the job.\n${output.join('')}`)), 8000);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
 
