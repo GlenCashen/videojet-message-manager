@@ -131,6 +131,8 @@ test('individual printer page exposes release execution while dashboard stays re
   assert.ok(printer.includes('First print verified'));
   assert.ok(queue.includes('Confirm the first printed code matches the expected printed code'));
   assert.ok(queue.includes('physically checked the printer'));
+  assert.ok(queue.includes('Retry approved message'));
+  assert.ok(queue.includes('partiallyCompleted'));
   assert.match(styles, /\.operator-release-panel\s*\{[\s\S]*?color:\s*#172033/);
   assert.match(styles, /\.operator-release-preview pre\s*\{[^}]*color:\s*#172033/);
 });

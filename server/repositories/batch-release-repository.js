@@ -623,11 +623,11 @@ function returnBatchReleaseForReview(id, reason, actor, db = getDb()) {
   return db.transaction(() => {
     const release = getBatchRelease(id, db);
     if (!release) return null;
+    if (release.executionTargets.some((target) => ['completed', 'running'].includes(target.status))) {
+      throw new Error('A partially completed release cannot be edited. Create a new release for the remaining work.');
+    }
     if (!['released', 'failed', 'awaiting_print_check'].includes(release.status)) {
       throw new Error('This release cannot be returned for correction in its current state.');
-    }
-    if (release.executionTargets.some((target) => target.status === 'completed')) {
-      throw new Error('A partially completed release cannot be edited. Create a new release for the remaining work.');
     }
     const value = String(reason || '').trim();
     if (!value) throw new Error('A reason is required when returning a release for correction.');
