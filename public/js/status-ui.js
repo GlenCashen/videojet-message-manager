@@ -146,14 +146,14 @@ function statusLabel(coderOrStatus) {
 
   const stale = isStale(coderOrStatus);
   if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') {
-    return stale ? 'Offline, stale data' : 'Offline';
+    return stale ? 'Offline — last known status' : 'Offline';
   }
 
   if (coderOrStatus?.online || coderOrStatus?.state === 'online') {
-    return stale ? 'Online, stale data' : 'Online';
+    return stale ? 'Online — last known status' : 'Online';
   }
 
-  return stale ? 'Data stale' : 'Not checked';
+  return stale ? 'Last known status' : 'Not checked';
 }
 
 function setLiveBadge(badge, connected) {
