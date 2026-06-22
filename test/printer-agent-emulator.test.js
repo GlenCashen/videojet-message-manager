@@ -62,15 +62,22 @@ test('printer agent owns local emulators and registers claimed message definitio
     payload,
     payloadHash: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')
   };
-  let claimed = false;
+  let jobReady = false;
+  let jobSent = false;
+  let firstClaimAt;
   let completed;
   let resolveCompletion;
   const completion = new Promise((resolve) => { resolveCompletion = resolve; });
   const main = http.createServer((request, response) => {
     if (request.url === '/api/printer-agent/v1/heartbeat') return json(response, 200, { ok: true });
     if (request.url === '/api/printer-agent/v1/jobs/claim') {
-      if (claimed) return response.writeHead(204).end();
-      claimed = true;
+      if (!firstClaimAt) {
+        firstClaimAt = Date.now();
+        setTimeout(() => { jobReady = true; }, 50);
+        return response.writeHead(204).end();
+      }
+      if (!jobReady || jobSent) return response.writeHead(204).end();
+      jobSent = true;
       return json(response, 200, { ok: true, job });
     }
     if (request.url === '/api/printer-agent/v1/jobs/job-1/complete') {
@@ -98,7 +105,7 @@ test('printer agent owns local emulators and registers claimed message definitio
       PRINTER_AGENT_CONFIG: configPath,
       PRINTER_AGENT_STATE: statePath,
       PRINTER_AGENT_ALLOW_HTTP: 'true',
-      PRINTER_AGENT_POLL_MS: '250',
+      PRINTER_AGENT_POLL_MS: '500',
       PRINTER_AGENT_HEARTBEAT_MS: '1000',
       BETWEEN_COMMAND_DELAY_MS: '0'
     },
@@ -130,4 +137,5 @@ test('printer agent owns local emulators and registers claimed message definitio
   assert.equal(completed.result.messageMatches, true);
   assert.equal(completed.result.selectedMessage, 'CAT TEST MESSAGE');
   assert.equal(completed.result.expectedOutput.rendered, 'TEST-123');
+  assert.ok(Date.now() - firstClaimAt < 1800, `Queued emulator job took ${Date.now() - firstClaimAt} ms.`);
 });

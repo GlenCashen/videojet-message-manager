@@ -275,12 +275,17 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     state.selected = null;
   }
 
-  async function load() {
-    if (state.loading || state.busy || document.hidden || elements.dialog.open) return;
+  async function load({ refreshOpenDialog = false } = {}) {
+    if (state.loading || state.busy || document.hidden || (elements.dialog.open && !refreshOpenDialog)) return;
     state.loading = true;
     try {
       state.releases = await apiJson('/api/batch-releases?limit=500');
       render();
+      if (refreshOpenDialog && state.selected) {
+        const release = state.releases.find((item) => item.id === state.selected.release.id);
+        const target = release?.executionTargets.find((item) => item.printerId === state.selected.target.printerId);
+        if (release && target) open(release, target);
+      }
       setNotice(elements.notice);
     } catch (error) {
       setNotice(elements.notice, normalizeError(error), 'error');
@@ -328,7 +333,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
   window.setInterval(load, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
-  return { load, refresh: load };
+  return { load, refresh: () => load({ refreshOpenDialog: true }) };
 }
 
 export { createOperatorReleaseQueue };

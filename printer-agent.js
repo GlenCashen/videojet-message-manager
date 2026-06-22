@@ -20,7 +20,7 @@ const AGENT_ID = String(process.env.PRINTER_AGENT_ID || '').trim();
 const AGENT_TOKEN = String(process.env.PRINTER_AGENT_TOKEN || '');
 const CONFIG_PATH = path.resolve(process.env.PRINTER_AGENT_CONFIG || 'data/printers.json');
 const STATE_PATH = path.resolve(process.env.PRINTER_AGENT_STATE || 'data/printer-agent-state.json');
-const POLL_MS = Math.max(Number(process.env.PRINTER_AGENT_POLL_MS || 2000), 250);
+const POLL_MS = Math.max(Number(process.env.PRINTER_AGENT_POLL_MS || 500), 250);
 const HEARTBEAT_MS = Math.max(Number(process.env.PRINTER_AGENT_HEARTBEAT_MS || 15000), 1000);
 const COMMAND_TIMEOUT_MS = Math.max(Number(process.env.COMMAND_TIMEOUT_MS || 5000), 500);
 const BETWEEN_COMMAND_DELAY_MS = Math.max(Number(process.env.BETWEEN_COMMAND_DELAY_MS || 150), 0);
@@ -224,9 +224,9 @@ async function main() {
   while (!stopping) {
     try {
       await recoverInterrupted(await readJson(STATE_PATH, { active: null }));
-      await heartbeat(printers);
       const claimed = await request('/api/printer-agent/v1/jobs/claim', { method: 'POST', body: '{}' });
       if (!claimed?.job) {
+        await heartbeat(printers);
         await delay(POLL_MS);
         continue;
       }
@@ -241,6 +241,7 @@ async function main() {
       await writeState({ active: { job, pendingResult: result } });
       await report(job, result);
       await writeState({ active: null });
+      await heartbeat(printers);
     } catch (error) {
       console.error(`${new Date().toISOString()} ${error.message}`);
       await delay(POLL_MS);

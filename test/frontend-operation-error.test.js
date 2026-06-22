@@ -19,6 +19,13 @@ test('message update catch path does not synthesize printer offline state', asyn
   assert.equal(confirmBlock.includes('online: false'), false);
 });
 
+test('release completion events refresh an open send dialog immediately', async () => {
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+  assert.ok(queue.includes('refreshOpenDialog'));
+  assert.ok(queue.includes('refresh: () => load({ refreshOpenDialog: true })'));
+  assert.equal(queue.includes('return { load, refresh: load }'), false);
+});
+
 test('top navigation does not expose Users as a top-level link', async () => {
   const navigation = await readFile('public/js/navigation.js', 'utf8');
   assert.equal(navigation.includes("navLink('/editor#users', 'Users'"), false);
