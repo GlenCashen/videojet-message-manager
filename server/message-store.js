@@ -791,6 +791,7 @@ async function executeMessageUpdate({
     generatedAt: new Date(startedAt).toISOString(),
     source: 'last-applied'
   };
+
   const fieldResults = [];
   const protocol = printer.protocol || 'wsi';
   const base = {
@@ -830,76 +831,16 @@ async function executeMessageUpdate({
     });
   }
 
-  for (const field of message.fields) {
-    try {
-      const update = await sendCommand({ printerId: printer.id, ...target, command: `U${field.printerFieldName}\n${normalized[field.key]}` });
-      if (update.kind !== 'ack') {
-        const command = `U${field.printerFieldName}\n${normalized[field.key]}`;
-        const rejectionError = failureMessage(command, update);
-        if (update.kind === 'nack') {
-          fieldResults.push({
-            key: field.key,
-            printerFieldName: field.printerFieldName,
-            acknowledged: false,
-            error: rejectionError
-          });
-          await refreshStateAfterRejection({
-            base,
-            fieldResults,
-            messageSelection: 'Not attempted',
-            failedStep: 'field-update',
-            code: 'FIELD_UPDATE_REJECTED',
-            error: rejectionError,
-            printer,
-            target,
-            sendCommand,
-            delay,
-            applySuccess,
-            now,
-            startedAt,
-            supportsCurrentMessageReadback
-          });
-        }
-        fieldResults.push({
-          key: field.key,
-          printerFieldName: field.printerFieldName,
-          acknowledged: false,
-          error: `Unexpected WSI response: ${update.value}`
-        });
-        throw new MessageUpdateError('WSI protocol error', failureResult(base, fieldResults, 'Not attempted', {
-          code: 'WSI_PROTOCOL_ERROR',
-          communicationSucceeded: false,
-          printerOnline: null,
-          error: `Unexpected WSI response: ${update.value}`,
-          failedField: field.key,
-          failedStep: 'field-update'
-        }), { code: 'WSI_PROTOCOL_ERROR', communicationSucceeded: false });
-      }
-      fieldResults.push({ key: field.key, printerFieldName: field.printerFieldName, acknowledged: true });
-    } catch (error) {
-      if (error instanceof MessageUpdateError) throw error;
-      fieldResults.push({
-        key: field.key,
-        printerFieldName: field.printerFieldName,
-        acknowledged: false,
-        error: error.message
-      });
-      const code = transportFailureCode(error);
-      throw new MessageUpdateError('Message update failed', failureResult(base, fieldResults, 'Not attempted', {
-        code,
-        communicationSucceeded: false,
-        printerOnline: null,
-        error: error.message,
-        failedField: field.key,
-        failedStep: 'field-update'
-      }), { code, communicationSucceeded: false });
-    }
-    await delay();
-  }
-
+  // WSI FIX:
+  // Select the message before updating fields.
+  // This prevents U<field> updates being applied against the previously-running message.
   let select;
   try {
-    select = await sendCommand({ printerId: printer.id, ...target, command: `M${message.printerMessageName}` });
+    select = await sendCommand({
+      printerId: printer.id,
+      ...target,
+      command: `M${message.printerMessageName}`
+    });
   } catch (error) {
     const code = transportFailureCode(error);
     throw new MessageUpdateError('Message selection failed', failureResult(base, fieldResults, 'Failed', {
@@ -910,6 +851,7 @@ async function executeMessageUpdate({
       failedStep: 'message-selection'
     }), { code, communicationSucceeded: false });
   }
+
   if (select.kind !== 'ack') {
     const rejectionError = failureMessage(`M${message.printerMessageName}`, select);
     if (select.kind === 'nack') {
@@ -930,6 +872,7 @@ async function executeMessageUpdate({
         supportsCurrentMessageReadback
       });
     }
+
     throw new MessageUpdateError('Message selection was not acknowledged.', failureResult(base, fieldResults, 'Failed', {
       code: 'WSI_PROTOCOL_ERROR',
       communicationSucceeded: false,
@@ -938,16 +881,151 @@ async function executeMessageUpdate({
       failedStep: 'message-selection'
     }), { code: 'WSI_PROTOCOL_ERROR', communicationSucceeded: false });
   }
+
   await delay();
 
-  let selected;
+  let selected = null;
+
+  if (supportsCurrentMessageReadback) {
+    try {
+      selected = assertPacketResponse('Q', await sendCommand({
+        printerId: printer.id,
+        ...target,
+        command: 'Q'
+      }));
+    } catch (error) {
+      const code = transportFailureCode(error);
+      throw new MessageUpdateError('Message verification failed', failureResult(base, fieldResults, 'Acknowledged', {
+        code,
+        communicationSucceeded: false,
+        printerOnline: null,
+        error: error.message,
+        failedStep: 'message-verification'
+      }), { code, communicationSucceeded: false });
+    }
+
+    if (selected.value !== message.printerMessageName) {
+      throw new MessageUpdateError('Message verification failed', failureResult(base, fieldResults, 'Acknowledged', {
+        code: 'MESSAGE_MISMATCH',
+        communicationSucceeded: true,
+        printerOnline: true,
+        error: `Coder selected ${selected.value || 'nothing'} after the message select command.`,
+        failedStep: 'message-verification',
+        selectedMessage: selected.value,
+        messageMatches: false
+      }), { code: 'MESSAGE_MISMATCH', communicationSucceeded: true });
+    }
+
+    await delay();
+  }
+
+  for (const field of message.fields) {
+    const value = normalized[field.key];
+
+    if (!value) {
+      throw new MessageUpdateError('Message update failed', failureResult(base, fieldResults, 'Acknowledged', {
+        code: 'FIELD_VALUE_EMPTY',
+        communicationSucceeded: false,
+        printerOnline: null,
+        error: `${field.label} is empty. Refusing to send a blank printer field update.`,
+        failedField: field.key,
+        failedStep: 'validation',
+        selectedMessage: selected?.value || null
+      }), { code: 'FIELD_VALUE_EMPTY', communicationSucceeded: false });
+    }
+
+    try {
+      const command = `U${field.printerFieldName}\n${value}`;
+      const update = await sendCommand({
+        printerId: printer.id,
+        ...target,
+        command
+      });
+
+      if (update.kind !== 'ack') {
+        const rejectionError = failureMessage(command, update);
+
+        if (update.kind === 'nack') {
+          fieldResults.push({
+            key: field.key,
+            printerFieldName: field.printerFieldName,
+            acknowledged: false,
+            error: rejectionError
+          });
+
+          await refreshStateAfterRejection({
+            base,
+            fieldResults,
+            messageSelection: 'Acknowledged',
+            failedStep: 'field-update',
+            code: 'FIELD_UPDATE_REJECTED',
+            error: rejectionError,
+            printer,
+            target,
+            sendCommand,
+            delay,
+            applySuccess,
+            now,
+            startedAt,
+            supportsCurrentMessageReadback
+          });
+        }
+
+        fieldResults.push({
+          key: field.key,
+          printerFieldName: field.printerFieldName,
+          acknowledged: false,
+          error: `Unexpected WSI response: ${update.value}`
+        });
+
+        throw new MessageUpdateError('WSI protocol error', failureResult(base, fieldResults, 'Acknowledged', {
+          code: 'WSI_PROTOCOL_ERROR',
+          communicationSucceeded: false,
+          printerOnline: null,
+          error: `Unexpected WSI response: ${update.value}`,
+          failedField: field.key,
+          failedStep: 'field-update',
+          selectedMessage: selected?.value || null
+        }), { code: 'WSI_PROTOCOL_ERROR', communicationSucceeded: false });
+      }
+
+      fieldResults.push({
+        key: field.key,
+        printerFieldName: field.printerFieldName,
+        acknowledged: true
+      });
+    } catch (error) {
+      if (error instanceof MessageUpdateError) throw error;
+
+      fieldResults.push({
+        key: field.key,
+        printerFieldName: field.printerFieldName,
+        acknowledged: false,
+        error: error.message
+      });
+
+      const code = transportFailureCode(error);
+      throw new MessageUpdateError('Message update failed', failureResult(base, fieldResults, 'Acknowledged', {
+        code,
+        communicationSucceeded: false,
+        printerOnline: null,
+        error: error.message,
+        failedField: field.key,
+        failedStep: 'field-update',
+        selectedMessage: selected?.value || null
+      }), { code, communicationSucceeded: false });
+    }
+
+    await delay();
+  }
+
   let status;
   try {
-    selected = supportsCurrentMessageReadback
-      ? assertPacketResponse('Q', await sendCommand({ printerId: printer.id, ...target, command: 'Q' }))
-      : null;
-    if (selected) await delay();
-    status = assertPacketResponse('E', await sendCommand({ printerId: printer.id, ...target, command: 'E' }));
+    status = assertPacketResponse('E', await sendCommand({
+      printerId: printer.id,
+      ...target,
+      command: 'E'
+    }));
   } catch (error) {
     const code = transportFailureCode(error);
     throw new MessageUpdateError('Message verification failed', failureResult(base, fieldResults, 'Acknowledged', {
@@ -955,9 +1033,11 @@ async function executeMessageUpdate({
       communicationSucceeded: false,
       printerOnline: null,
       error: error.message,
-      failedStep: 'verification'
+      failedStep: 'status-read',
+      selectedMessage: selected?.value || null
     }), { code, communicationSucceeded: false });
   }
+
   const elapsedMs = now() - startedAt;
   const cached = applySuccess({
     ...(selected ? { selectedMessage: selected.value } : {}),
@@ -966,6 +1046,7 @@ async function executeMessageUpdate({
     responseTimeMs: elapsedMs,
     expectedOutput
   });
+
   const messageMatches = selected ? selected.value === message.printerMessageName : null;
 
   return withOperatorError({
