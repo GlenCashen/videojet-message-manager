@@ -136,18 +136,36 @@ const FAULT_HISTORY_API_MAX_LIMIT = 500;
 if (!['local', 'agent'].includes(PRINTER_EXECUTION_MODE)) throw new Error('PRINTER_EXECUTION_MODE must be local or agent.');
 
 function printerAgentCredentials() {
+  if (process.env.PRINTER_AGENT_CREDENTIALS) {
+    const parsed = JSON.parse(process.env.PRINTER_AGENT_CREDENTIALS);
+
+    return new Map(Object.entries(parsed).map(([agentId, value]) => [agentId, {
+      tokenHash: crypto
+        .createHash('sha256')
+        .update(String(value.token || ''))
+        .digest('hex'),
+
+      printerIds: Array.isArray(value.printerIds)
+        ? value.printerIds.map(String)
+        : ['*']
+    }]));
+  }
+
   if (process.env.PRINTER_AGENT_TOKEN) {
     return new Map([[process.env.PRINTER_AGENT_ID || 'printer-agent-1', {
-      tokenHash: crypto.createHash('sha256').update(process.env.PRINTER_AGENT_TOKEN).digest('hex'),
-      printerIds: String(process.env.PRINTER_AGENT_PRINTER_IDS || '*').split(',').map((value) => value.trim()).filter(Boolean)
+      tokenHash: crypto
+        .createHash('sha256')
+        .update(process.env.PRINTER_AGENT_TOKEN)
+        .digest('hex'),
+
+      printerIds: String(process.env.PRINTER_AGENT_PRINTER_IDS || '*')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
     }]]);
   }
-  if (!process.env.PRINTER_AGENT_CREDENTIALS) return new Map();
-  const parsed = JSON.parse(process.env.PRINTER_AGENT_CREDENTIALS);
-  return new Map(Object.entries(parsed).map(([agentId, value]) => [agentId, {
-    tokenHash: crypto.createHash('sha256').update(String(value.token || '')).digest('hex'),
-    printerIds: Array.isArray(value.printerIds) ? value.printerIds.map(String) : ['*']
-  }]));
+
+  return new Map();
 }
 
 const configuredPrinterAgents = printerAgentCredentials();

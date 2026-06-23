@@ -1,14 +1,12 @@
 [
   {
-    "id": "coder-1",
-    "name": "Videojet Test Printer",
-    "location": "Printer WiFi",
+    "id": "coder-2",
+    "name": "Bottle Coder",
+    "location": "Packaging line",
     "host": "192.168.100.2",
     "port": 3100,
-    "model": "1620",
-    "readbackMode": "enabled",
-    "mode": "real",
-    "enabled": true
+    "enabled": true,
+    "mode": "real"
   }
 ]
 
