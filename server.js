@@ -24,6 +24,7 @@ import {
   validateMessageFields
 } from './server/message-store.js';
 import { Monitor } from './server/monitor.js';
+import { NgpclClient } from './server/ngpcl-client.js';
 import {
   loadPrinterState,
   persistedRecordFromExpected,
@@ -260,6 +261,7 @@ const MAX_LOG_ENTRIES = 200;
 const eventClients = new Set();
 const coderQueue = new CoderQueue();
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
+const ngpclClient = new NgpclClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const readbackCapabilities = new ReadbackCapabilityRegistry();
 const stateChangingOperations = new Set();
 const printerAgentHeartbeats = new Map();
@@ -538,12 +540,23 @@ function runtimePrinterCapabilities(printer) {
   return readbackCapabilities.resolve(printer);
 }
 
+function printerProtocol(printer) {
+  return printer.protocol || 'wsi';
+}
+
+function clientForPrinter(printer) {
+  return printerProtocol(printer) === 'ngpcl' ? ngpclClient : wsiClient;
+}
+
 function printerForClient(printer) {
   return { ...printer, capabilities: runtimePrinterCapabilities(printer) };
 }
 
 async function readCurrentMessageForPrinter(printer, target, { force = false, suppressAutoFailure = false } = {}) {
   const capabilities = runtimePrinterCapabilities(printer);
+  if (printerProtocol(printer) === 'ngpcl') {
+    return requestCurrentMessage(ngpclClient, { printerId: printer.id, ...target, protocol: 'ngpcl' });
+  }
   const isAuto1710 = printer.model === '1710' && capabilities.currentMessageReadbackMode === 'auto';
   const shouldAttempt = capabilities.currentMessageReadback === true || readbackCapabilities.shouldProbe(printer, { force });
   if (!shouldAttempt) return null;
@@ -664,13 +677,17 @@ async function refreshPrinterStatus(printer, operation = 'check') {
     const startedAt = Date.now();
     const message = await readCurrentMessageForPrinter(printer, target, { suppressAutoFailure: true });
     if (message) await delay(BETWEEN_COMMAND_DELAY_MS);
-    const status = assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
+    const protocol = printerProtocol(printer);
+    const status = protocol === 'ngpcl'
+      ? await ngpclClient.sendCommand({ printerId: printer.id, ...target, command: '{~DR|}' })
+      : assertPacketResponse('E', await wsiClient.sendCommand({ printerId: printer.id, ...target, command: 'E' }));
     const responseTimeMs = Date.now() - startedAt;
     const capabilities = runtimePrinterCapabilities(printer);
     const cached = statusCache.applySuccess(printer.id, {
       ...(message ? { selectedMessage: message.currentMessage } : {}),
       messageVerification: message ? 'verified' : 'unsupported',
       rawStatus: status.value,
+      protocol,
       responseTimeMs
     });
 
@@ -685,6 +702,7 @@ async function refreshPrinterStatus(printer, operation = 'check') {
       targetHost: target.ip,
       targetPort: target.port,
       mode: printer.mode,
+      protocol,
       model: printer.model,
       capabilities,
       enabled: printer.enabled,
@@ -726,6 +744,7 @@ async function setPrinterMessage(printer, body) {
   const { message, fields } = await resolvePrinterMessageRequest(printer, body);
   const target = printerTarget(printer);
   const capabilities = runtimePrinterCapabilities(printer);
+  const client = clientForPrinter(printer);
 
   return runCoderOperation(printer, 'message-update', async (id) =>
     executeMessageUpdate({
@@ -736,7 +755,7 @@ async function setPrinterMessage(printer, body) {
       operationId: id,
       productionDate: body.productionDate,
       supportsCurrentMessageReadback: capabilities.currentMessageReadback === true,
-      sendCommand: (command) => wsiClient.sendCommand(command),
+      sendCommand: (command) => client.sendCommand(command),
       delay: () => delay(BETWEEN_COMMAND_DELAY_MS),
       applySuccess: (status) => statusCache.applySuccess(printer.id, status)
     })
@@ -957,7 +976,9 @@ app.post('/api/printer-agent/v1/heartbeat', async (req, res) => {
   try {
     const agent = requirePrinterAgent(req, res);
     if (!agent) return;
-    const knownPrinterIds = new Set((await readPrinters()).map((printer) => printer.id));
+    const knownPrinters = await readPrinters();
+    const knownPrinterIds = new Set(knownPrinters.map((printer) => printer.id));
+    const knownPrinterById = new Map(knownPrinters.map((printer) => [printer.id, printer]));
     const allowedPrinterIds = new Set(agent.printerIds.includes('*') ? knownPrinterIds : agent.printerIds);
     for (const reported of Array.isArray(req.body?.statuses) ? req.body.statuses : []) {
       const printerId = String(reported?.printerId || '');
@@ -967,6 +988,7 @@ app.post('/api/printer-agent/v1/heartbeat', async (req, res) => {
           selectedMessage: reported.selectedMessage,
           messageVerification: reported.messageVerification,
           rawStatus: reported.rawStatus,
+          protocol: printerProtocol(knownPrinterById.get(printerId) || {}),
           responseTimeMs: reported.responseTimeMs
         });
       } else {

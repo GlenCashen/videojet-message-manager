@@ -31,3 +31,23 @@ test('current-message readback exposes a printer rejection safely', async () => 
       /not an error number/i.test(error.message)
   );
 });
+
+test('current-message readback supports NGPCL job response packets', async () => {
+  const client = {
+    sendCommand: async (request) => {
+      assert.equal(request.command, '{~JR|}');
+      return { kind: 'packet', value: '{~JN0|Bundy 15 Month.job|}', hex: '7B 7E 4A 4E 30 7C' };
+    }
+  };
+
+  assert.deepEqual(await requestCurrentMessage(client, {
+    printerId: 'markem-1',
+    ip: '127.0.0.1',
+    port: 21000,
+    protocol: 'ngpcl'
+  }), {
+    currentMessage: 'Bundy 15 Month.job',
+    rawCode: null,
+    rawResponseHex: '7B 7E 4A 4E 30 7C'
+  });
+});

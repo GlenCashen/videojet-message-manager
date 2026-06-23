@@ -9,6 +9,14 @@ const MODEL_CAPABILITIES = {
   }
 };
 
+const PRINTER_PROTOCOLS = new Set(['wsi', 'ngpcl']);
+
+function normalizePrinterProtocol(protocol) {
+  const value = String(protocol || 'wsi').trim().toLowerCase();
+  if (!PRINTER_PROTOCOLS.has(value)) throw new Error('Printer protocol must be wsi or ngpcl.');
+  return value;
+}
+
 function normalizeReadbackMode(mode) {
   const value = String(mode || 'auto').trim().toLowerCase();
   if (!['auto', 'enabled', 'disabled'].includes(value)) {
@@ -23,11 +31,24 @@ function normalizePrinterModel(model) {
   return value;
 }
 
-function printerCapabilities(model, readbackMode = 'auto') {
+function printerCapabilities(model, readbackMode = 'auto', protocol = 'wsi') {
+  const normalizedProtocol = normalizePrinterProtocol(protocol);
+  if (normalizedProtocol === 'ngpcl') {
+    return {
+      protocol: normalizedProtocol,
+      currentMessageReadback: true,
+      currentMessageReadbackMode: 'enabled',
+      currentMessageReadbackDetection: 'configured',
+      commandErrorResponse: true,
+      fieldReadback: true
+    };
+  }
+
   const normalized = normalizePrinterModel(model);
   const mode = normalizeReadbackMode(readbackMode);
   const configured = mode === 'enabled' ? true : mode === 'disabled' ? false : MODEL_CAPABILITIES[normalized].currentMessageReadback;
   return {
+    protocol: normalizedProtocol,
     ...MODEL_CAPABILITIES[normalized],
     currentMessageReadback: configured,
     currentMessageReadbackMode: mode,
@@ -35,4 +56,10 @@ function printerCapabilities(model, readbackMode = 'auto') {
   };
 }
 
-export { MODEL_CAPABILITIES, normalizePrinterModel, normalizeReadbackMode, printerCapabilities };
+export {
+  MODEL_CAPABILITIES,
+  normalizePrinterModel,
+  normalizePrinterProtocol,
+  normalizeReadbackMode,
+  printerCapabilities
+};

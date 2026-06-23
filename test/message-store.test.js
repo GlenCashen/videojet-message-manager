@@ -249,6 +249,106 @@ test('1710 updates skip unsupported current-message readback', async () => {
   assert.equal(result.messageVerification, 'unsupported');
 });
 
+test('NGPCL updates select job, verify fields, and confirm readback', async () => {
+  const message = {
+    ...getMessageById(definitions, '12-month'),
+    printerMessageName: 'Bundy 15 Month.job',
+    fields: [
+      { key: 'brew', label: 'Brew number', printerFieldName: 'Batch1', required: true, maxLength: 8 },
+      { key: 'batch', label: 'Batch number', printerFieldName: 'Batch', required: true, maxLength: 20 }
+    ],
+    previewLines: ['{{brew}} {{batch}}']
+  };
+  const commands = [];
+  const result = await executeMessageUpdate({
+    ...updateArgs().args,
+    printer: { ...updateArgs().args.printer, protocol: 'ngpcl', port: 21000 },
+    target: { ip: '127.0.0.1', port: 21000 },
+    message,
+    fields: { brew: 'T0067', batch: 'TBUNDRC-51' },
+    sendCommand: async ({ command }) => {
+      commands.push(command);
+      if (command === '{~JS0|Bundy 15 Month.job|0|}') return response('packet', '{~JS0|}');
+      if (command === '{~JR|}') return response('packet', '{~JN0|Bundy 15 Month.job|}');
+      if (command === '{~FR|Batch1|}') return response('packet', '{~FC0|Batch1|T0067|}');
+      if (command === '{~FR|Batch|}') return response('packet', '{~FC0|Batch|TBUNDRC-51|}');
+      if (command === '{~JU0||0|Batch1|T0067|Batch|TBUNDRC-51|}') return response('packet', '{~JU0|}');
+      if (command === '{~DR|}') return response('packet', '{~DS0|0|1|0|0|0|2|0|000000000|06|1|}');
+      throw new Error(`Unexpected command ${command}`);
+    },
+    applySuccess: (status) => ({
+      printerId: 'coder-1',
+      online: true,
+      revision: 4,
+      lastSuccessfulAt: '2026-06-17T04:32:08.000Z',
+      decodedStatus: { valid: true, protocol: 'ngpcl', alarm: { label: 'Green', primary: 'green' } },
+      ...status
+    })
+  });
+
+  assert.deepEqual(commands, [
+    '{~JS0|Bundy 15 Month.job|0|}',
+    '{~JR|}',
+    '{~FR|Batch1|}',
+    '{~FR|Batch|}',
+    '{~JU0||0|Batch1|T0067|Batch|TBUNDRC-51|}',
+    '{~FR|Batch1|}',
+    '{~FR|Batch|}',
+    '{~DR|}'
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.messageMatches, true);
+  assert.equal(result.selectedMessage, 'Bundy 15 Month.job');
+  assert.equal(result.rawStatus, '{~DS0|0|1|0|0|0|2|0|000000000|06|1|}');
+  assert.deepEqual(result.fieldResults.map((field) => ({
+    key: field.key,
+    printerFieldName: field.printerFieldName,
+    acknowledged: field.acknowledged,
+    verified: field.verified,
+    readbackValue: field.readbackValue
+  })), [
+    { key: 'brew', printerFieldName: 'Batch1', acknowledged: true, verified: true, readbackValue: 'T0067' },
+    { key: 'batch', printerFieldName: 'Batch', acknowledged: true, verified: true, readbackValue: 'TBUNDRC-51' }
+  ]);
+});
+
+test('NGPCL update fails when field readback does not match', async () => {
+  const message = {
+    ...getMessageById(definitions, '12-month'),
+    printerMessageName: 'Bundy 15 Month.job',
+    fields: [{ key: 'brew', label: 'Brew number', printerFieldName: 'Batch1', required: true, maxLength: 8 }],
+    previewLines: ['{{brew}}']
+  };
+  let readCount = 0;
+
+  await assert.rejects(
+    executeMessageUpdate({
+      ...updateArgs().args,
+      printer: { ...updateArgs().args.printer, protocol: 'ngpcl' },
+      message,
+      fields: { brew: 'T0067' },
+      sendCommand: async ({ command }) => {
+        if (command === '{~JS0|Bundy 15 Month.job|0|}') return response('packet', '{~JS0|}');
+        if (command === '{~JR|}') return response('packet', '{~JN0|Bundy 15 Month.job|}');
+        if (command === '{~FR|Batch1|}') {
+          readCount += 1;
+          return response('packet', readCount === 1 ? '{~FC0|Batch1|OLD|}' : '{~FC0|Batch1|WRONG|}');
+        }
+        if (command === '{~JU0||0|Batch1|T0067|}') return response('packet', '{~JU0|}');
+        throw new Error(`Unexpected command ${command}`);
+      }
+    }),
+    (error) => {
+      assert.equal(error instanceof MessageUpdateError, true);
+      assert.equal(error.code, 'FIELD_READBACK_MISMATCH');
+      assert.equal(error.result.failedStep, 'field-readback');
+      assert.equal(error.result.actualValue, 'WRONG');
+      assert.match(error.result.error, /readback did not match/i);
+      return true;
+    }
+  );
+});
+
 test('stops on field ACK failure', async () => {
   const message = getMessageById(definitions, '12-month');
   const commands = [];

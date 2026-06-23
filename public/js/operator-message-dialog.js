@@ -235,7 +235,8 @@ function createOperatorMessageDialog({ elements, getStatus, onStatus }) {
     printer = nextPrinter;
     messages = [];
     elements.title.textContent = `Set message on ${printer.name}`;
-    elements.subtitle.textContent = `${printer.location || 'No location'} | Videojet ${printer.model || '1620'} | ${printer.host}:${printer.port}`;
+    const modelLabel = (printer.protocol || 'wsi') === 'ngpcl' ? 'Markem NGPCL' : `Videojet ${printer.model || '1620'}`;
+    elements.subtitle.textContent = `${printer.location || 'No location'} | ${modelLabel} | ${printer.host}:${printer.port}`;
     elements.cancel.textContent = 'Cancel';
     setNotice(elements.notice, 'Loading assigned messages...');
     clear(elements.fields);

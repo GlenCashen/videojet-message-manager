@@ -18,6 +18,7 @@ function startEdit(id) {
   elements.printerLocation.value = printer.location || '';
   elements.printerHost.value = printer.host;
   elements.printerPort.value = printer.port;
+  elements.printerProtocol.value = printer.protocol || 'wsi';
   elements.printerMode.value = printer.mode;
   elements.printerModel.value = printer.model || '1620';
   elements.printerReadbackMode.value = printer.readbackMode || 'auto';
@@ -34,6 +35,7 @@ function startNew() {
   elements.printerForm.reset();
   elements.printerId.disabled = false;
   elements.printerMode.value = 'real';
+  elements.printerProtocol.value = 'wsi';
   elements.printerModel.value = '1620';
   elements.printerReadbackMode.value = 'auto';
   elements.printerPort.value = '3100';
@@ -71,6 +73,7 @@ async function savePrinter(event) {
         location: elements.printerLocation.value.trim(),
         host: elements.printerHost.value.trim(),
         port: Number(elements.printerPort.value),
+        protocol: elements.printerProtocol.value,
         enabled: elements.printerEnabled.checked,
         mode: elements.printerMode.value,
         model: elements.printerModel.value,
@@ -110,6 +113,11 @@ async function removePrinter() {
 function setupEditor(callbacks) {
   editorCallbacks = { ...editorCallbacks, ...callbacks };
   elements.printerForm.addEventListener('submit', savePrinter);
+  elements.printerProtocol.addEventListener('change', () => {
+    if (!state.editingId && elements.printerProtocol.value === 'ngpcl' && elements.printerPort.value === '3100') {
+      elements.printerPort.value = '21000';
+    }
+  });
   elements.cancelEditButton.addEventListener('click', closeEditor);
   elements.newPrinterButton.addEventListener('click', startNew);
   elements.deletePrinterButton.addEventListener('click', removePrinter);

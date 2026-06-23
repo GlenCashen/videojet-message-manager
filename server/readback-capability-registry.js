@@ -8,7 +8,7 @@ class ReadbackCapabilityRegistry {
   }
 
   resolve(printer) {
-    const configured = printerCapabilities(printer.model, printer.readbackMode);
+    const configured = printerCapabilities(printer.model, printer.readbackMode, printer.protocol);
     if (configured.currentMessageReadback !== null) return configured;
     const detected = this.records.get(printer.id);
     return {
@@ -25,6 +25,7 @@ class ReadbackCapabilityRegistry {
   shouldProbe(printer, { force = false } = {}) {
     const capabilities = this.resolve(printer);
     if (capabilities.currentMessageReadbackMode !== 'auto') return false;
+    if ((printer.protocol || 'wsi') !== 'wsi') return false;
     if (printer.model !== '1710') return false;
     if (force || capabilities.currentMessageReadback === true) return true;
     const record = this.records.get(printer.id);

@@ -79,6 +79,12 @@
         <label for="printerPort">TCP port
           <input id="printerPort" name="port" type="number" min="1" max="65535" required>
         </label>
+        <label for="printerProtocol">Protocol
+          <select id="printerProtocol" name="protocol">
+            <option value="wsi">Videojet WSI</option>
+            <option value="ngpcl">Markem NGPCL</option>
+          </select>
+        </label>
         <label for="printerMode">Mode
           <select id="printerMode" name="mode">
             <option value="real">Real printer</option>

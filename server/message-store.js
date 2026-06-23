@@ -2,6 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listMessages, replaceMessages } from './repositories/message-repository.js';
+import {
+  assertNgpclAck,
+  assertNgpclSafeValue,
+  ngpclReadFieldCommand,
+  ngpclSelectJobCommand,
+  ngpclUpdateFieldsCommand,
+  parseNgpclFieldResponse,
+  parseNgpclJobName
+} from './ngpcl-protocol.js';
 import { assertPacketResponse, failureMessage } from './wsi-response.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -13,7 +22,7 @@ const DATE_FORMATS = new Set(['DD/MM/YYYY', 'DD/MM/YY', 'YYYY-MM-DD']);
 const TIME_FORMATS = new Set(['HH:mm:ss', 'HH:mm', 'hh:mm A']);
 const FIELD_KEY_PATTERN = /^[a-z][a-z0-9-]*$/;
 const MESSAGE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const PRINTER_FIELD_PATTERN = /^[A-Z0-9 _-]{1,30}$/;
+const PRINTER_FIELD_PATTERN = /^[A-Za-z0-9 _-]{1,30}$/;
 const PRINTABLE_ASCII_PATTERN = /^[\x20-\x7E]+$/;
 
 class MessageUpdateError extends Error {
@@ -373,9 +382,295 @@ function failureResult(base, fieldResults, messageSelection, extra = {}) {
 }
 
 function transportFailureCode(error) {
+  if (error?.code === 'NGPCL_TIMEOUT') return 'NGPCL_TIMEOUT';
+  if (error?.code === 'NGPCL_PROTOCOL_ERROR') return 'NGPCL_PROTOCOL_ERROR';
   if (error?.code === 'WSI_TIMEOUT') return 'WSI_TIMEOUT';
   if (error?.code === 'WSI_PROTOCOL_ERROR') return 'WSI_PROTOCOL_ERROR';
   return 'WSI_CONNECTION_ERROR';
+}
+
+function ngpclFailure({
+  base,
+  fieldResults,
+  messageSelection,
+  code,
+  error,
+  failedStep,
+  communicationSucceeded = true,
+  printerOnline = true,
+  extra = {}
+}) {
+  return new MessageUpdateError('Message update failed', failureResult(base, fieldResults, messageSelection, {
+    code,
+    error,
+    failedStep,
+    communicationSucceeded,
+    printerOnline,
+    ...extra
+  }), { code, communicationSucceeded });
+}
+
+function validateNgpclInputs(message, normalized) {
+  assertNgpclSafeValue(message.printerMessageName, 'Message name');
+  for (const field of message.fields) {
+    assertNgpclSafeValue(field.printerFieldName, `${field.label} field name`);
+    assertNgpclSafeValue(normalized[field.key], field.label);
+  }
+}
+
+async function readNgpclField({ printer, target, sendCommand, field }) {
+  const response = await sendCommand({
+    printerId: printer.id,
+    ...target,
+    command: ngpclReadFieldCommand(field.printerFieldName)
+  });
+  return parseNgpclFieldResponse(response, field.printerFieldName);
+}
+
+async function executeNgpclMessageUpdate({
+  printer,
+  target,
+  message,
+  normalized,
+  base,
+  fieldResults,
+  expectedOutput,
+  sendCommand,
+  delay,
+  applySuccess,
+  now,
+  startedAt
+}) {
+  try {
+    validateNgpclInputs(message, normalized);
+  } catch (error) {
+    throw ngpclFailure({
+      base,
+      fieldResults,
+      messageSelection: 'Not attempted',
+      code: 'NGPCL_VALIDATION_FAILED',
+      error: error.message,
+      failedStep: 'validation',
+      communicationSucceeded: false,
+      printerOnline: null
+    });
+  }
+
+  try {
+    assertNgpclAck(await sendCommand({
+      printerId: printer.id,
+      ...target,
+      command: ngpclSelectJobCommand(message.printerMessageName)
+    }), '{~JS0|}', 'message selection');
+  } catch (error) {
+    const code = transportFailureCode(error);
+    throw ngpclFailure({
+      base,
+      fieldResults,
+      messageSelection: 'Failed',
+      code,
+      error: error.message,
+      failedStep: 'message-selection',
+      communicationSucceeded: code !== 'NGPCL_TIMEOUT' && code !== 'WSI_CONNECTION_ERROR',
+      printerOnline: code === 'NGPCL_TIMEOUT' || code === 'WSI_CONNECTION_ERROR' ? null : true
+    });
+  }
+  await delay();
+
+  let selectedMessage;
+  try {
+    selectedMessage = parseNgpclJobName(await sendCommand({ printerId: printer.id, ...target, command: '{~JR|}' }));
+  } catch (error) {
+    const code = transportFailureCode(error);
+    throw ngpclFailure({
+      base,
+      fieldResults,
+      messageSelection: 'Acknowledged',
+      code,
+      error: error.message,
+      failedStep: 'message-verification',
+      communicationSucceeded: false,
+      printerOnline: null
+    });
+  }
+
+  if (selectedMessage !== message.printerMessageName) {
+    throw ngpclFailure({
+      base,
+      fieldResults,
+      messageSelection: 'Acknowledged',
+      code: 'MESSAGE_MISMATCH',
+      error: `Coder selected ${selectedMessage || 'nothing'} after the message select command.`,
+      failedStep: 'message-verification',
+      extra: { selectedMessage }
+    });
+  }
+  await delay();
+
+  for (const field of message.fields) {
+    try {
+      const read = await readNgpclField({ printer, target, sendCommand, field });
+      if (!read.ok) {
+        fieldResults.push({
+          key: field.key,
+          printerFieldName: field.printerFieldName,
+          acknowledged: false,
+          exists: false,
+          error: read.error,
+          raw: read.raw
+        });
+        throw ngpclFailure({
+          base,
+          fieldResults,
+          messageSelection: 'Acknowledged',
+          code: 'FIELD_NOT_FOUND',
+          error: 'Coder job selected, but a required field was not found. Check that the selected message contains the required field names.',
+          failedStep: 'field-read',
+          extra: { selectedMessage }
+        });
+      }
+      fieldResults.push({
+        key: field.key,
+        printerFieldName: field.printerFieldName,
+        acknowledged: false,
+        exists: true,
+        previousValue: read.value
+      });
+      await delay();
+    } catch (error) {
+      if (error instanceof MessageUpdateError) throw error;
+      const code = transportFailureCode(error);
+      throw ngpclFailure({
+        base,
+        fieldResults,
+        messageSelection: 'Acknowledged',
+        code,
+        error: error.message,
+        failedStep: 'field-read',
+        communicationSucceeded: false,
+        printerOnline: null,
+        extra: { selectedMessage }
+      });
+    }
+  }
+
+  if (message.fields.length) {
+    try {
+      assertNgpclAck(await sendCommand({
+        printerId: printer.id,
+        ...target,
+        command: ngpclUpdateFieldsCommand(message.fields.map((field) => ({
+          fieldName: field.printerFieldName,
+          value: normalized[field.key]
+        })))
+      }), '{~JU0|}', 'field update');
+      for (const result of fieldResults) result.acknowledged = true;
+    } catch (error) {
+      const code = transportFailureCode(error);
+      throw ngpclFailure({
+        base,
+        fieldResults,
+        messageSelection: 'Acknowledged',
+        code,
+        error: error.message,
+        failedStep: 'field-update',
+        communicationSucceeded: code !== 'NGPCL_TIMEOUT' && code !== 'WSI_CONNECTION_ERROR',
+        printerOnline: code === 'NGPCL_TIMEOUT' || code === 'WSI_CONNECTION_ERROR' ? null : true,
+        extra: { selectedMessage }
+      });
+    }
+    await delay();
+  }
+
+  for (const field of message.fields) {
+    try {
+      const read = await readNgpclField({ printer, target, sendCommand, field });
+      const result = fieldResults.find((item) => item.key === field.key);
+      if (result) {
+        result.readbackValue = read.value;
+        result.verified = read.ok && read.value === normalized[field.key];
+        result.raw = read.raw;
+      }
+      if (!read.ok || read.value !== normalized[field.key]) {
+        throw ngpclFailure({
+          base,
+          fieldResults,
+          messageSelection: 'Acknowledged',
+          code: 'FIELD_READBACK_MISMATCH',
+          error: 'Coder accepted the update command, but readback did not match. Do not run product until the code is checked on the coder.',
+          failedStep: 'field-readback',
+          extra: {
+            selectedMessage,
+            failedField: field.key,
+            expectedValue: normalized[field.key],
+            actualValue: read.value
+          }
+        });
+      }
+      await delay();
+    } catch (error) {
+      if (error instanceof MessageUpdateError) throw error;
+      const code = transportFailureCode(error);
+      throw ngpclFailure({
+        base,
+        fieldResults,
+        messageSelection: 'Acknowledged',
+        code,
+        error: error.message,
+        failedStep: 'field-readback',
+        communicationSucceeded: false,
+        printerOnline: null,
+        extra: { selectedMessage, failedField: field.key }
+      });
+    }
+  }
+
+  let status;
+  try {
+    status = await sendCommand({ printerId: printer.id, ...target, command: '{~DR|}' });
+  } catch (error) {
+    const code = transportFailureCode(error);
+    throw ngpclFailure({
+      base,
+      fieldResults,
+      messageSelection: 'Acknowledged',
+      code,
+      error: error.message,
+      failedStep: 'status-read',
+      communicationSucceeded: false,
+      printerOnline: null,
+      extra: { selectedMessage }
+    });
+  }
+
+  const rawStatus = status.value;
+  const elapsedMs = now() - startedAt;
+  const cached = applySuccess({
+    selectedMessage,
+    messageVerification: 'verified',
+    rawStatus,
+    protocol: 'ngpcl',
+    responseTimeMs: elapsedMs,
+    expectedOutput
+  });
+
+  return {
+    ...cached,
+    ...base,
+    online: true,
+    ok: true,
+    communicationSucceeded: true,
+    printerOnline: true,
+    messageMatches: true,
+    verificationAvailable: true,
+    selectedMessage,
+    fieldResults,
+    messageSelection: 'Acknowledged',
+    status: rawStatus,
+    rawStatus,
+    checkedAt: cached.lastSuccessfulAt,
+    elapsedMs
+  };
 }
 
 async function refreshStateAfterRejection({
@@ -460,6 +755,7 @@ async function executeMessageUpdate({
     source: 'last-applied'
   };
   const fieldResults = [];
+  const protocol = printer.protocol || 'wsi';
   const base = {
     id: printer.id,
     printerId: printer.id,
@@ -471,6 +767,7 @@ async function executeMessageUpdate({
     targetHost: target.ip,
     targetPort: target.port,
     mode: printer.mode,
+    protocol,
     model: printer.model || '1620',
     enabled: printer.enabled,
     requestedMessage: message.printerMessageName,
@@ -478,6 +775,23 @@ async function executeMessageUpdate({
     expectedOutput,
     verificationAvailable: supportsCurrentMessageReadback
   };
+
+  if (protocol === 'ngpcl') {
+    return executeNgpclMessageUpdate({
+      printer,
+      target,
+      message,
+      normalized,
+      base,
+      fieldResults,
+      expectedOutput,
+      sendCommand,
+      delay,
+      applySuccess,
+      now,
+      startedAt
+    });
+  }
 
   for (const field of message.fields) {
     try {

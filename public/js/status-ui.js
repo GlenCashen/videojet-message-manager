@@ -1,5 +1,5 @@
 const STALE_AFTER_MS = 45000;
-const TRAFFIC_LIGHTS = ['green', 'amber', 'red'];
+const TRAFFIC_LIGHTS = ['green', 'amber', 'blue', 'red'];
 
 function isVisibleBusy(status) {
   return Boolean(status?.busy) && status.currentOperation !== 'poll';
@@ -81,6 +81,12 @@ function printerState(decodedStatus) {
   if (TRAFFIC_LIGHTS.includes(primary)) {
     return {
       key: primary,
+      label: decodedStatus.alarm.label
+    };
+  }
+  if (primary === 'yellow') {
+    return {
+      key: 'amber',
       label: decodedStatus.alarm.label
     };
   }

@@ -1,4 +1,5 @@
 import { assertValidStatus } from './wsi-status.js';
+import { assertValidNgpclStatus } from './ngpcl-status.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -129,10 +130,12 @@ class StatusCache {
     return this.get(printerId);
   }
 
-  applySuccess(printerId, { selectedMessage, messageVerification, rawStatus, responseTimeMs, expectedOutput }) {
+  applySuccess(printerId, { selectedMessage, messageVerification, rawStatus, responseTimeMs, expectedOutput, protocol = 'wsi' }) {
     const current = this.ensure(printerId);
     const before = { ...current };
-    const decodedStatus = assertValidStatus(rawStatus);
+    const decodedStatus = protocol === 'ngpcl'
+      ? assertValidNgpclStatus(rawStatus)
+      : assertValidStatus(rawStatus);
     const timestamp = nowIso();
 
     current.online = true;

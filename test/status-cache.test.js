@@ -129,6 +129,24 @@ test('status records when current-message verification is unsupported', () => {
   assert.equal(status.messageVerification, 'unsupported');
 });
 
+test('status cache decodes NGPCL status packets when protocol is supplied', () => {
+  const cache = new StatusCache();
+  cache.syncPrinters([{ id: 'markem-1' }]);
+  const status = cache.applySuccess('markem-1', {
+    selectedMessage: 'Bundy 15 Month.job',
+    messageVerification: 'verified',
+    rawStatus: '{~DS0|0|0|1|1|0|2|0|000000000|09|1|}',
+    protocol: 'ngpcl',
+    responseTimeMs: 12
+  });
+
+  assert.equal(status.online, true);
+  assert.equal(status.selectedMessage, 'Bundy 15 Month.job');
+  assert.equal(status.decodedStatus.protocol, 'ngpcl');
+  assert.equal(status.decodedStatus.alarm.primary, 'blue');
+  assert.equal(status.decodedStatus.operatorStatus, 'Beam stop active');
+});
+
 test('successful unchanged polls broadcast fresh timestamps without changing revision', async () => {
   const events = [];
   const cache = new StatusCache({

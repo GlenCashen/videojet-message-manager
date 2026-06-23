@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { getDb } from '../db.js';
-import { normalizePrinterModel, normalizeReadbackMode, printerCapabilities } from '../printer-capabilities.js';
+import { normalizePrinterModel, normalizePrinterProtocol, normalizeReadbackMode, printerCapabilities } from '../printer-capabilities.js';
 
 function nowIso() {
   return new Date().toISOString();
@@ -14,9 +14,10 @@ function rowToPrinter(row) {
     location: row.location || '',
     host: row.host,
     port: row.port,
+    protocol: row.protocol || 'wsi',
     model: row.model || '1620',
     readbackMode: row.readback_mode || 'auto',
-    capabilities: printerCapabilities(row.model || '1620', row.readback_mode || 'auto'),
+    capabilities: printerCapabilities(row.model || '1620', row.readback_mode || 'auto', row.protocol || 'wsi'),
     mode: row.mode,
     enabled: Boolean(row.enabled)
   };
@@ -31,6 +32,7 @@ function validatePrinter(printer) {
   const location = String(printer.location || '').trim();
   const host = String(printer.host || '').trim();
   const port = Number(printer.port);
+  const protocol = normalizePrinterProtocol(printer.protocol);
   const enabled = Boolean(printer.enabled);
   const mode = printer.mode === 'emulator' ? 'emulator' : 'real';
   const model = normalizePrinterModel(printer.model);
@@ -41,7 +43,7 @@ function validatePrinter(printer) {
   if (location.length > 120) throw new Error('Printer location must be 120 characters or fewer.');
   if (!net.isIP(host) && host !== 'localhost') throw new Error('Printer host must be a valid IP address or localhost.');
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Printer port must be between 1 and 65535.');
-  return { id, name, location, host, port, model, readbackMode, enabled, mode };
+  return { id, name, location, host, port, protocol, model, readbackMode, enabled, mode };
 }
 
 function listPrinters(db = getDb()) {
@@ -63,13 +65,14 @@ function upsertPrinter(printer, db = getDb()) {
   }
   const now = nowIso();
   db.prepare(`
-    INSERT INTO printers (id, name, location, host, port, model, readback_mode, mode, enabled, created_at, updated_at)
-    VALUES (@id, @name, @location, @host, @port, @model, @readbackMode, @mode, @enabled, @now, @now)
+    INSERT INTO printers (id, name, location, host, port, protocol, model, readback_mode, mode, enabled, created_at, updated_at)
+    VALUES (@id, @name, @location, @host, @port, @protocol, @model, @readbackMode, @mode, @enabled, @now, @now)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       location = excluded.location,
       host = excluded.host,
       port = excluded.port,
+      protocol = excluded.protocol,
       model = excluded.model,
       readback_mode = excluded.readback_mode,
       mode = excluded.mode,

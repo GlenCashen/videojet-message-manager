@@ -129,6 +129,12 @@ function alarmHeading(coder) {
   return coder.state === 'offline' ? 'Last known printer status' : 'Printer status';
 }
 
+function printerModelLabel(printer) {
+  return (printer.protocol || 'wsi') === 'ngpcl'
+    ? 'Markem NGPCL'
+    : `Videojet ${printer.model || '1620'}`;
+}
+
 function cardValues(coder) {
   const printer = coder.config;
   const visibleBusy = isVisibleBusy(coder);
@@ -152,7 +158,7 @@ function cardValues(coder) {
     dataSource: state.serverConnected ? 'Live data stream' : 'Last known status',
     host: `${printer.host}:${printer.port}`,
     mode: printer.mode === 'emulator' ? 'Emulator' : 'Real printer',
-    model: `Videojet ${printer.model || '1620'}`,
+    model: printerModelLabel(printer),
     enabled: printer.enabled ? 'Enabled' : 'Disabled',
     connectionState: coder.state || 'not-checked',
     alarm: alarmSummary(coder.decodedStatus),

@@ -18,6 +18,7 @@ const elements = {
   printerLocation: $('printerLocation'),
   printerHost: $('printerHost'),
   printerPort: $('printerPort'),
+  printerProtocol: $('printerProtocol'),
   printerMode: $('printerMode'),
   printerModel: $('printerModel'),
   printerReadbackMode: $('printerReadbackMode'),

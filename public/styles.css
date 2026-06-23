@@ -16,6 +16,7 @@
   --accent-2: #1d8fd1;
   --green: #22c55e;
   --amber: #f5b841;
+  --blue: #45c7ff;
   --red: #ef4444;
   --grey: #778294;
 }
@@ -362,10 +363,12 @@ h3 { margin: 0; font-size: 1.15rem; }
 
 .traffic-green span { background: var(--green); }
 .traffic-amber span { background: var(--amber); }
+.traffic-blue span { background: var(--blue); }
 .traffic-red span { background: var(--red); }
 .traffic-light.active span { opacity: 1; }
 .traffic-green.active span { box-shadow: 0 0 14px rgba(34, 197, 94, .86); }
 .traffic-amber.active span { box-shadow: 0 0 14px rgba(245, 184, 65, .86); }
+.traffic-blue.active span { box-shadow: 0 0 14px rgba(69, 199, 255, .86); }
 .traffic-red.active span { box-shadow: 0 0 14px rgba(239, 68, 68, .86); }
 .traffic-light-group.is-stale { opacity: .76; }
 
@@ -554,6 +557,8 @@ h3 { margin: 0; font-size: 1.15rem; }
 .viewer-card.status-warning { border-top-color: var(--amber); }
 .viewer-card.alarm-green { box-shadow: inset 0 0 0 2px rgba(34, 197, 94, .18), 0 18px 40px rgba(0, 0, 0, .28); }
 .viewer-card.alarm-amber { box-shadow: inset 0 0 0 2px rgba(245, 184, 65, .2), 0 18px 40px rgba(0, 0, 0, .28); }
+.viewer-card.alarm-yellow { box-shadow: inset 0 0 0 2px rgba(245, 184, 65, .2), 0 18px 40px rgba(0, 0, 0, .28); }
+.viewer-card.alarm-blue { box-shadow: inset 0 0 0 2px rgba(69, 199, 255, .22), 0 18px 40px rgba(0, 0, 0, .28); }
 .viewer-card.alarm-red { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, .22), 0 18px 40px rgba(0, 0, 0, .28); }
 
 .viewer-card-top {

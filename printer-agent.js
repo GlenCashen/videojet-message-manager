@@ -8,6 +8,8 @@ import 'dotenv/config';
 import { CoderQueue } from './server/coder-queue.js';
 import { EmulatorManager } from './server/emulator-manager.js';
 import { MessageUpdateError, executeMessageUpdate } from './server/message-store.js';
+import { NgpclClient } from './server/ngpcl-client.js';
+import { parseNgpclJobName } from './server/ngpcl-protocol.js';
 import { printerCapabilities } from './server/printer-capabilities.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
@@ -46,6 +48,7 @@ const tlsOptions = {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const wsiClient = new WsiClient({ timeoutMs: COMMAND_TIMEOUT_MS });
+const ngpclClient = new NgpclClient({ timeoutMs: COMMAND_TIMEOUT_MS });
 const queue = new CoderQueue();
 const statusCache = new StatusCache();
 const emulatorManager = new EmulatorManager({
@@ -54,6 +57,14 @@ const emulatorManager = new EmulatorManager({
 });
 let stopping = false;
 let lastHeartbeatAt = 0;
+
+function printerProtocol(printer) {
+  return printer.protocol || 'wsi';
+}
+
+function clientForPrinter(printer) {
+  return printerProtocol(printer) === 'ngpcl' ? ngpclClient : wsiClient;
+}
 
 async function readJson(filePath, fallback) {
   try {
@@ -145,7 +156,8 @@ async function execute(job, printers) {
       fieldNames: (message.fields || []).map((field) => field.printerFieldName)
     });
   }
-  const capabilities = printerCapabilities(printer.model, printer.readbackMode);
+  const capabilities = printerCapabilities(printer.model, printer.readbackMode, printer.protocol);
+  const client = clientForPrinter(printer);
   const result = await queue.run(printer.id, { operation: 'release-apply', jobId: job.id }, () => executeMessageUpdate({
     printer,
     target: { ip: printer.host, port: printer.port },
@@ -154,7 +166,7 @@ async function execute(job, printers) {
     operationId: job.id,
     productionDate: job.payload.plannedProductionAt,
     supportsCurrentMessageReadback: capabilities.currentMessageReadback === true,
-    sendCommand: (command) => wsiClient.sendCommand(command),
+    sendCommand: (command) => client.sendCommand(command),
     delay: () => delay(BETWEEN_COMMAND_DELAY_MS),
     applySuccess: (status) => statusCache.applySuccess(printer.id, status)
   }));
@@ -183,17 +195,26 @@ async function pollPrinterStatus(printer) {
   const startedAt = Date.now();
   try {
     const target = { printerId: printer.id, ip: printer.host, port: printer.port };
-    const capabilities = printerCapabilities(printer.model, printer.readbackMode);
+    const protocol = printerProtocol(printer);
+    const capabilities = printerCapabilities(printer.model, printer.readbackMode, protocol);
+    const client = clientForPrinter(printer);
     let selectedMessage;
-    if (capabilities.currentMessageReadback) {
+    if (protocol === 'ngpcl') {
+      const rawMessage = await client.sendCommand({ ...target, protocol, command: '{~JR|}' });
+      selectedMessage = parseNgpclJobName(rawMessage);
+      if (BETWEEN_COMMAND_DELAY_MS > 0) await delay(BETWEEN_COMMAND_DELAY_MS);
+    } else if (capabilities.currentMessageReadback) {
       selectedMessage = assertPacketResponse('Q', await wsiClient.sendCommand({ ...target, command: 'Q' })).value.trim();
       if (BETWEEN_COMMAND_DELAY_MS > 0) await delay(BETWEEN_COMMAND_DELAY_MS);
     }
-    const rawStatus = assertPacketResponse('E', await wsiClient.sendCommand({ ...target, command: 'E' })).value;
+    const rawStatus = protocol === 'ngpcl'
+      ? (await client.sendCommand({ ...target, protocol, command: '{~DR|}' })).value
+      : assertPacketResponse('E', await wsiClient.sendCommand({ ...target, command: 'E' })).value;
     return statusCache.applySuccess(printer.id, {
       ...(selectedMessage !== undefined ? { selectedMessage } : {}),
       messageVerification: capabilities.currentMessageReadback ? 'verified' : 'unsupported',
       rawStatus,
+      protocol,
       responseTimeMs: Date.now() - startedAt
     });
   } catch (error) {
