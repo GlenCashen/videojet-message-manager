@@ -359,8 +359,19 @@ function normalizeReleaseBatch(value, specification, productCode) {
 }
 
 function normalizeBrewNumber(value) {
-  const brewNumber = String(value || '').trim();
-  if (!/^\d{3}$/.test(brewNumber)) throw new Error('Brew number must be exactly three digits, for example 477.');
+  const brewNumber = String(value || '').trim().toUpperCase();
+
+  // Valid examples:
+  // H0408
+  // H0408-0409
+  // H0408/0409
+  //
+  // First brew must include H prefix.
+  // Additional combined brews can be entered as 4 digits after - or /.
+  if (!/^H\d{4}(?:[-/]\d{4})*$/.test(brewNumber)) {
+    throw new Error('Brew number must use H followed by four digits, for example H0408 or H0408-0409.');
+  }
+
   return brewNumber;
 }
 

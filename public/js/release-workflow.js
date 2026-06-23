@@ -378,7 +378,7 @@ function renderReleaseExpectedMessages() {
     : new Date().toISOString();
   const release = {
     brewSheetProduct: nodes.releaseBrewProduct.value || `${master.specification.defaultBrewSheetProduct || master.productCode}-`,
-    brewNumber: nodes.releaseBrewNumber.value || '000',
+    brewNumber: nodes.releaseBrewNumber.value || 'H0000',
     plannedProductionAt,
     runCode: null
   };
