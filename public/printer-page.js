@@ -592,6 +592,9 @@ function fieldResultLine(result) {
 }
 
 function showUpdateResult(result) {
+  const requestedMessage = result.requestedMessage || result.expectedMessage || result.expectedOutput?.printerMessageName;
+  const actualMismatch = Boolean(requestedMessage && result.selectedMessage && result.selectedMessage !== requestedMessage);
+
   if (result.ok && result.verificationAvailable === false) {
     applyPrinterStatus(result);
     const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
@@ -602,7 +605,7 @@ function showUpdateResult(result) {
     );
     return;
   }
-  if (result.messageMatches) {
+  if (result.ok && result.messageMatches) {
     applyPrinterStatus(result);
   } else if (result.status) {
     applyPrinterStatus({
@@ -620,7 +623,7 @@ function showUpdateResult(result) {
     });
   }
 
-  if (result.messageMatches) {
+  if (result.ok && result.messageMatches) {
     const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
     setOperatorNotice(
       `Printer updated successfully\n\nSelected message: Verified\n${fieldLines}\nPhysical print check: Required`,
@@ -630,11 +633,10 @@ function showUpdateResult(result) {
     return;
   }
 
-  if (result.selectedMessage) {
-    const requestedMessage = result.requestedMessage || result.expectedMessage || result.expectedOutput?.printerMessageName;
+  if (actualMismatch || result.code === 'MESSAGE_MISMATCH') {
     setOperatorNotice(
       requestedMessage
-        ? `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${result.selectedMessage}\n\nDo not start production.`
+        ? `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${result.selectedMessage || 'nothing'}\n\nDo not start production.`
         : `Printer state changed unexpectedly\n\nPrinter reports: ${result.selectedMessage}\n\nRefresh and review the requested message before production.`,
       'error',
       { sticky: true }
@@ -645,8 +647,11 @@ function showUpdateResult(result) {
   const fieldLines = (result.fieldResults || []).map((field) =>
     `${field.printerFieldName}: ${field.acknowledged ? 'Acknowledged' : 'Failed'}`
   ).join('\n');
+  const selectedLine = result.selectedMessage
+    ? `\nSelected message: ${actualMismatch ? result.selectedMessage : 'Verified'}`
+    : '';
   setOperatorNotice(
-    `${result.operatorMessage || 'Message update failed'}\n\n${fieldLines}\nMessage selection: ${result.messageSelection || 'Not attempted'}`,
+    `${result.operatorMessage || 'Message update failed'}\n\n${fieldLines}\nMessage selection: ${result.messageSelection || 'Not attempted'}${selectedLine}`,
     'error',
     { sticky: true }
   );

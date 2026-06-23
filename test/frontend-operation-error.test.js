@@ -33,6 +33,18 @@ test('printer page keeps operator update notices from being cleared by status po
   assert.equal(directMessageNotices.length, 2, 'only the setOperatorNotice helper should call setNotice for the operator message node');
 });
 
+test('printer page only shows message mismatch when requested and selected messages differ', async () => {
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const showStart = page.indexOf('function showUpdateResult(result)');
+  const showEnd = page.indexOf('\nasync function confirmPrinterUpdate()', showStart);
+  const showBlock = page.slice(showStart, showEnd);
+
+  assert.ok(showBlock.includes('const actualMismatch = Boolean(requestedMessage && result.selectedMessage && result.selectedMessage !== requestedMessage)'));
+  assert.ok(showBlock.includes('if (result.ok && result.messageMatches)'));
+  assert.ok(showBlock.includes("result.operatorMessage || 'Message update failed'"));
+  assert.equal(showBlock.includes('if (result.messageMatches) {'), false);
+});
+
 test('release completion events refresh an open send dialog immediately', async () => {
   const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
   assert.ok(queue.includes('refreshOpenDialog'));
@@ -170,8 +182,9 @@ test('new messages define fields that product masters infer', async () => {
   assert.ok(html.includes('id="newMessageButton"'));
   assert.ok(html.includes('id="userFieldPrinter"'));
   assert.ok(html.includes('id="printerUserFieldForm"'));
-  assert.ok(html.includes('id="printerUserFieldType"'));
-  assert.match(html, /value="brew">BREW<\/option>.*value="batch">BATCH<\/option>.*value="run">RUN<\/option>/s);
+  assert.ok(html.includes('id="printerUserFieldLabel"'));
+  assert.ok(html.includes('id="printerUserFieldName"'));
+  assert.equal(html.includes('id="printerUserFieldType"'), false);
   assert.ok(html.includes('id="messageFieldChoices"'));
   assert.ok(html.includes('id="messagePrinter"'));
   assert.ok(html.includes('id="messageTokenPalette"'));
@@ -181,6 +194,8 @@ test('new messages define fields that product masters infer', async () => {
   assert.ok(messageConfig.includes("draggable: 'true'"));
   assert.ok(messageConfig.includes('dataTransfer.getData'));
   assert.ok(messageConfig.includes("apiJson('/api/printer-user-fields')"));
+  assert.ok(messageConfig.includes('function fieldKey'));
+  assert.ok(messageConfig.includes('function printerFieldName'));
   assert.ok(html.includes('Messages belong to one printer'));
   assert.equal(html.includes('id="masterRunField"'), false);
   assert.equal(html.includes('id="masterBatchField"'), false);

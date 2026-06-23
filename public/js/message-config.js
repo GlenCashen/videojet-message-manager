@@ -12,6 +12,7 @@ let idTouched = false;
 let displayNameTouched = false;
 let activeLine = null;
 let editingUserFieldId = null;
+let userFieldNameTouched = false;
 
 function slug(value, fallback = '') {
   return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || fallback;
@@ -19,6 +20,15 @@ function slug(value, fallback = '') {
 
 function partialSlug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-{2,}/g, '-').replace(/^-+/, '').slice(0, 50);
+}
+
+function fieldKey(value) {
+  const key = slug(value, 'field').slice(0, 30);
+  return /^[a-z]/.test(key) ? key : `field-${key}`.slice(0, 30);
+}
+
+function printerFieldName(value) {
+  return String(value || '').replace(/[^A-Za-z0-9 _-]+/g, '').trim().slice(0, 30);
 }
 
 function selectedMessage() {
@@ -312,8 +322,11 @@ async function saveMessage(event) {
 
 function resetUserFieldForm() {
   editingUserFieldId = null;
+  userFieldNameTouched = false;
   elements.printerUserFieldForm.reset();
-  elements.printerUserFieldType.disabled = false;
+  elements.printerUserFieldLabel.disabled = false;
+  elements.printerUserFieldLabel.value = '';
+  elements.printerUserFieldName.value = '';
   elements.printerUserFieldMaxLength.value = '30';
   elements.printerUserFieldUppercase.checked = true;
   elements.printerUserFieldRequired.checked = true;
@@ -322,13 +335,15 @@ function resetUserFieldForm() {
 
 function editUserField(field) {
   editingUserFieldId = field.id;
-  elements.printerUserFieldType.value = field.key;
-  elements.printerUserFieldType.disabled = true;
+  userFieldNameTouched = true;
+  elements.printerUserFieldLabel.value = field.label;
+  elements.printerUserFieldLabel.disabled = false;
+  elements.printerUserFieldName.value = field.printerFieldName;
   elements.printerUserFieldMaxLength.value = String(field.maxLength);
   elements.printerUserFieldUppercase.checked = field.transform !== 'none';
   elements.printerUserFieldRequired.checked = field.required;
   elements.printerUserFieldForm.classList.remove('hidden');
-  elements.printerUserFieldMaxLength.focus();
+  elements.printerUserFieldLabel.focus();
 }
 
 function renderPrinterUserFields() {
@@ -348,12 +363,12 @@ function renderPrinterUserFields() {
 
 async function saveUserField(event) {
   event.preventDefault();
-  const type = elements.printerUserFieldType.value;
-  const labels = { brew: 'Brew code', batch: 'Batch code', run: 'Run code' };
+  const label = elements.printerUserFieldLabel.value.trim();
+  const storedField = printerFieldName(elements.printerUserFieldName.value || label);
   const payload = {
-    label: labels[type],
-    key: type,
-    printerFieldName: type.toUpperCase(),
+    label,
+    ...(editingUserFieldId ? {} : { key: fieldKey(label) }),
+    printerFieldName: storedField,
     maxLength: Number(elements.printerUserFieldMaxLength.value),
     transform: elements.printerUserFieldUppercase.checked ? 'uppercase' : 'none',
     required: elements.printerUserFieldRequired.checked
@@ -444,7 +459,15 @@ function setupMessageConfig() {
   elements.newPrinterUserField.addEventListener('click', () => {
     resetUserFieldForm();
     elements.printerUserFieldForm.classList.remove('hidden');
-    elements.printerUserFieldType.focus();
+    elements.printerUserFieldLabel.focus();
+  });
+  elements.printerUserFieldLabel.addEventListener('input', () => {
+    if (!userFieldNameTouched) elements.printerUserFieldName.value = printerFieldName(elements.printerUserFieldLabel.value);
+  });
+  elements.printerUserFieldName.addEventListener('input', () => {
+    userFieldNameTouched = true;
+    const normalized = printerFieldName(elements.printerUserFieldName.value);
+    if (elements.printerUserFieldName.value !== normalized) elements.printerUserFieldName.value = normalized;
   });
   elements.cancelPrinterUserField.addEventListener('click', resetUserFieldForm);
   elements.printerUserFieldForm.addEventListener('submit', saveUserField);

@@ -401,6 +401,12 @@ function ngpclFailure({
   printerOnline = true,
   extra = {}
 }) {
+  const selectedMessage = extra.selectedMessage;
+  const messageMatches = extra.messageMatches ?? (
+    selectedMessage !== undefined && base.expectedMessage
+      ? selectedMessage === base.expectedMessage
+      : undefined
+  );
   return new MessageUpdateError('Message update failed', failureResult(base, fieldResults, messageSelection, {
     code,
     error,
@@ -408,6 +414,7 @@ function ngpclFailure({
     communicationSucceeded,
     printerOnline,
     rawResponse: error?.rawResponse,
+    ...(messageMatches !== undefined ? { messageMatches } : {}),
     ...extra
   }), { code, communicationSucceeded });
 }

@@ -102,13 +102,13 @@ test('QA, planner and packaging leader complete release approval without contact
     assert.equal(wrongPrinterField.response.status, 400);
     assert.match(wrongPrinterField.data.error, /belong to the assigned printer/i);
 
-    const unsupportedField = await jsonFetch(`${baseUrl}/api/printers/coder-1/user-fields`, {
+    const customField = await jsonFetch(`${baseUrl}/api/printers/coder-1/user-fields`, {
       method: 'POST', role: 'qa', body: {
-        key: 'custom', label: 'Custom', printerFieldName: 'CUSTOM', required: true, maxLength: 30, transform: 'uppercase'
+        key: 'batch1', label: 'Batch 1', printerFieldName: 'Batch1', required: true, maxLength: 30, transform: 'uppercase'
       }
     });
-    assert.equal(unsupportedField.response.status, 400);
-    assert.match(unsupportedField.data.error, /BREW, BATCH or RUN/);
+    assert.equal(customField.response.status, 201, JSON.stringify(customField.data));
+    assert.equal(customField.data.field.printerFieldName, 'Batch1');
 
     const masterResult = await jsonFetch(`${baseUrl}/api/product-masters`, {
       method: 'POST',

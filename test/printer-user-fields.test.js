@@ -21,18 +21,18 @@ function database() {
   return db;
 }
 
-test('printer user field variations normalize to BREW, BATCH or RUN', () => {
+test('printer user fields support custom stored fields', () => {
   const db = database();
-  const brew = createPrinterUserField('can', {
-    key: 'brew-code', label: 'Brew number', printerFieldName: 'TBREW', required: true, maxLength: 30
+  const batch1 = createPrinterUserField('can', {
+    key: 'batch1', label: 'Batch 1', printerFieldName: 'Batch1', required: true, maxLength: 30
   }, db);
-  assert.equal(brew.key, 'brew');
-  assert.equal(brew.printerFieldName, 'BREW');
-  assert.equal(ensurePrinterUserField('can', { key: 'brew', label: 'Brew', printerFieldName: 'BREW' }, db).id, brew.id);
-  assert.throws(() => createPrinterUserField('can', {
-    key: 'custom', label: 'Custom', printerFieldName: 'CUSTOM'
-  }, db), /BREW, BATCH or RUN/);
-  assert.deepEqual(listPrinterUserFields('can', db).map((field) => field.printerFieldName), ['BREW']);
+  assert.equal(batch1.key, 'batch1');
+  assert.equal(batch1.label, 'Batch 1');
+  assert.equal(batch1.printerFieldName, 'Batch1');
+  assert.equal(ensurePrinterUserField('can', { key: 'batch1', label: 'Batch 1', printerFieldName: 'Batch1' }, db).id, batch1.id);
+  const run = createPrinterUserField('can', { key: 'run', label: 'Run code', printerFieldName: 'RUN' }, db);
+  assert.equal(run.printerFieldName, 'RUN');
+  assert.deepEqual(listPrinterUserFields('can', db).map((field) => field.printerFieldName), ['Batch1', 'RUN']);
   db.close();
 });
 

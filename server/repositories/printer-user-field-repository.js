@@ -2,16 +2,22 @@ import crypto from 'node:crypto';
 import { getDb } from '../db.js';
 
 const FIELD_KEY_PATTERN = /^[a-z][a-z0-9-]{0,29}$/;
-const PRINTER_FIELD_PATTERN = /^[A-Z0-9 _-]{1,30}$/;
+const PRINTER_FIELD_PATTERN = /^[A-Za-z0-9 _-]{1,30}$/;
 const CANONICAL_FIELDS = {
   brew: { key: 'brew', label: 'Brew code', printerFieldName: 'BREW', maxLength: 50 },
   batch: { key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', maxLength: 50 },
   run: { key: 'run', label: 'Run code', printerFieldName: 'RUN', maxLength: 10 }
 };
 
+function slug(value, fallback = 'field') {
+  const key = String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || fallback;
+  return /^[a-z]/.test(key) ? key : `field-${key}`.slice(0, 30);
+}
+
 function canonicalType(input = {}) {
-  const values = [input.key, input.label, input.printerFieldName].map((value) => String(value || '').toLowerCase());
-  return ['brew', 'batch', 'run'].find((type) => values.some((value) => value.includes(type))) || null;
+  const key = String(input.key || '').toLowerCase();
+  const printerFieldName = String(input.printerFieldName || '').toLowerCase();
+  return ['brew', 'batch', 'run'].find((type) => key === type || printerFieldName === type) || null;
 }
 
 function fromRow(row) {
@@ -31,16 +37,15 @@ function fromRow(row) {
 
 function normalize(input, current = {}) {
   const type = canonicalType({ ...current, ...input });
-  if (!type) throw new Error('Printer user fields must be BREW, BATCH or RUN.');
-  const canonical = CANONICAL_FIELDS[type];
-  const key = canonical.key;
-  const label = canonical.label;
-  const printerFieldName = canonical.printerFieldName;
-  const maxLength = Number(input.maxLength ?? current.maxLength ?? canonical.maxLength);
+  const canonical = type ? CANONICAL_FIELDS[type] : null;
+  const label = String(input.label ?? current.label ?? canonical?.label ?? '').trim();
+  const key = String(input.key ?? current.key ?? canonical?.key ?? slug(label)).trim();
+  const printerFieldName = String(input.printerFieldName ?? current.printerFieldName ?? canonical?.printerFieldName ?? label).trim();
+  const maxLength = Number(input.maxLength ?? current.maxLength ?? canonical?.maxLength ?? 30);
   const transform = input.transform ?? current.transform ?? 'uppercase';
   if (!FIELD_KEY_PATTERN.test(key)) throw new Error('User field key must be lowercase kebab-case and at most 30 characters.');
   if (!label || label.length > 60) throw new Error('User field name must be 1-60 characters.');
-  if (!PRINTER_FIELD_PATTERN.test(printerFieldName)) throw new Error('Printer field name must be printable uppercase letters, numbers, spaces, hyphens or underscores.');
+  if (!PRINTER_FIELD_PATTERN.test(printerFieldName)) throw new Error('Printer field name must be printable letters, numbers, spaces, hyphens or underscores.');
   if (!Number.isInteger(maxLength) || maxLength < 1 || maxLength > 50) throw new Error('Maximum length must be between 1 and 50.');
   if (!['uppercase', 'none'].includes(transform)) throw new Error('Unsupported user field transform.');
   return {

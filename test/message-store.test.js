@@ -372,6 +372,7 @@ test('NGPCL update fails when field readback does not match', async () => {
       assert.equal(error instanceof MessageUpdateError, true);
       assert.equal(error.code, 'FIELD_READBACK_MISMATCH');
       assert.equal(error.result.failedStep, 'field-readback');
+      assert.equal(error.result.messageMatches, true);
       assert.equal(error.result.actualValue, 'WRONG');
       assert.match(error.result.error, /readback did not match/i);
       return true;
