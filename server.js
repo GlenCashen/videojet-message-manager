@@ -61,6 +61,7 @@ import {
 } from './server/user-store.js';
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
+import { withOperatorError } from './server/operator-error-messages.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -645,7 +646,7 @@ async function runCoderOperation(printer, operation, task) {
       statusCache.completeOperation(printer.id);
       if (operationFailed) {
         const status = statusCache.get(printer.id);
-        const result = {
+        const result = withOperatorError({
           ...error.result,
           printerOnline: status.online,
           selectedMessage: error.result.selectedMessage || status.selectedMessage,
@@ -659,7 +660,7 @@ async function runCoderOperation(printer, operation, task) {
             consecutiveFailures: status.consecutiveFailures,
             lastError: status.lastError
           }
-        };
+        });
         broadcast('operation-failed', result);
         broadcast('printer-status', status);
         error.result = result;
@@ -1010,6 +1011,27 @@ app.post('/api/printer-agent/v1/heartbeat', async (req, res) => {
   }
 });
 
+app.get('/api/printer-agent/v1/config', async (req, res) => {
+  try {
+    const agent = requirePrinterAgent(req, res);
+    if (!agent) return;
+    const printers = await readPrinters();
+    const allowedPrinterIds = new Set(agent.printerIds.includes('*')
+      ? printers.map((printer) => printer.id)
+      : agent.printerIds);
+    const allowedPrinters = printers.filter((printer) => allowedPrinterIds.has(printer.id));
+    res.json({
+      ok: true,
+      agentId: agent.id,
+      printerIds: agent.printerIds,
+      printers: allowedPrinters.map(printerForClient),
+      serverTime: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ ok: false, error: error.message });
+  }
+});
+
 app.post('/api/printer-agent/v1/jobs/claim', async (req, res) => {
   try {
     const agent = requirePrinterAgent(req, res);
@@ -1040,12 +1062,12 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
       return res.json({ ok: true, duplicate: true, releaseId: current.releaseId, printerId: current.printerId, status: release?.status || current.status });
     }
     const reportedResult = req.body?.result || { ok: false, error: 'Printer agent returned no result.' };
-    const result = {
+    const result = withOperatorError({
       ...reportedResult,
       printerId: reportedResult.printerId || current.printerId,
       operationId: reportedResult.operationId || current.id,
       requestedMessage: reportedResult.requestedMessage || current.payload?.message?.printerMessageName
-    };
+    });
     const job = completePrinterAgentJob(req.params.id, agent.id, result);
     const actor = job.jobType === 'manual'
       ? { id: job.context.actorUserId || null, username: job.context.actorUsername || `agent:${agent.id}`, developmentIdentity: !job.context.actorUserId }
@@ -1059,7 +1081,12 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
         operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedOutput?.printerMessageName,
         selectedMessage: result.selectedMessage, rawStatus: result.rawStatus,
         decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults,
-        details: { reason: job.context.reason, mode: 'manual-exception', agentId: agent.id, jobId: job.id }
+        error: result.technicalMessage || result.error || null,
+        details: {
+          reason: job.context.reason, mode: 'manual-exception', agentId: agent.id, jobId: job.id,
+          operatorMessage: result.operatorMessage || null,
+          technicalMessage: result.technicalMessage || result.error || null
+        }
       });
       broadcast('printer-status', result);
       return res.json({ ok: true, jobId: job.id, printerId: job.printerId, status: job.status });
@@ -1069,7 +1096,13 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
     addLog({
       action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-printer-state-uncertain',
       actor: `agent:${agent.id}`, targetType: 'batch-release', targetId: job.releaseId, printerId: job.printerId,
-      details: { agentId: agent.id, jobId: job.id, payloadHash: job.payloadHash, status: release.status, ok: result.ok === true }
+      error: result.technicalMessage || result.error || null,
+      details: {
+        agentId: agent.id, jobId: job.id, payloadHash: job.payloadHash, status: release.status,
+        ok: result.ok === true,
+        operatorMessage: result.operatorMessage || null,
+        technicalMessage: result.technicalMessage || result.error || null
+      }
     });
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: job.releaseId, printerId: job.printerId, status: release.status });
@@ -1609,16 +1642,24 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: updated.status });
     res.status(result.ok && result.messageMatches !== false ? 200 : 409).json({ ok: result.ok && result.messageMatches !== false, release: visibleBatchRelease(user, updated), result });
   } catch (error) {
-    const failure = error instanceof MessageUpdateError && error.result
+    const failure = withOperatorError(error instanceof MessageUpdateError && error.result
       ? { ...error.result, ok: false, error: error.result.error || error.message, checkedAt: new Date().toISOString() }
-      : { ok: false, code: error.code || null, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() };
+      : { ok: false, code: error.code || null, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() });
     if (began) {
       const updated = finishBatchReleaseTarget(req.params.id, req.params.printerId, failure);
       insertMessageUpdateEvent(failure, user || {});
       addLog({
         action: 'batch-release-printer-state-uncertain', ...(user ? auditActor(user) : {}), targetType: 'batch-release',
         targetId: req.params.id, printerId: req.params.printerId,
-        details: { printerId: req.params.printerId, error: error.message, status: updated.status, ok: false }
+        error: failure.technicalMessage || error.message,
+        details: {
+          printerId: req.params.printerId,
+          error: failure.technicalMessage || error.message,
+          operatorMessage: failure.operatorMessage || null,
+          technicalMessage: failure.technicalMessage || error.message,
+          status: updated.status,
+          ok: false
+        }
       });
       broadcast('batch-release-execution', { releaseId: req.params.id, printerId: req.params.printerId, status: updated.status });
     }
@@ -2118,9 +2159,19 @@ app.post('/api/printers/:id/set', async (req, res) => {
     res.status(result.ok ? 200 : 409).json(result);
   } catch (error) {
     if (error instanceof MessageUpdateError && error.result) {
-      const result = { ...error.result, checkedAt: new Date().toISOString() };
+      const result = withOperatorError({ ...error.result, checkedAt: new Date().toISOString() });
       insertMessageUpdateEvent(result, currentUser(req) || {});
-      addLog({ action: 'message-update-failure', ...auditActor(currentUser(req) || {}), targetType: 'printer', targetId: req.params.id, printerId: req.params.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection, details: { reason: String(req.body?.reason || '').trim(), mode: 'manual-exception' } });
+      addLog({
+        action: 'message-update-failure', ...auditActor(currentUser(req) || {}), targetType: 'printer',
+        targetId: req.params.id, printerId: req.params.id, ok: false,
+        error: result.technicalMessage || error.message,
+        fieldResults: result.fieldResults, messageSelection: result.messageSelection,
+        details: {
+          reason: String(req.body?.reason || '').trim(), mode: 'manual-exception',
+          operatorMessage: result.operatorMessage || null,
+          technicalMessage: result.technicalMessage || error.message
+        }
+      });
       return res.status(502).json(result);
     }
     if (error.statusCode === 400) {
@@ -2136,9 +2187,18 @@ app.post('/api/printers/:id/set', async (req, res) => {
       error: error.message,
       checkedAt: new Date().toISOString()
     };
-    addLog({ action: 'message-update-failure', ...auditActor(currentUser(req) || {}), targetType: 'printer', targetId: req.params.id, printerId: req.params.id, ok: false, error: error.message, details: { reason: String(req.body?.reason || '').trim(), mode: 'manual-exception' } });
+    const enriched = withOperatorError(result);
+    addLog({
+      action: 'message-update-failure', ...auditActor(currentUser(req) || {}), targetType: 'printer',
+      targetId: req.params.id, printerId: req.params.id, ok: false, error: enriched.technicalMessage || error.message,
+      details: {
+        reason: String(req.body?.reason || '').trim(), mode: 'manual-exception',
+        operatorMessage: enriched.operatorMessage || null,
+        technicalMessage: enriched.technicalMessage || error.message
+      }
+    });
     broadcast('printer-status', cached);
-    res.status(502).json(result);
+    res.status(502).json(enriched);
   } finally {
     stateChangingOperations.delete(req.params.id);
   }
@@ -2282,9 +2342,18 @@ app.post('/api/set', async (req, res) => {
         return res.status(result.ok ? 200 : 409).json(result);
       } catch (error) {
         if (error instanceof MessageUpdateError && error.result) {
-          const result = { ...error.result, checkedAt: new Date().toISOString() };
+          const result = withOperatorError({ ...error.result, checkedAt: new Date().toISOString() });
           insertMessageUpdateEvent(result, user);
-          addLog({ action: 'message-update-failure', printerId: printer.id, ok: false, error: error.message, fieldResults: result.fieldResults, messageSelection: result.messageSelection });
+          addLog({
+            action: 'message-update-failure', printerId: printer.id, ok: false,
+            error: result.technicalMessage || error.message,
+            fieldResults: result.fieldResults,
+            messageSelection: result.messageSelection,
+            details: {
+              operatorMessage: result.operatorMessage || null,
+              technicalMessage: result.technicalMessage || error.message
+            }
+          });
           return res.status(502).json(result);
         }
         if (error.statusCode === 400) {

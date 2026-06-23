@@ -19,6 +19,20 @@ test('message update catch path does not synthesize printer offline state', asyn
   assert.equal(confirmBlock.includes('online: false'), false);
 });
 
+test('printer page keeps operator update notices from being cleared by status polls', async () => {
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const applyStart = page.indexOf('function applyPrinterStatus(value)');
+  const applyEnd = page.indexOf('\nasync function loadMessages()', applyStart);
+  const applyBlock = page.slice(applyStart, applyEnd);
+  const directMessageNotices = [...page.matchAll(/setNotice\(elements\.message/g)];
+
+  assert.ok(page.includes('let operatorNoticeSticky = false'));
+  assert.ok(page.includes('function setOperatorNotice'));
+  assert.ok(applyBlock.includes('setOperatorNotice();'));
+  assert.ok(applyBlock.includes('value.operatorMessage || value.error'));
+  assert.equal(directMessageNotices.length, 2, 'only the setOperatorNotice helper should call setNotice for the operator message node');
+});
+
 test('release completion events refresh an open send dialog immediately', async () => {
   const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
   assert.ok(queue.includes('refreshOpenDialog'));

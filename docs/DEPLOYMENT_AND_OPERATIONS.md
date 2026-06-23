@@ -31,7 +31,7 @@ Site application network
   Browser clients
 ```
 
-The main server must not have an interface or route on the printer VLAN. The Printer Agent must have IP forwarding and network bridging disabled. Routable printer addresses are stored only in the agent's local printer configuration; any host value retained with main-server printer metadata is ignored in `agent` mode and should be a non-routable placeholder.
+The main server must not have an interface or route on the printer VLAN. The Printer Agent must have IP forwarding and network bridging disabled. Printer connection details are managed in the main web app and fetched by the authenticated agent; in `agent` mode the main server stores this configuration but does not open printer TCP connections itself.
 
 ## 2. Component responsibilities
 
@@ -107,37 +107,19 @@ cd C:\Services\videojet-printer-agent
 npm ci
 ```
 
-Create a local printer file outside source control, for example `C:\ProgramData\VideojetAgent\printers.json`:
-
-```json
-[
-  {
-    "id": "coder-1",
-    "name": "Can Coder",
-    "location": "Can line",
-    "host": "192.168.100.166",
-    "port": 3100,
-    "model": "1620",
-    "readbackMode": "enabled",
-    "mode": "real",
-    "enabled": true
-  }
-]
-```
-
-The printer ID must exactly match the ID configured on the main server. Configure the agent service environment:
+Configure printers once in the web app. The agent fetches its assigned printer host, port, protocol, mode, model and readback settings from the main server using its authenticated identity. Configure the agent service environment:
 
 ```text
 MAIN_SERVER_URL=https://vmm-agent.site.internal
 PRINTER_AGENT_ID=packaging-agent-1
 PRINTER_AGENT_TOKEN=<same-random-agent-token-as-main-server>
-PRINTER_AGENT_CONFIG=C:\ProgramData\VideojetAgent\printers.json
 PRINTER_AGENT_STATE=C:\ProgramData\VideojetAgent\state.json
 PRINTER_AGENT_CA_CERT=C:\ProgramData\VideojetAgent\tls\site-ca.pem
 PRINTER_AGENT_CLIENT_CERT=C:\ProgramData\VideojetAgent\tls\agent.crt
 PRINTER_AGENT_CLIENT_KEY=C:\ProgramData\VideojetAgent\tls\agent.key
 PRINTER_AGENT_POLL_MS=500
 PRINTER_AGENT_HEARTBEAT_MS=15000
+PRINTER_AGENT_CONFIG_REFRESH_MS=30000
 COMMAND_TIMEOUT_MS=5000
 BETWEEN_COMMAND_DELAY_MS=150
 ```
@@ -214,7 +196,7 @@ Do not run both local and agent execution against the same physical printers.
 
 ## 9. Initial acceptance test
 
-1. Confirm `/api/health` on the main server reports `printerExecutionMode: "agent"` and schema version 19 or later.
+1. Confirm `/api/health` on the main server reports `printerExecutionMode: "agent"` and schema version 20 or later.
 2. Start the agent and confirm its heartbeat appears in `printerAgents` with a recent `seenAt` time.
 3. Verify the main server cannot connect to any printer VLAN address.
 4. Create and independently approve a test release.
@@ -348,4 +330,4 @@ $env:ENABLE_DEV_IDENTITY="true"
 npm start
 ```
 
-To exercise the split locally, run the main server with `PRINTER_EXECUTION_MODE=agent`, set matching agent credentials, then run the agent with `PRINTER_AGENT_ALLOW_HTTP=true` and `MAIN_SERVER_URL=http://127.0.0.1:8080`. Printers marked `mode: "emulator"` in the agent configuration are hosted by the agent itself. The agent registers each claimed job's stored message and user fields before applying it, so no second local-mode main server should be run for emulator sockets.
+To exercise the split locally, run the main server with `PRINTER_EXECUTION_MODE=agent`, set matching agent credentials, then run the agent with `PRINTER_AGENT_ALLOW_HTTP=true` and `MAIN_SERVER_URL=http://127.0.0.1:8080`. Printers marked `mode: "emulator"` in the web app configuration are hosted by the agent itself. The agent registers each claimed job's stored message and user fields before applying it, so no second local-mode main server should be run for emulator sockets.

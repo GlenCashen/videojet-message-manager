@@ -312,6 +312,36 @@ test('NGPCL updates select job, verify fields, and confirm readback', async () =
   ]);
 });
 
+test('NGPCL message selection rejection has operator and technical messages', async () => {
+  const message = {
+    ...getMessageById(definitions, '12-month'),
+    printerMessageName: 'Bundy 15 Month.job',
+    fields: [{ key: 'brew', label: 'Brew number', printerFieldName: 'Batch1', required: true, maxLength: 8 }],
+    previewLines: ['{{brew}}']
+  };
+
+  await assert.rejects(
+    executeMessageUpdate({
+      ...updateArgs().args,
+      printer: { ...updateArgs().args.printer, protocol: 'ngpcl' },
+      message,
+      fields: { brew: 'T0067' },
+      sendCommand: async ({ command }) => {
+        if (command === '{~JS0|Bundy 15 Month.job|0|}') return response('packet', '{~JS1|}');
+        throw new Error(`Unexpected command ${command}`);
+      }
+    }),
+    (error) => {
+      assert.equal(error instanceof MessageUpdateError, true);
+      assert.equal(error.result.failedStep, 'message-selection');
+      assert.match(error.result.operatorMessage, /did not accept that stored message/i);
+      assert.match(error.result.technicalMessage, /\{~JS1\|\}/);
+      assert.match(error.result.error, /Unexpected NGPCL message selection response/i);
+      return true;
+    }
+  );
+});
+
 test('NGPCL update fails when field readback does not match', async () => {
   const message = {
     ...getMessageById(definitions, '12-month'),

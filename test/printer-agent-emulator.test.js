@@ -27,9 +27,8 @@ function json(response, status, body) {
 test('printer agent owns local emulators and registers claimed message definitions', async (t) => {
   const [mainPort, emulatorPort] = await Promise.all([freePort(), freePort()]);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vmm-agent-emulator-'));
-  const configPath = path.join(tempDir, 'printers.json');
   const statePath = path.join(tempDir, 'state.json');
-  await fs.writeFile(configPath, JSON.stringify([{
+  const printerConfig = [{
     id: 'agent-emulator',
     name: 'Agent Emulator',
     location: 'Test line',
@@ -38,7 +37,7 @@ test('printer agent owns local emulators and registers claimed message definitio
     model: '1620',
     enabled: true,
     mode: 'emulator'
-  }]), 'utf8');
+  }];
 
   const payload = {
     protocolVersion: 1,
@@ -69,6 +68,7 @@ test('printer agent owns local emulators and registers claimed message definitio
   let resolveCompletion;
   const completion = new Promise((resolve) => { resolveCompletion = resolve; });
   const main = http.createServer((request, response) => {
+    if (request.url === '/api/printer-agent/v1/config') return json(response, 200, { ok: true, printers: printerConfig });
     if (request.url === '/api/printer-agent/v1/heartbeat') return json(response, 200, { ok: true });
     if (request.url === '/api/printer-agent/v1/jobs/claim') {
       if (!firstClaimAt) {
@@ -102,7 +102,6 @@ test('printer agent owns local emulators and registers claimed message definitio
       MAIN_SERVER_URL: `http://127.0.0.1:${mainPort}`,
       PRINTER_AGENT_ID: 'test-agent',
       PRINTER_AGENT_TOKEN: 'test-token',
-      PRINTER_AGENT_CONFIG: configPath,
       PRINTER_AGENT_STATE: statePath,
       PRINTER_AGENT_ALLOW_HTTP: 'true',
       PRINTER_AGENT_POLL_MS: '500',

@@ -232,10 +232,11 @@ function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reason
 function finishBatchReleaseTarget(id, printerId, result, db = getDb()) {
   const now = new Date().toISOString();
   const succeeded = result?.ok !== false && result?.messageMatches !== false;
+  const errorMessage = result?.operatorMessage || result?.error || 'Printer verification failed';
   db.prepare(`
     UPDATE batch_release_execution_targets SET status = ?, error_message = ?, result_json = ?, updated_at = ?
     WHERE release_id = ? AND printer_id = ?
-  `).run(succeeded ? 'awaiting_print_check' : 'failed', succeeded ? null : String(result?.error || 'Printer verification failed').slice(0, 500), JSON.stringify(result || {}), now, id, printerId);
+  `).run(succeeded ? 'awaiting_print_check' : 'failed', succeeded ? null : String(errorMessage).slice(0, 500), JSON.stringify(result || {}), now, id, printerId);
   refreshBatchReleaseExecutionStatus(id, db);
   return getBatchRelease(id, db);
 }

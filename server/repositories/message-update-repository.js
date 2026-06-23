@@ -27,10 +27,14 @@ function insertMessageUpdateEvent(update, actor = {}, db = getDb()) {
     actorUsername: actor.username || null,
     fieldsJson: JSON.stringify(update.expectedOutput?.fields || update.fields || {}),
     fieldResultsJson: update.fieldResults ? JSON.stringify(update.fieldResults) : null,
-    messageSelectionResultJson: update.messageSelection ? JSON.stringify({ result: update.messageSelection }) : null,
+    messageSelectionResultJson: update.messageSelection ? JSON.stringify({
+      result: update.messageSelection,
+      operatorMessage: update.operatorMessage || null,
+      technicalMessage: update.technicalMessage || update.error || null
+    }) : null,
     result: resultFromUpdate(update),
     errorCode: update.code || null,
-    errorMessage: update.error || null,
+    errorMessage: update.technicalMessage || update.error || null,
     occurredAt: update.checkedAt || new Date().toISOString()
   });
 }

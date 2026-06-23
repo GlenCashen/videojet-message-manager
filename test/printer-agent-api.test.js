@@ -81,6 +81,12 @@ test('printer-agent API requires credentials and accepts its configured identity
     assert.equal(heartbeat.status, 200);
     assert.equal((await heartbeat.json()).executionMode, 'agent');
 
+    const configResponse = await fetch(`${baseUrl}/api/printer-agent/v1/config`, { headers });
+    assert.equal(configResponse.status, 200);
+    const config = await configResponse.json();
+    assert.deepEqual(config.printers.map((printer) => printer.id), ['coder-1']);
+    assert.equal(config.printers[0].host, '192.168.100.166');
+
     const statuses = await fetch(`${baseUrl}/api/printers/status`, {
       headers: { Cookie: 'devRole=admin; devPrinterIds=' }
     });

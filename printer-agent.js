@@ -10,6 +10,7 @@ import { EmulatorManager } from './server/emulator-manager.js';
 import { MessageUpdateError, executeMessageUpdate } from './server/message-store.js';
 import { NgpclClient } from './server/ngpcl-client.js';
 import { parseNgpclJobName } from './server/ngpcl-protocol.js';
+import { withOperatorError } from './server/operator-error-messages.js';
 import { printerCapabilities } from './server/printer-capabilities.js';
 import { StatusCache } from './server/status-cache.js';
 import { WsiClient } from './server/wsi-client.js';
@@ -20,10 +21,10 @@ const VERSION = '0.1.0';
 const MAIN_SERVER_URL = String(process.env.MAIN_SERVER_URL || '').replace(/\/$/, '');
 const AGENT_ID = String(process.env.PRINTER_AGENT_ID || '').trim();
 const AGENT_TOKEN = String(process.env.PRINTER_AGENT_TOKEN || '');
-const CONFIG_PATH = path.resolve(process.env.PRINTER_AGENT_CONFIG || 'data/printers.json');
 const STATE_PATH = path.resolve(process.env.PRINTER_AGENT_STATE || 'data/printer-agent-state.json');
 const POLL_MS = Math.max(Number(process.env.PRINTER_AGENT_POLL_MS || 500), 250);
 const HEARTBEAT_MS = Math.max(Number(process.env.PRINTER_AGENT_HEARTBEAT_MS || 15000), 1000);
+const CONFIG_REFRESH_MS = Math.max(Number(process.env.PRINTER_AGENT_CONFIG_REFRESH_MS || 30000), 1000);
 const COMMAND_TIMEOUT_MS = Math.max(Number(process.env.COMMAND_TIMEOUT_MS || 5000), 500);
 const BETWEEN_COMMAND_DELAY_MS = Math.max(Number(process.env.BETWEEN_COMMAND_DELAY_MS || 150), 0);
 const TLS_CA_PATH = process.env.PRINTER_AGENT_CA_CERT || '';
@@ -57,6 +58,8 @@ const emulatorManager = new EmulatorManager({
 });
 let stopping = false;
 let lastHeartbeatAt = 0;
+let lastConfigAt = 0;
+let activePrinters = [];
 
 function printerProtocol(printer) {
   return printer.protocol || 'wsi';
@@ -72,6 +75,23 @@ async function readJson(filePath, fallback) {
   } catch (error) {
     if (error.code === 'ENOENT') return fallback;
     throw error;
+  }
+}
+
+async function refreshPrinters({ force = false } = {}) {
+  if (!force && activePrinters.length && Date.now() - lastConfigAt < CONFIG_REFRESH_MS) return activePrinters;
+  try {
+    const data = await request('/api/printer-agent/v1/config');
+    const printers = (Array.isArray(data?.printers) ? data.printers : []).map(validatePrinter);
+    if (!printers.length) throw new Error('Main server returned no assigned printers for this agent.');
+    activePrinters = printers;
+    lastConfigAt = Date.now();
+    await emulatorManager.sync(activePrinters);
+    return activePrinters;
+  } catch (error) {
+    if (!activePrinters.length) throw error;
+    console.error(`${new Date().toISOString()} Could not refresh printer config: ${error.message}`);
+    return activePrinters;
   }
 }
 
@@ -140,7 +160,7 @@ async function recoverInterrupted(state) {
     error: 'Printer agent restarted while this job was in flight. Confirm physical printer state before retrying.',
     checkedAt: new Date().toISOString()
   };
-  await report(job, result);
+  await report(job, withOperatorError(result));
   await writeState({ active: null });
 }
 
@@ -148,7 +168,7 @@ async function execute(job, printers) {
   if (payloadHash(job.payload) !== job.payloadHash) throw new Error('Claimed job payload hash verification failed.');
   if (job.payload.protocolVersion !== 1) throw new Error(`Unsupported printer job protocol ${job.payload.protocolVersion}.`);
   const printer = printers.find((item) => item.id === job.payload.printerId && item.enabled);
-  if (!printer) throw new Error(`Printer ${job.payload.printerId} is not enabled in the local agent configuration.`);
+  if (!printer) throw new Error(`Printer ${job.payload.printerId} is not enabled in the server-assigned agent configuration.`);
   const message = job.payload.message;
   if (printer.mode === 'emulator') {
     emulatorManager.configurePrinter(printer.id, {
@@ -180,15 +200,15 @@ async function execute(job, printers) {
 
 function failureResult(error, job) {
   if (error instanceof MessageUpdateError && error.result) {
-    return { ...error.result, ok: false, error: error.result.error || error.message };
+    return withOperatorError({ ...error.result, ok: false, error: error.result.error || error.message });
   }
-  return {
+  return withOperatorError({
     ok: false,
     code: error.code || 'AGENT_EXECUTION_FAILED',
     printerId: job.payload.printerId,
     error: error.message,
     checkedAt: new Date().toISOString()
-  };
+  });
 }
 
 async function pollPrinterStatus(printer) {
@@ -236,14 +256,13 @@ async function heartbeat(printers) {
 }
 
 async function main() {
-  const printers = (await readJson(CONFIG_PATH, [])).map(validatePrinter);
-  if (!printers.length) throw new Error(`No printers are configured in ${CONFIG_PATH}.`);
-  await emulatorManager.sync(printers);
+  let printers = await refreshPrinters({ force: true });
   await recoverInterrupted(await readJson(STATE_PATH, { active: null }));
-  console.log(`Printer agent ${AGENT_ID} started with ${printers.length} configured printer(s).`);
+  console.log(`Printer agent ${AGENT_ID} started with ${printers.length} server-assigned printer(s).`);
 
   while (!stopping) {
     try {
+      printers = await refreshPrinters();
       await recoverInterrupted(await readJson(STATE_PATH, { active: null }));
       const claimed = await request('/api/printer-agent/v1/jobs/claim', { method: 'POST', body: '{}' });
       if (!claimed?.job) {

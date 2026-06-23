@@ -77,6 +77,7 @@ let manualBusy = false;
 let pendingManualJobId = null;
 let previewTimer = null;
 let previewRequestId = 0;
+let operatorNoticeSticky = false;
 
 const releaseQueue = createOperatorReleaseQueue({
   printerId,
@@ -116,6 +117,20 @@ function setBusy(busy) {
   elements.openManualMessage.disabled = disabled;
   elements.confirmSetButton.disabled = disabled;
   for (const input of dynamicFieldInputs()) input.disabled = disabled;
+}
+
+function setOperatorNotice(message = '', type = 'info', { sticky = false, force = false } = {}) {
+  if (!message) {
+    if (force || !operatorNoticeSticky) {
+      operatorNoticeSticky = false;
+      setNotice(elements.message);
+    }
+    return;
+  }
+  if (force || !operatorNoticeSticky || sticky) {
+    operatorNoticeSticky = sticky;
+    setNotice(elements.message, message, type);
+  }
 }
 
 function accessLabel() {
@@ -306,7 +321,7 @@ function updateOperatorShell() {
 
     if (isStale(latestStatus) && serverConnected) {
       const errorDetail = latestStatus.lastError ? ` Latest WSI error: ${latestStatus.lastError}` : '';
-      setNotice(elements.message, `Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error');
+      setOperatorNotice(`Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error');
     }
   } else if (printer && !printer.enabled) {
     elements.connection.textContent = 'Disabled';
@@ -411,7 +426,7 @@ function applyPrinterConfig(value) {
   }
 
   if (!printer.enabled) {
-    setNotice(elements.message, `${printer.name} is disabled.`, 'error');
+    setOperatorNotice(`${printer.name} is disabled.`, 'error', { sticky: true });
   }
 
   updateOperatorShell();
@@ -439,11 +454,11 @@ function applyPrinterStatus(value) {
   };
 
   if (value.ok === false && !value.messageMatches) {
-    setNotice(elements.message, value.error || 'Printer request failed.', 'error');
+    setOperatorNotice(value.operatorMessage || value.error || 'Printer request failed.', 'error', { sticky: true });
   } else if (visibleBusy) {
-    setNotice(elements.message, 'Printer operation in progress...');
+    setOperatorNotice('Printer operation in progress...', 'info', { force: true });
   } else if (serverConnected && !isStale(latestStatus)) {
-    setNotice(elements.message);
+    setOperatorNotice();
   }
 
   updateOperatorShell();
@@ -457,7 +472,7 @@ async function loadMessages() {
 
 async function loadPrinter() {
   if (!printerId) {
-    setNotice(elements.message, 'No coder id was provided in the page URL.', 'error');
+    setOperatorNotice('No coder id was provided in the page URL.', 'error', { sticky: true });
     setBusy(true);
     return;
   }
@@ -472,7 +487,7 @@ async function loadPrinter() {
     applyPrinterStatus(cached);
     await loadFaultHistory();
   } catch (error) {
-    setNotice(elements.message, normalizeError(error), 'error');
+    setOperatorNotice(normalizeError(error), 'error', { sticky: true });
     setBusy(true);
   }
 }
@@ -513,7 +528,7 @@ async function checkPrinter() {
   if (!printer || !printer.enabled || !serverConnected || !canOperatePrinter(printer.id)) return;
 
   setBusy(true);
-  setNotice(elements.message, 'Checking coder...');
+  setOperatorNotice('Checking coder...', 'info', { force: true });
   try {
     const result = await postJson(`/api/printers/${encodeURIComponent(printerId)}/check`, {});
     applyPrinterStatus(result);
@@ -558,16 +573,16 @@ async function reviewPrinterUpdate(event) {
 
   const reason = elements.manualReason.value.trim();
   if (reason.length < 5) {
-    setNotice(elements.message, 'Enter a clear reason for this manual message change.', 'error');
+    setOperatorNotice('Enter a clear reason for this manual message change.', 'error', { force: true });
     return;
   }
   const preview = await refreshPreviewNow();
   if (!preview) {
-    setNotice(elements.message, 'Enter all required fields before reviewing this update.', 'error');
+    setOperatorNotice('Enter all required fields before reviewing this update.', 'error', { force: true });
     return;
   }
 
-  setNotice(elements.message);
+  setOperatorNotice('', 'info', { force: true });
   renderReview(preview);
   appendReviewLine('Audit reason', reason);
 }
@@ -580,10 +595,10 @@ function showUpdateResult(result) {
   if (result.ok && result.verificationAvailable === false) {
     applyPrinterStatus(result);
     const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
-    setNotice(
-      elements.message,
+    setOperatorNotice(
       `Message change acknowledged by the printer\n\nCurrent-message readback is unavailable on Videojet ${printer?.model || '1710'}.\n${fieldLines}\nPhysical print check: Required`,
-      'success'
+      'success',
+      { sticky: true }
     );
     return;
   }
@@ -607,22 +622,22 @@ function showUpdateResult(result) {
 
   if (result.messageMatches) {
     const fieldLines = (result.fieldResults || []).map(fieldResultLine).join('\n');
-    setNotice(
-      elements.message,
+    setOperatorNotice(
       `Printer updated successfully\n\nSelected message: Verified\n${fieldLines}\nPhysical print check: Required`,
-      'success'
+      'success',
+      { sticky: true }
     );
     return;
   }
 
   if (result.selectedMessage) {
     const requestedMessage = result.requestedMessage || result.expectedMessage || result.expectedOutput?.printerMessageName;
-    setNotice(
-      elements.message,
+    setOperatorNotice(
       requestedMessage
         ? `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${result.selectedMessage}\n\nDo not start production.`
         : `Printer state changed unexpectedly\n\nPrinter reports: ${result.selectedMessage}\n\nRefresh and review the requested message before production.`,
-      'error'
+      'error',
+      { sticky: true }
     );
     return;
   }
@@ -630,10 +645,10 @@ function showUpdateResult(result) {
   const fieldLines = (result.fieldResults || []).map((field) =>
     `${field.printerFieldName}: ${field.acknowledged ? 'Acknowledged' : 'Failed'}`
   ).join('\n');
-  setNotice(
-    elements.message,
-    `Message update failed\n\n${fieldLines}\nMessage selection: ${result.messageSelection || 'Not attempted'}`,
-    'error'
+  setOperatorNotice(
+    `${result.operatorMessage || 'Message update failed'}\n\n${fieldLines}\nMessage selection: ${result.messageSelection || 'Not attempted'}`,
+    'error',
+    { sticky: true }
   );
 }
 
@@ -645,14 +660,14 @@ async function confirmPrinterUpdate() {
   const validation = validateFieldValues();
   setFieldErrors(validation.errors);
   if (!definition || !validation.valid || reason.length < 5) {
-    setNotice(elements.message, 'Enter all required fields before setting the printer.', 'error');
+    setOperatorNotice('Enter all required fields before setting the printer.', 'error', { force: true });
     return;
   }
 
   hideReview();
   elements.manualDialog.close();
   setBusy(true);
-  setNotice(elements.message, 'Queued message request...');
+  setOperatorNotice('Queued message request...', 'info', { force: true });
   try {
     const result = await postJson(`/api/printers/${encodeURIComponent(printerId)}/set`, {
       messageId: definition.id,
@@ -663,7 +678,7 @@ async function confirmPrinterUpdate() {
     elements.manualReason.value = '';
     if (result.queued) {
       pendingManualJobId = result.job?.id || null;
-      setNotice(elements.message, 'Manual change queued. Waiting for the printer agent to verify it.');
+      setOperatorNotice('Manual change queued. Waiting for the printer agent to verify it.', 'info', { force: true });
       return;
     }
     showUpdateResult(result);
@@ -677,23 +692,23 @@ async function confirmPrinterUpdate() {
         });
         const requestedMessage = result.requestedMessage || definition.printerMessageName;
         if (readback.currentMessage !== requestedMessage) {
-          setNotice(
-            elements.message,
+          setOperatorNotice(
             `MESSAGE MISMATCH\n\nRequested: ${requestedMessage}\nPrinter reports: ${readback.currentMessage}\n\nDo not start production.`,
-            'error'
+            'error',
+            { sticky: true }
           );
         } else {
           showUpdateResult(result);
         }
       } catch (readbackError) {
-        setNotice(elements.message, `Message change sent, but readback failed: ${normalizeError(readbackError)}`, 'error');
+        setOperatorNotice(`Message change sent, but readback failed: ${normalizeError(readbackError)}`, 'error', { sticky: true });
       }
     }
   } catch (error) {
     hideReview();
     if (error.data?.fieldResults || (error.data?.selectedMessage && error.data?.requestedMessage)) showUpdateResult(error.data);
     else {
-      setNotice(elements.message, normalizeError(error), 'error');
+      setOperatorNotice(error.data?.operatorMessage || normalizeError(error), 'error', { sticky: true });
     }
   } finally {
     setBusy(false);
@@ -719,7 +734,7 @@ function markServerDisconnected() {
   document.body.classList.add('server-disconnected');
 
   setLiveBadge(document.getElementById('serverConnectionBadge'), false);
-  setNotice(elements.message, 'Server disconnected. Showing the last known printer status.', 'error');
+  setOperatorNotice('Server disconnected. Showing the last known printer status.', 'error', { force: true });
   updateOperatorShell();
 }
 
@@ -732,7 +747,7 @@ elements.messageName.addEventListener('change', () => {
 elements.cancelReviewButton.addEventListener('click', hideReview);
 elements.confirmSetButton.addEventListener('click', confirmPrinterUpdate);
 elements.openManualMessage.addEventListener('click', () => {
-  setNotice(elements.message);
+  setOperatorNotice('', 'info', { force: true });
   hideReview();
   if (!elements.manualDialog.open) elements.manualDialog.showModal();
 });
@@ -794,11 +809,11 @@ subscribeToPrinterEvents({
     const match = printers.find((value) => value.id === printerId);
     if (match) {
       applyPrinterConfig(match);
-      loadMessages().catch((error) => setNotice(elements.message, normalizeError(error), 'error'));
+      loadMessages().catch((error) => setOperatorNotice(normalizeError(error), 'error', { sticky: true }));
     }
   },
-  onBatchReleaseExecution: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error')),
-  onBatchReleaseChanged: () => releaseQueue.refresh().catch((error) => setNotice(elements.message, normalizeError(error), 'error'))
+  onBatchReleaseExecution: () => releaseQueue.refresh().catch((error) => setOperatorNotice(normalizeError(error), 'error', { sticky: true })),
+  onBatchReleaseChanged: () => releaseQueue.refresh().catch((error) => setOperatorNotice(normalizeError(error), 'error', { sticky: true }))
 });
 
 loadPrinter();

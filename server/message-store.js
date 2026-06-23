@@ -11,6 +11,7 @@ import {
   parseNgpclFieldResponse,
   parseNgpclJobName
 } from './ngpcl-protocol.js';
+import { withOperatorError } from './operator-error-messages.js';
 import { assertPacketResponse, failureMessage } from './wsi-response.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -367,7 +368,7 @@ function statusResult(cached) {
 }
 
 function failureResult(base, fieldResults, messageSelection, extra = {}) {
-  return {
+  return withOperatorError({
     ...base,
     ok: false,
     communicationSucceeded: true,
@@ -378,7 +379,7 @@ function failureResult(base, fieldResults, messageSelection, extra = {}) {
     messageSelection,
     messageSelectionAttempted: messageSelection !== 'Not attempted',
     ...extra
-  };
+  });
 }
 
 function transportFailureCode(error) {
@@ -406,6 +407,7 @@ function ngpclFailure({
     failedStep,
     communicationSucceeded,
     printerOnline,
+    rawResponse: error?.rawResponse,
     ...extra
   }), { code, communicationSucceeded });
 }
@@ -472,7 +474,8 @@ async function executeNgpclMessageUpdate({
       error: error.message,
       failedStep: 'message-selection',
       communicationSucceeded: code !== 'NGPCL_TIMEOUT' && code !== 'WSI_CONNECTION_ERROR',
-      printerOnline: code === 'NGPCL_TIMEOUT' || code === 'WSI_CONNECTION_ERROR' ? null : true
+      printerOnline: code === 'NGPCL_TIMEOUT' || code === 'WSI_CONNECTION_ERROR' ? null : true,
+      extra: { rawResponse: error.rawResponse }
     });
   }
   await delay();
@@ -490,7 +493,8 @@ async function executeNgpclMessageUpdate({
       error: error.message,
       failedStep: 'message-verification',
       communicationSucceeded: false,
-      printerOnline: null
+      printerOnline: null,
+      extra: { rawResponse: error.rawResponse }
     });
   }
 
@@ -576,7 +580,7 @@ async function executeNgpclMessageUpdate({
         failedStep: 'field-update',
         communicationSucceeded: code !== 'NGPCL_TIMEOUT' && code !== 'WSI_CONNECTION_ERROR',
         printerOnline: code === 'NGPCL_TIMEOUT' || code === 'WSI_CONNECTION_ERROR' ? null : true,
-        extra: { selectedMessage }
+        extra: { selectedMessage, rawResponse: error.rawResponse }
       });
     }
     await delay();
@@ -654,7 +658,7 @@ async function executeNgpclMessageUpdate({
     expectedOutput
   });
 
-  return {
+  return withOperatorError({
     ...cached,
     ...base,
     online: true,
@@ -670,7 +674,7 @@ async function executeNgpclMessageUpdate({
     rawStatus,
     checkedAt: cached.lastSuccessfulAt,
     elapsedMs
-  };
+  });
 }
 
 async function refreshStateAfterRejection({
@@ -931,7 +935,7 @@ async function executeMessageUpdate({
   });
   const messageMatches = selected ? selected.value === message.printerMessageName : null;
 
-  return {
+  return withOperatorError({
     ...cached,
     ...base,
     online: true,
@@ -948,7 +952,7 @@ async function executeMessageUpdate({
     rawStatus: status.value,
     checkedAt: cached.lastSuccessfulAt,
     elapsedMs
-  };
+  });
 }
 
 export {
