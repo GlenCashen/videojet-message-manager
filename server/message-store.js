@@ -136,10 +136,15 @@ function validateDefinition(definition, index, printerIds) {
   }
 
   assertObject(definition.dateRule, `Message ${definition.id} dateRule`);
-  if (definition.dateRule.type !== 'offset-months') {
-    throw new Error(`Message ${definition.id} dateRule.type must be offset-months.`);
+  if (!['offset-months', 'offset-days'].includes(definition.dateRule.type)) {
+    throw new Error(`Message ${definition.id} dateRule.type must be offset-months or offset-days.`);
   }
-  if (!Number.isInteger(definition.dateRule.months) || definition.dateRule.months < 0 || definition.dateRule.months > 120) {
+  if (definition.dateRule.type === 'offset-days') {
+    definition.dateRule.days = Number(definition.dateRule.days ?? definition.dateRule.months ?? 0);
+    if (!Number.isInteger(definition.dateRule.days) || definition.dateRule.days < 0 || definition.dateRule.days > 3650) {
+      throw new Error(`Message ${definition.id} dateRule.days must be between 0 and 3650.`);
+    }
+  } else if (!Number.isInteger(definition.dateRule.months) || definition.dateRule.months < 0 || definition.dateRule.months > 120) {
     throw new Error(`Message ${definition.id} dateRule.months must be between 0 and 120.`);
   }
   definition.dateRule.format ||= DEFAULT_DATE_FORMAT;
@@ -306,6 +311,24 @@ function addCalendarMonthsClamped(parts, months) {
   return { year, month, day };
 }
 
+function addCalendarDays(parts, days) {
+  const date = new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  date.setDate(date.getDate() + days);
+  return {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+    hour: date.getHours(),
+    minute: date.getMinutes(),
+    second: date.getSeconds()
+  };
+}
+
+function dateRuleOffsetDays(rule = {}) {
+  if (rule.type !== 'offset-days') return null;
+  return Number(rule.days ?? rule.months ?? 0);
+}
+
 function pad2(value) {
   return String(value).padStart(2, '0');
 }
@@ -328,7 +351,10 @@ function formatTimeParts(parts, format = DEFAULT_TIME_FORMAT) {
 function renderPreview(message, fields, options = {}) {
   const normalized = validateMessageFields(message, fields);
   const production = parseProductionDate(options.productionDate);
-  const bestBefore = addCalendarMonthsClamped(production, message.dateRule.months);
+  const offsetDays = dateRuleOffsetDays(message.dateRule);
+  const bestBefore = offsetDays === null
+    ? addCalendarMonthsClamped(production, message.dateRule.months)
+    : addCalendarDays(production, offsetDays);
   const tokens = {
     ...normalized,
     bestBeforeDate: formatDateParts(bestBefore, options.dateFormat || message.dateRule.format || DEFAULT_DATE_FORMAT),

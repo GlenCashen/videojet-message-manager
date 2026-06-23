@@ -179,7 +179,7 @@
             <section class="wide message-definition-section" aria-labelledby="messageFormattingTitle">
               <div class="message-definition-heading"><div><h3 id="messageFormattingTitle">Date and time</h3><p class="muted">System values calculated from the planned production date.</p></div></div>
               <div class="message-format-grid">
-                <label for="messageDateMonths">Date offset in months<input id="messageDateMonths" type="number" min="0" max="120" required></label>
+                <label for="messageDateMonths">Date offset in days<input id="messageDateMonths" type="number" min="0" max="3650" required></label>
                 <label for="messageDateFormat">Date format<select id="messageDateFormat"><option>DD/MM/YYYY</option><option>DD/MM/YY</option><option>YYYY-MM-DD</option></select></label>
                 <label for="messageTimeFormat">Time format<select id="messageTimeFormat"><option>HH:mm:ss</option><option>HH:mm</option><option>hh:mm A</option></select></label>
               </div>
@@ -198,6 +198,8 @@
               <div id="messageMasterUsageList" class="message-master-usage-list"></div>
             </details>
             <div class="actions wide">
+              <button id="archiveMessageButton" class="secondary" type="button">Archive message</button>
+              <button id="deleteMessageButton" class="secondary danger-button hidden" type="button">Delete archived message</button>
               <button id="saveMessageButton" class="primary" type="submit">Save message</button>
             </div>
           </form>

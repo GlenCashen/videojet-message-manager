@@ -61,6 +61,7 @@ import {
 } from './server/user-store.js';
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
+import { deleteMessage } from './server/repositories/message-repository.js';
 import { withOperatorError } from './server/operator-error-messages.js';
 import {
   claimPrinterAgentJob,
@@ -466,6 +467,18 @@ function filterEventPayload(user, type, payload) {
   if (type === 'status-snapshot') return payload.filter((status) => canViewPrinter(user, status.printerId || status.id));
   if (type === 'fleet-snapshot') return visiblePrinters(user, payload).map(printerForClient);
   return payload;
+}
+
+function dateRuleAmount(rule = {}) {
+  return rule.type === 'offset-days'
+    ? Number(rule.days ?? rule.months ?? 0)
+    : Number(rule.months ?? 0);
+}
+
+function sameDateRule(left = {}, right = {}) {
+  return (left.type || 'offset-months') === (right.type || 'offset-months')
+    && dateRuleAmount(left) === dateRuleAmount(right)
+    && (left.format || 'DD/MM/YYYY') === (right.format || 'DD/MM/YYYY');
 }
 
 function broadcast(type, payload) {
@@ -985,7 +998,8 @@ app.get('/api/messages', async (req, res) => {
     if (!user) return;
     if (!canEditMessages(user) && !getCapabilities(user).viewBatchReleases) return forbidden(res, 'You do not have permission to view messages.');
     const printers = await readPrinters();
-    res.json(enabledMessages(await loadMessages(undefined, { printers })));
+    const messages = await loadMessages(undefined, { printers });
+    res.json(canEditMessages(user) && req.query.enabledOnly !== 'true' ? messages : enabledMessages(messages));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -1238,6 +1252,24 @@ app.put('/api/messages/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/messages/:id', async (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canEditMessages(user)) return forbidden(res, 'You do not have permission to edit messages.');
+    const message = deleteMessage(req.params.id);
+    if (!message) return res.status(404).json({ ok: false, error: `Message ${req.params.id} was not found.` });
+    const printers = await readPrinters();
+    const messages = await loadMessages(undefined, { printers });
+    await syncEmulatorManager(printers, messages);
+    addLog({ action: 'message-deleted', ...auditActor(user), targetType: 'message', targetId: req.params.id, details: { displayName: message.displayName, ok: true } });
+    broadcast('messages-updated', { messages });
+    res.json({ ok: true, message });
+  } catch (error) {
+    res.status(409).json({ ok: false, error: error.message });
+  }
+});
+
 app.post('/api/messages/:id/preview', async (req, res) => {
   try {
     const user = requireUser(req, res);
@@ -1276,6 +1308,7 @@ async function validateProductMasterInput(input) {
     const printer = printerMap.get(printerId);
     if (!printer) throw new Error(`Printer ${printerId} was not found.`);
     const message = getMessageForPrinter(messages, requested.messageId, printerId);
+    if (!message.enabled) throw new Error(`${message.displayName} is archived. Restore it before adding it to a product master.`);
     if (!message.previewLines.length || message.previewLines.length > 4) throw new Error(`${message.displayName} must define between one and four preview lines.`);
     const allowedSources = new Set(['run_code', 'brew_sheet_product', 'brew_number']);
     const mappings = Array.isArray(requested.fieldMappings) ? requested.fieldMappings : [];
@@ -1302,7 +1335,8 @@ async function validateProductMasterInput(input) {
       printerIds: printerConfigurations.map((configuration) => configuration.printerId),
       messageId: primary.messageId,
       fieldMappings: primary.fieldMappings,
-      bestBeforeMonths: primary.dateRule.months,
+      bestBeforeMonths: primary.dateRule.months ?? 0,
+      bestBeforeDays: primary.dateRule.type === 'offset-days' ? Number(primary.dateRule.days ?? primary.dateRule.months ?? 0) : 0,
       dateRule: primary.dateRule,
       timeRule: primary.timeRule,
       previewLines: primary.previewLines,
@@ -1554,8 +1588,7 @@ async function releaseExecutionContext(release, printerId, user) {
   const approvedLines = configuration.previewLines;
   const mappedKeys = new Set((configuration.fieldMappings || []).map((mapping) => mapping.fieldKey));
   const definitionMatches = JSON.stringify(message.previewLines) === JSON.stringify(approvedLines)
-    && Number(message.dateRule?.months) === Number(configuration.dateRule?.months)
-    && (message.dateRule?.format || 'DD/MM/YYYY') === (configuration.dateRule?.format || 'DD/MM/YYYY')
+    && sameDateRule(message.dateRule, configuration.dateRule)
     && (message.timeRule?.format || 'HH:mm:ss') === (configuration.timeRule?.format || 'HH:mm:ss')
     && [...mappedKeys].every((fieldKey) => message.fields.some((field) => field.key === fieldKey));
   if (!definitionMatches) {
@@ -1811,7 +1844,10 @@ app.get('/api/printers', async (_req, res) => {
     if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
-    res.json(visiblePrinters(user, printers).map(printerForClient));
+    const enabledOnly = _req.query.enabledOnly === 'true';
+    res.json(visiblePrinters(user, printers)
+      .filter((printer) => !enabledOnly || printer.enabled)
+      .map(printerForClient));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });
   }
@@ -1841,7 +1877,10 @@ app.get('/api/printers/status', async (_req, res) => {
     if (!user) return;
     const printers = await readPrinters();
     syncStatusPrinters(printers);
-    const visibleIds = new Set(visiblePrinters(user, printers).map((printer) => printer.id));
+    const enabledOnly = _req.query.enabledOnly === 'true';
+    const visibleIds = new Set(visiblePrinters(user, printers)
+      .filter((printer) => !enabledOnly || printer.enabled)
+      .map((printer) => printer.id));
     res.json(statusCache.all().filter((status) => visibleIds.has(status.printerId)));
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message });

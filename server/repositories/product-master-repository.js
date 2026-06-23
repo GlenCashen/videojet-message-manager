@@ -22,6 +22,7 @@ function normalizeSpecification(input = {}) {
   const runPrefix = String(input.runPrefix ?? 'T').trim().toUpperCase();
   const runWidth = Number(input.runWidth ?? 4);
   const bestBeforeMonths = Number(input.bestBeforeMonths ?? 12);
+  const bestBeforeDays = Number(input.bestBeforeDays ?? 0);
   const defaultBrewSheetProduct = String(input.defaultBrewSheetProduct || '').trim().toUpperCase();
   const requestedConfigurations = Array.isArray(input.printerConfigurations) ? input.printerConfigurations : [];
   const printerConfigurations = requestedConfigurations.map((configuration) => ({
@@ -44,6 +45,7 @@ function normalizeSpecification(input = {}) {
   if (!runPrefix || runPrefix.length > 10 || !/^[\x20-\x7E]+$/.test(runPrefix)) throw new Error('Run prefix must be 1-10 printable characters.');
   if (!Number.isInteger(runWidth) || runWidth < 1 || runWidth > 8) throw new Error('Run width must be between 1 and 8 digits.');
   if (!Number.isInteger(bestBeforeMonths) || bestBeforeMonths < 0 || bestBeforeMonths > 120) throw new Error('Best-before months must be between 0 and 120.');
+  if (!Number.isInteger(bestBeforeDays) || bestBeforeDays < 0 || bestBeforeDays > 3650) throw new Error('Best-before days must be between 0 and 3650.');
   if (defaultBrewSheetProduct.length > 50) throw new Error('Default brew-sheet product must be at most 50 characters.');
   if (printerConfigurations.some((configuration) => !configuration.printerId || !configuration.messageId)) throw new Error('Every permitted printer requires a stored message.');
   if (printerConfigurations.some((configuration) => configuration.fieldMappings.some((mapping) => !FIELD_KEY_PATTERN.test(mapping.fieldKey)))) throw new Error('Message field mappings are invalid.');
@@ -53,6 +55,7 @@ function normalizeSpecification(input = {}) {
     runPrefix,
     runWidth,
     bestBeforeMonths,
+    bestBeforeDays,
     defaultBrewSheetProduct,
     fieldMappings: primary.fieldMappings,
     messageId: primary.messageId,

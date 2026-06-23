@@ -4,6 +4,7 @@ import test from 'node:test';
 const { openDatabase, runMigrations } = await import('../server/db.js');
 const { createProductMaster, updateProductMaster } = await import('../server/repositories/product-master-repository.js');
 const { upsertMessage } = await import('../server/repositories/message-repository.js');
+const { upsertPrinter } = await import('../server/repositories/printer-repository.js');
 const {
   approveBatchRelease,
   beginBatchReleaseTarget,
@@ -253,6 +254,45 @@ test('one product master renders a different approved message for each printer',
   assert.equal(updated.nextRunNumber, 20);
   assert.equal(updated.specification.printerConfigurations[1].messageId, 'case-code-v2');
   assert.equal(getBatchRelease(draft.id, db).productMasterVersion, 1);
+  db.close();
+});
+
+test('disabled printers are skipped when a release is raised from a multi-printer master', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-skip-disabled', 'planner');
+  const reviewer = actor('qa-skip-disabled', 'qa');
+  for (const [index, printer] of [
+    { id: 'coder-1', name: 'Can Coder', enabled: true },
+    { id: 'coder-2', name: 'Case Coder', enabled: false },
+    { id: 'coder-3', name: 'Bottle Coder', enabled: true }
+  ].entries()) {
+    upsertPrinter({
+      ...printer,
+      location: 'Line 1',
+      host: '127.0.0.1',
+      port: 9100 + index,
+      mode: 'emulator',
+      protocol: 'wsi',
+      model: '1620',
+      readbackMode: 'auto'
+    }, db);
+  }
+  const input = masterInput('SKIPDIS', 12);
+  input.specification.printerConfigurations = [
+    { ...input.specification.printerConfigurations[0], printerId: 'coder-1', messageId: 'skip-can' },
+    { ...input.specification.printerConfigurations[0], printerId: 'coder-2', messageId: 'skip-case' },
+    { ...input.specification.printerConfigurations[0], printerId: 'coder-3', messageId: 'skip-bottle' }
+  ];
+  const master = createProductMaster(input, reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'SKIPDIS-01'), planner, db);
+
+  assert.deepEqual(draft.printerIds, ['coder-1', 'coder-3']);
+  submitBatchRelease(draft.id, planner, db);
+  const approved = approveBatchRelease(draft.id, reviewer, db);
+  assert.deepEqual(approved.executionTargets.map((target) => target.printerId), ['coder-1', 'coder-3']);
+  const prepared = reserveBatchReleaseRun(draft.id, db);
+  assert.deepEqual(Object.keys(prepared.expectedOutput.byPrinter).sort(), ['coder-1', 'coder-3']);
   db.close();
 });
 

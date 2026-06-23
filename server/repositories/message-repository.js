@@ -12,6 +12,8 @@ function parseJson(value, fallback) {
 
 function messageFromRow(row, db) {
   if (!row) return null;
+  const dateRuleType = row.date_rule_type || 'offset-months';
+  const dateRuleOffset = row.date_rule_months;
   const fields = db.prepare(`
     SELECT mf.*, puf.id AS user_field_id, puf.field_key AS registered_field_key,
       puf.label AS registered_label, puf.printer_field_name AS registered_printer_field_name,
@@ -42,11 +44,9 @@ function messageFromRow(row, db) {
     displayName: row.display_name,
     enabled: Boolean(row.enabled),
     fields,
-    dateRule: {
-      type: row.date_rule_type || 'offset-months',
-      months: row.date_rule_months,
-      format: row.date_format || 'DD/MM/YYYY'
-    },
+    dateRule: dateRuleType === 'offset-days'
+      ? { type: 'offset-days', days: dateRuleOffset, format: row.date_format || 'DD/MM/YYYY' }
+      : { type: dateRuleType, months: dateRuleOffset, format: row.date_format || 'DD/MM/YYYY' },
     timeRule: { type: 'production-time', format: row.time_format || 'HH:mm:ss' },
     previewLines: parseJson(row.preview_lines_json, []),
     printerAssignments
@@ -125,7 +125,9 @@ function upsertMessage(message, db = getDb()) {
     displayName: message.displayName,
     enabled: message.enabled === false ? 0 : 1,
     dateRuleType: message.dateRule?.type || 'offset-months',
-    dateRuleMonths: Number(message.dateRule?.months ?? 12),
+    dateRuleMonths: Number(message.dateRule?.type === 'offset-days'
+      ? message.dateRule?.days ?? message.dateRule?.months ?? 0
+      : message.dateRule?.months ?? 12),
     dateFormat: message.dateRule?.format || 'DD/MM/YYYY',
     timeFormat: message.timeRule?.format || 'HH:mm:ss',
     previewLinesJson: JSON.stringify(message.previewLines || []),
@@ -134,6 +136,30 @@ function upsertMessage(message, db = getDb()) {
   replaceMessageFields(message, db);
   replaceMessageAssignments(message, db);
   return getMessageByIdFromDb(message.id, db);
+}
+
+function messageUsageCount(id, db = getDb()) {
+  return db.prepare('SELECT specification_json FROM product_master_versions').all()
+    .filter((row) => {
+      try {
+        const specification = JSON.parse(row.specification_json || '{}');
+        return (specification.printerConfigurations || []).some((configuration) => configuration.messageId === id);
+      } catch (_error) {
+        return false;
+      }
+    }).length;
+}
+
+function deleteMessage(id, db = getDb()) {
+  return db.transaction(() => {
+    const message = getMessageByIdFromDb(id, db);
+    if (!message) return null;
+    if (message.enabled) throw new Error('Archive the message before deleting it permanently.');
+    const usage = messageUsageCount(id, db);
+    if (usage) throw new Error(`Message is used by ${usage} product master version${usage === 1 ? '' : 's'} and cannot be deleted.`);
+    db.prepare('DELETE FROM messages WHERE id = ?').run(id);
+    return message;
+  })();
 }
 
 function replaceMessages(messages, db = getDb()) {
@@ -160,6 +186,7 @@ function listMessagesForPrinter(printerId, db = getDb()) {
 
 export {
   getMessageByIdFromDb,
+  deleteMessage,
   listMessages,
   listMessagesForPrinter,
   replaceMessageAssignments,

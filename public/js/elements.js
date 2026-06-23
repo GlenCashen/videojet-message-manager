@@ -49,6 +49,8 @@ const elements = {
   messageMasterUsage: $('messageMasterUsage'),
   messageMasterUsageCount: $('messageMasterUsageCount'),
   messageMasterUsageList: $('messageMasterUsageList'),
+  archiveMessageButton: $('archiveMessageButton'),
+  deleteMessageButton: $('deleteMessageButton'),
   saveMessageButton: $('saveMessageButton'),
   userFieldPrinter: $('userFieldPrinter'),
   newPrinterUserField: $('newPrinterUserField'),

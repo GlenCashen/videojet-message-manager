@@ -1,9 +1,10 @@
 import net from 'node:net';
 
 class NgpclClient {
-  constructor({ timeoutMs, onCommand } = {}) {
+  constructor({ timeoutMs, onCommand, trace } = {}) {
     this.timeoutMs = timeoutMs || 5000;
     this.onCommand = onCommand || (() => {});
+    this.trace = trace ?? ['1', 'true', 'yes'].includes(String(process.env.NGPCL_TRACE || '').toLowerCase());
     this.counters = new Map();
   }
 
@@ -26,12 +27,22 @@ class NgpclClient {
     this.counters.clear();
   }
 
+  traceEvent(event) {
+    if (!this.trace) return;
+    console.log(JSON.stringify({
+      time: new Date().toISOString(),
+      protocol: 'ngpcl',
+      ...event
+    }));
+  }
+
   sendCommand({ printerId, ip, port = 21000, command, timeoutMs = this.timeoutMs }) {
     const type = this.commandType(command);
     const counters = this.counterFor(printerId || `${ip}:${port}`);
     if (type in counters) counters[type] += 1;
     counters.total += 1;
     this.onCommand({ printerId, ip, port, command });
+    this.traceEvent({ direction: 'tx', printerId, ip, port, type, command });
 
     return new Promise((resolve, reject) => {
       const socket = new net.Socket();
@@ -42,7 +53,30 @@ class NgpclClient {
         if (settled) return;
         settled = true;
         socket.destroy();
-        error ? reject(error) : resolve(value);
+        if (error) {
+          this.traceEvent({
+            direction: 'error',
+            printerId,
+            ip,
+            port,
+            type,
+            code: error.code || null,
+            message: error.message
+          });
+          reject(error);
+        } else {
+          this.traceEvent({
+            direction: 'rx',
+            printerId,
+            ip,
+            port,
+            type,
+            kind: value.kind,
+            ascii: value.ascii,
+            hex: value.hex
+          });
+          resolve(value);
+        }
       };
 
       socket.setTimeout(timeoutMs);

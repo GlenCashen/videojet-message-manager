@@ -98,6 +98,11 @@ function selectedMaster() {
   return state.masters.find((master) => master.id === nodes.releaseMaster.value) || null;
 }
 
+function masterHasEnabledTarget(master) {
+  const ids = master?.specification?.printerIds || [];
+  return ids.some((id) => state.printers.find((printer) => printer.id === id)?.enabled);
+}
+
 function checkboxList(container, printers, dataName) {
   clear(container);
   container.appendChild(el('legend', { text: 'Target printers' }));
@@ -115,7 +120,7 @@ function renderMasterOptions() {
   clear(nodes.releaseMaster);
   for (const category of ['cans', 'bottles']) {
     const group = el('optgroup', { label: category === 'cans' ? 'Cans' : 'Bottles' });
-    for (const master of state.masters.filter((item) => item.enabled && item.packagingCategory === category
+    for (const master of state.masters.filter((item) => item.enabled && masterHasEnabledTarget(item) && item.packagingCategory === category
       && [item.productCode, item.specification?.defaultBrewSheetProduct, item.displayName]
         .some((value) => String(value || '').toLowerCase().includes(query)))) {
       group.appendChild(el('option', { value: master.id, text: `${master.productCode} — ${master.displayName}` }));
@@ -164,10 +169,14 @@ function pad2(value) { return String(value).padStart(2, '0'); }
 function releasePreviewValues(configuration, release) {
   const production = new Date(release.plannedProductionAt);
   const bestBefore = new Date(production.valueOf());
-  const day = bestBefore.getUTCDate();
-  bestBefore.setUTCDate(1);
-  bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
-  bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
+  if (configuration.dateRule?.type === 'offset-days') {
+    bestBefore.setUTCDate(bestBefore.getUTCDate() + Number(configuration.dateRule?.days ?? configuration.dateRule?.months ?? 0));
+  } else {
+    const day = bestBefore.getUTCDate();
+    bestBefore.setUTCDate(1);
+    bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
+    bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
+  }
   const dateValues = { DD: pad2(bestBefore.getUTCDate()), MM: pad2(bestBefore.getUTCMonth() + 1), YYYY: String(bestBefore.getUTCFullYear()), YY: String(bestBefore.getUTCFullYear()).slice(-2) };
   const bestBeforeDate = (configuration.dateRule?.format || 'DD/MM/YYYY').replace(/YYYY|YY|DD|MM/g, (token) => dateValues[token]);
   const hour = production.getUTCHours();
@@ -184,6 +193,16 @@ function releasePreviewValues(configuration, release) {
     bestBeforeDate,
     productionTime
   };
+}
+
+function dateOffsetSummary(rule = {}) {
+  if (rule.type === 'offset-days') return `${Number(rule.days ?? rule.months ?? 0)} day offset`;
+  return `${Number(rule.months ?? 0)} month offset`;
+}
+
+function dateOffsetPreview(rule = {}) {
+  if (rule.type === 'offset-days') return `[Date +${Number(rule.days ?? rule.months ?? 0)} days]`;
+  return `[Date +${Number(rule.months ?? 0)} months]`;
 }
 
 function messagesForPrinter(printerId) {
@@ -213,7 +232,7 @@ function renderPrinterMappings(card, message, mappings = []) {
   const preview = card.querySelector('[data-master-expected-preview]');
   clear(container);
   summary.textContent = message
-    ? `${message.fields.length} fields · ${message.dateRule?.months ?? 0} month offset · ${message.previewLines.length} print lines`
+    ? `${message.fields.length} fields · ${dateOffsetSummary(message.dateRule)} · ${message.previewLines.length} print lines`
     : 'Select a message assigned to this printer.';
   for (const [index, field] of (message?.fields || []).entries()) {
     const select = el('select', { required: 'required', dataset: { masterFieldKey: field.key } });
@@ -234,7 +253,7 @@ function renderPrinterMappings(card, message, mappings = []) {
   };
   preview.textContent = message ? renderConfiguredLines(configuration, {
     run_code: '[Tracked product run]', brew_sheet_product: '[BATCH]', brew_number: '[Brew number]',
-    bestBeforeDate: `[Date +${message.dateRule?.months ?? 0} months]`, productionTime: '[Production time]'
+    bestBeforeDate: dateOffsetPreview(message.dateRule), productionTime: '[Production time]'
   }).join('\n') : 'Select a message to preview its expected print.';
 }
 
@@ -297,6 +316,11 @@ function printerRequirement(configuration, release) {
       text: configuration.fieldMappings.map((mapping) => `${mapping.fieldKey}: ${sources[mapping.source] || mapping.source}`).join(' · ')
     }) : el('small', { text: 'No user fields' })
   ]);
+}
+
+function enabledMasterConfigurations(master) {
+  const enabledIds = new Set(state.printers.filter((printer) => printer.enabled).map((printer) => printer.id));
+  return (master?.specification?.printerConfigurations || []).filter((configuration) => enabledIds.has(configuration.printerId));
 }
 
 function renderMasterRegister() {
@@ -363,7 +387,7 @@ function renderReleaseExpectedMessages() {
       el('h4', { text: 'Expected printed messages' }),
       el('p', { className: 'muted', text: 'Uses the latest saved definition of each message.' })
     ]),
-    ...(master.specification?.printerConfigurations || []).map((configuration) => printerRequirement(configuration, release))
+    ...enabledMasterConfigurations(master).map((configuration) => printerRequirement(configuration, release))
   );
 }
 
@@ -435,6 +459,30 @@ function auditLabel(action) {
   return String(action || 'event').replace(/^batch-release-/, '').replaceAll('-', ' ');
 }
 
+function printerName(printerId) {
+  const printer = state.printers.find((item) => item.id === printerId);
+  return printer ? printer.name : printerId;
+}
+
+function auditPrinterId(event) {
+  return event.printerId || event.details?.printerId || null;
+}
+
+function auditPrinterText(event) {
+  const printerId = auditPrinterId(event);
+  if (!printerId) return '';
+  const name = printerName(printerId);
+  if (event.action === 'batch-release-agent-job-queued') return `Queued for ${name}`;
+  if (event.action === 'batch-release-application-started') return `Sending to ${name}`;
+  if (event.action === 'batch-release-application-sent') return `Sent to ${name}`;
+  if (event.action === 'batch-release-print-verified') return `Print verified on ${name}`;
+  if (event.action === 'batch-release-running') return `Running on ${name}`;
+  if (event.action === 'batch-release-run-ended') return `Run ended on ${name}`;
+  if (event.action === 'batch-release-run-ended-by-switch') return `Previous run ended on ${name}`;
+  if (event.action === 'batch-release-printer-state-uncertain') return `Needs attention on ${name}`;
+  return `Printer: ${name}`;
+}
+
 function releaseAudit(release) {
   if (state.openAuditId !== release.id) return null;
   const events = state.audits.get(release.id);
@@ -447,6 +495,7 @@ function releaseAudit(release) {
       el('div', {}, [
         el('strong', { text: auditLabel(event.action) }),
         el('p', { text: `${event.actorUsername || 'System'} · ${new Date(event.occurredAt).toLocaleString()}` }),
+        auditPrinterText(event) ? el('small', { text: auditPrinterText(event) }) : null,
         event.details?.reason ? el('small', { text: `Reason: ${event.details.reason}` }) : null,
         event.details?.previousStatus ? el('small', { text: `${event.details.previousStatus.replaceAll('_', ' ')} → ${event.details.status.replaceAll('_', ' ')}` }) : null
       ])
@@ -843,7 +892,7 @@ async function loadReleaseWorkflow({ preserveForms = false } = {}) {
   if (nodes.search.value.trim()) pageParams.set('search', nodes.search.value.trim());
   if (nodes.statusFilter.value) pageParams.set('status', nodes.statusFilter.value);
   if (nodes.categoryFilter?.value) pageParams.set('category', nodes.categoryFilter.value);
-  const requests = [apiJson('/api/product-masters'), apiJson(`/api/batch-releases?${pageParams}`), apiJson('/api/printers'), apiJson('/api/messages')];
+  const requests = [apiJson('/api/product-masters'), apiJson(`/api/batch-releases?${pageParams}`), apiJson('/api/printers'), apiJson('/api/messages?enabledOnly=true')];
   const [masters, releasePage, printers, messages] = await Promise.all(requests);
   state.masters = masters; state.releases = releasePage.items; state.printers = printers; state.messages = messages;
   state.releasePage = { ...state.releasePage, total: releasePage.total, counts: releasePage.counts, limit: releasePage.limit, offset: releasePage.offset };

@@ -90,8 +90,6 @@ function createReadback(printer, status) {
       el('span', { className: `badge ${sync.tone}`, text: sync.label })
     ]),
     el('div', { className: 'readback-facts' }, [
-      el('span', { text: 'Printer address' }),
-      el('strong', { text: `${printer.host}:${printer.port}` }),
       expected ? el('span', { text: 'Expected message' }) : null,
       expected ? el('strong', { text: expected }) : null,
       el('span', { text: 'Current printer message' }),
@@ -125,12 +123,12 @@ function createCard(printer) {
       el('h2', { text: printer.name }),
       el('span', { className: 'viewer-comm', text: communicationText(status) })
     ]),
-    el('div', { className: 'viewer-status' }, [
-      el('span', { text: offline || isStale(status) ? `Last known ${title.toLowerCase()}` : title }),
-      trafficLightMarkup(status.decodedStatus, { stale: offline || isStale(status) }),
-      el('strong', { text: lightState.label })
-    ]),
     el('div', { className: 'viewer-facts' }, [
+      el('div', { className: 'viewer-state-fact' }, [
+        el('span', { text: offline || isStale(status) ? `Last known ${title.toLowerCase()}` : title }),
+        trafficLightMarkup(status.decodedStatus, { stale: offline || isStale(status) }),
+        el('strong', { text: lightState.label })
+      ]),
       el('div', {}, [
         el('span', { text: messageLabel }),
         el('strong', { text: readbackUnsupported(printer, status) ? 'Readback unavailable' : status.selectedMessage || '-' })
@@ -180,7 +178,7 @@ function render() {
 function applyFleet(printers) {
   state.printers = {};
   state.order = [];
-  for (const printer of printers) {
+  for (const printer of printers.filter((item) => item.enabled)) {
     state.printers[printer.id] = printer;
     state.order.push(printer.id);
   }
@@ -204,8 +202,8 @@ async function loadInitialData() {
     await loadSession();
     renderNavigation(elements.nav, { active: '/dashboard' });
     const [printers, statuses] = await Promise.all([
-      apiJson('/api/printers'),
-      apiJson('/api/printers/status')
+      apiJson('/api/printers?enabledOnly=true'),
+      apiJson('/api/printers/status?enabledOnly=true')
     ]);
     applyFleet(printers);
     for (const status of statuses) mergeStatus(status);

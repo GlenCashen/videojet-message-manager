@@ -5,10 +5,14 @@ function pad2(value) {
 function previewValues(configuration, release) {
   const production = new Date(release.plannedProductionAt);
   const bestBefore = new Date(production.valueOf());
-  const day = bestBefore.getUTCDate();
-  bestBefore.setUTCDate(1);
-  bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
-  bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
+  if (configuration.dateRule?.type === 'offset-days') {
+    bestBefore.setUTCDate(bestBefore.getUTCDate() + Number(configuration.dateRule?.days ?? configuration.dateRule?.months ?? 0));
+  } else {
+    const day = bestBefore.getUTCDate();
+    bestBefore.setUTCDate(1);
+    bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
+    bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
+  }
   const dateParts = { DD: pad2(bestBefore.getUTCDate()), MM: pad2(bestBefore.getUTCMonth() + 1), YYYY: String(bestBefore.getUTCFullYear()), YY: String(bestBefore.getUTCFullYear()).slice(-2) };
   const bestBeforeDate = (configuration.dateRule?.format || 'DD/MM/YYYY').replace(/YYYY|YY|DD|MM/g, (token) => dateParts[token]);
   const hour = production.getUTCHours();

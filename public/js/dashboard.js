@@ -220,9 +220,8 @@ function updateCoderCard(card, coder) {
   const printer = coder.config;
 
   card.className = cardClass(coder);
-  card.setAttribute('aria-label', `Open ${printer.name}`);
+  card.setAttribute('aria-label', printer.name);
   card.dataset.id = printer.id;
-  card.dataset.href = values.href;
 
   for (const [field, value] of Object.entries(values)) {
     if (!['href', 'commandDisabled', 'faultLines'].includes(field)) setField(card, field, value);
@@ -277,13 +276,9 @@ function createCoderCard(coder) {
 
   return el('article', {
     className: cardClass(coder),
-    tabindex: '0',
-    role: 'link',
-    'aria-label': `Open ${printer.name}`,
+    'aria-label': printer.name,
     dataset: {
-      id: printer.id,
-      action: 'open',
-      href: values.href
+      id: printer.id
     }
   }, [
     el('div', { className: 'card-top' }, [
@@ -514,17 +509,6 @@ function setupDashboard(callbacks) {
     }
 
     if (event.target.closest('a, summary, details')) return;
-    const card = event.target.closest('[data-action="open"]');
-    if (card?.dataset.href) window.location.href = card.dataset.href;
-  });
-
-  elements.coderGrid.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    const card = event.target.closest('[data-action="open"]');
-    if (!card?.dataset.href) return;
-
-    event.preventDefault();
-    window.location.href = card.dataset.href;
   });
 
   elements.checkAllButton.addEventListener('click', checkAllCoders);

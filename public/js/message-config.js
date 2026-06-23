@@ -187,19 +187,21 @@ function renderTokenPalette() {
   }
 }
 
-function addMonthsClamped(date, months) {
+function dateOffsetDays(rule) {
+  if (rule?.type === 'offset-days') return Number(rule.days ?? rule.months ?? 0);
+  return Number(rule?.months ?? 0) * 30;
+}
+
+function addDays(date, days) {
   const result = new Date(date.valueOf());
-  const day = result.getDate();
-  result.setDate(1);
-  result.setMonth(result.getMonth() + months);
-  result.setDate(Math.min(day, new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate()));
+  result.setDate(result.getDate() + days);
   return result;
 }
 
 function pad2(value) { return String(value).padStart(2, '0'); }
 
 function sampleDate() {
-  const date = addMonthsClamped(new Date(), Number(elements.messageDateMonths.value || 0));
+  const date = addDays(new Date(), Number(elements.messageDateMonths.value || 0));
   const values = { DD: pad2(date.getDate()), MM: pad2(date.getMonth() + 1), YYYY: String(date.getFullYear()), YY: String(date.getFullYear()).slice(-2) };
   return elements.messageDateFormat.value.replace(/YYYY|YY|DD|MM/g, (token) => values[token]);
 }
@@ -221,14 +223,21 @@ function renderLivePreview() {
 }
 
 function suggestedDisplayName() {
-  const months = Number(elements.messageDateMonths.value || 0);
-  const monthLabel = months ? `${months}M` : 'NOW';
+  const days = Number(elements.messageDateMonths.value || 0);
+  const dayLabel = days ? `${days}D` : 'TODAY';
   const descriptors = selectedFields().map((field) => field.key.toUpperCase());
   if (!descriptors.length) {
     if (lineValues().some((line) => line.includes('{{bestBeforeDate}}'))) descriptors.push('DATE');
     if (lineValues().some((line) => line.includes('{{currentTime}}'))) descriptors.push('TIME');
   }
-  return `${monthLabel} ${elements.messageLineCount.value || 1} line ${descriptors.join('/') || 'STATIC'}`;
+  return `${dayLabel} ${elements.messageLineCount.value || 1} line ${descriptors.join('/') || 'STATIC'}`;
+}
+
+function updateMessageActionButtons(message = selectedMessage()) {
+  const selected = Boolean(message);
+  elements.archiveMessageButton.classList.toggle('hidden', !selected);
+  elements.deleteMessageButton.classList.toggle('hidden', !selected || message.enabled);
+  elements.archiveMessageButton.textContent = message?.enabled ? 'Archive message' : 'Restore message';
 }
 
 function updateSuggestedName() {
@@ -251,7 +260,7 @@ function populateForm(message) {
   elements.messageConfigId.value = message.id;
   elements.messageDisplayName.value = message.displayName;
   elements.messageEnabled.checked = message.enabled;
-  elements.messageDateMonths.value = message.dateRule?.months ?? 12;
+  elements.messageDateMonths.value = String(dateOffsetDays(message.dateRule));
   elements.messageDateFormat.value = message.dateRule?.format || 'DD/MM/YYYY';
   elements.messageTimeFormat.value = message.timeRule?.format || 'HH:mm:ss';
   elements.messageLineCount.value = String(Math.min(Math.max(message.previewLines?.length || 2, 1), 4));
@@ -259,6 +268,7 @@ function populateForm(message) {
   renderLineBuilder(message.previewLines || []);
   renderMessageMasterUsage(message);
   renderMessageList();
+  updateMessageActionButtons(message);
 }
 
 function startNewMessage() {
@@ -282,6 +292,7 @@ function startNewMessage() {
   renderLineBuilder(['', '']);
   renderMessageMasterUsage(null);
   renderMessageList();
+  updateMessageActionButtons(null);
   elements.messagePrinterName.focus();
 }
 
@@ -299,7 +310,7 @@ async function saveMessage(event) {
       displayName: elements.messageDisplayName.value.trim(),
       enabled: elements.messageEnabled.checked,
       fieldIds: selectedFieldIds(),
-      dateRule: { type: 'offset-months', months: Number(elements.messageDateMonths.value), format: elements.messageDateFormat.value },
+      dateRule: { type: 'offset-days', days: Number(elements.messageDateMonths.value), format: elements.messageDateFormat.value },
       timeRule: { type: 'production-time', format: elements.messageTimeFormat.value },
       previewLines,
       printerAssignments: [{ printerId: elements.messagePrinter.value, printerMessageName: elements.messagePrinterName.value.trim(), enabled: true }]
@@ -317,6 +328,53 @@ async function saveMessage(event) {
     setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
   } finally {
     elements.saveMessageButton.disabled = false;
+  }
+}
+
+async function archiveSelectedMessage() {
+  const message = selectedMessage();
+  if (!message) return;
+  const nextEnabled = !message.enabled;
+  if (!nextEnabled && !window.confirm(`Archive ${message.displayName}? Existing release history is retained.`)) return;
+  elements.archiveMessageButton.disabled = true;
+  try {
+    const data = await apiJson(`/api/messages/${encodeURIComponent(message.id)}`, {
+      method: 'PUT',
+      body: { ...message, enabled: nextEnabled }
+    });
+    const index = messages.findIndex((item) => item.id === data.message.id);
+    if (index >= 0) messages[index] = data.message;
+    populateForm(data.message);
+    window.dispatchEvent(new CustomEvent('messages-saved', { detail: data.message }));
+    setNotice(elements.messageConfigMessage, `${data.message.displayName} ${nextEnabled ? 'restored' : 'archived'}.`, 'success');
+  } catch (error) {
+    setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
+  } finally {
+    elements.archiveMessageButton.disabled = false;
+  }
+}
+
+async function deleteSelectedMessage() {
+  const message = selectedMessage();
+  if (!message || message.enabled) return;
+  if (!window.confirm(`Permanently delete archived message ${message.displayName}?`)) return;
+  elements.deleteMessageButton.disabled = true;
+  try {
+    await apiJson(`/api/messages/${encodeURIComponent(message.id)}`, { method: 'DELETE' });
+    messages = messages.filter((item) => item.id !== message.id);
+    selectedId = messages[0]?.id || null;
+    renderMessageList();
+    if (selectedId) populateForm(selectedMessage());
+    else {
+      elements.messageForm.classList.add('hidden');
+      updateMessageActionButtons(null);
+    }
+    window.dispatchEvent(new CustomEvent('messages-saved', { detail: null }));
+    setNotice(elements.messageConfigMessage, `${message.displayName} deleted.`, 'success');
+  } catch (error) {
+    setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
+  } finally {
+    elements.deleteMessageButton.disabled = false;
   }
 }
 
@@ -415,7 +473,10 @@ async function loadMessageConfig() {
     renderPrinterUserFields();
     renderMessageList();
     if (next) populateForm(next);
-    else elements.messageForm.classList.add('hidden');
+    else {
+      elements.messageForm.classList.add('hidden');
+      updateMessageActionButtons(null);
+    }
     setNotice(elements.messageConfigMessage);
   } catch (error) {
     setNotice(elements.messageConfigMessage, normalizeError(error), 'error');
@@ -454,6 +515,8 @@ function setupMessageConfig() {
   });
   elements.messageConfigId.addEventListener('blur', () => { elements.messageConfigId.value = slug(elements.messageConfigId.value); });
   elements.messageForm.addEventListener('submit', saveMessage);
+  elements.archiveMessageButton.addEventListener('click', archiveSelectedMessage);
+  elements.deleteMessageButton.addEventListener('click', deleteSelectedMessage);
   elements.refreshMessagesButton.addEventListener('click', (event) => { event.preventDefault(); loadMessageConfig(); });
   elements.userFieldPrinter.addEventListener('change', () => { resetUserFieldForm(); renderPrinterUserFields(); });
   elements.newPrinterUserField.addEventListener('click', () => {

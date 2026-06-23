@@ -364,6 +364,20 @@ function normalizeBrewNumber(value) {
   return brewNumber;
 }
 
+function enabledReleasePrinterIds(printerIds, db = getDb()) {
+  if (!printerIds.length) throw new Error('The selected product master has no target printers.');
+  const configuredPrinters = db.prepare('SELECT COUNT(*) AS count FROM printers WHERE deleted_at IS NULL').get().count;
+  if (!configuredPrinters) return printerIds;
+  const rows = db.prepare(`SELECT id, name, enabled FROM printers WHERE deleted_at IS NULL AND id IN (${printerIds.map(() => '?').join(',')})`)
+    .all(...printerIds);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const missing = printerIds.find((id) => !byId.has(id));
+  if (missing) throw new Error(`Printer ${missing} was not found.`);
+  const enabledIds = printerIds.filter((id) => byId.get(id)?.enabled);
+  if (!enabledIds.length) throw new Error('The selected product master has no enabled target printers.');
+  return enabledIds;
+}
+
 function createBatchRelease(input, actor, db = getDb()) {
   const master = db.prepare('SELECT * FROM product_masters WHERE id = ? AND enabled = 1').get(input.productMasterId);
   if (!master) throw new Error('Select an enabled product master.');
@@ -372,9 +386,8 @@ function createBatchRelease(input, actor, db = getDb()) {
   const specification = JSON.parse(version.specification_json);
   const brewSheetProduct = normalizeReleaseBatch(input.brewSheetProduct, specification, master.product_code);
   const planned = new Date(input.plannedProductionAt);
-  const printerIds = [...specification.printerIds];
+  const printerIds = enabledReleasePrinterIds([...specification.printerIds], db);
   if (Number.isNaN(planned.valueOf())) throw new Error('A valid planned production date and time is required.');
-  if (!printerIds.length) throw new Error('The selected product master has no target printers.');
   const now = new Date().toISOString();
   const release = {
     id: crypto.randomUUID(),
@@ -415,9 +428,8 @@ function updateBatchRelease(id, input, actor, db = getDb()) {
   const master = db.prepare('SELECT product_code FROM product_masters WHERE id = ?').get(release.productMasterId);
   const brewSheetProduct = normalizeReleaseBatch(input.brewSheetProduct, specification, master.product_code);
   const planned = new Date(input.plannedProductionAt);
-  const printerIds = [...specification.printerIds];
+  const printerIds = enabledReleasePrinterIds([...specification.printerIds], db);
   if (Number.isNaN(planned.valueOf())) throw new Error('A valid planned production date and time is required.');
-  if (!printerIds.length) throw new Error('The selected product master version has no target printers.');
   const now = new Date().toISOString();
   db.prepare(`
     UPDATE batch_releases SET status = 'draft', product_master_version_id = ?, brew_sheet_product = ?, brew_number = ?,
@@ -492,6 +504,17 @@ function addMonthsClamped(date, months) {
   return result;
 }
 
+function addDays(date, days) {
+  const result = new Date(date.valueOf());
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
+function bestBeforeDateForRule(production, rule = {}, fallbackMonths = 0) {
+  if (rule.type === 'offset-days') return addDays(production, Number(rule.days ?? rule.months ?? 0));
+  return addMonthsClamped(production, Number(rule.months ?? fallbackMonths ?? 0));
+}
+
 function renderTemplate(template, values) {
   return template.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (_match, key) => values[key] ?? '');
 }
@@ -535,10 +558,12 @@ function expectedOutputForRelease(release, version, runNumber, db = getDb()) {
     brew_number: release.brewNumber || '',
   };
   const byPrinter = {};
-  const currentConfigurations = printerConfigurations(specification).map((configuration) => currentMessageConfiguration(configuration, db));
+  const activePrinterIds = new Set(release.printerIds || []);
+  const currentConfigurations = printerConfigurations(specification)
+    .filter((configuration) => activePrinterIds.has(configuration.printerId))
+    .map((configuration) => currentMessageConfiguration(configuration, db));
   for (const configuration of currentConfigurations) {
-    const months = configuration.dateRule?.months ?? specification.bestBeforeMonths;
-    const bestBefore = addMonthsClamped(production, months);
+    const bestBefore = bestBeforeDateForRule(production, configuration.dateRule, specification.bestBeforeMonths);
     const values = {
       run: runCode,
       batch: release.brewSheetProduct,
@@ -589,6 +614,7 @@ function approveBatchRelease(id, actor, db = getDb()) {
     if (!release) return null;
     if (release.status !== 'pending_review') throw new Error('Only releases pending review can be approved.');
     assertReviewClaimAvailable(id, actor, db);
+    const printerIds = enabledReleasePrinterIds(release.printerIds, db);
     const sameUser = release.createdByUserId && actorUserId(actor)
       ? release.createdByUserId === actorUserId(actor)
       : release.createdByUsername.toLowerCase() === String(actor.username || '').toLowerCase();
@@ -598,18 +624,22 @@ function approveBatchRelease(id, actor, db = getDb()) {
       throw error;
     }
     const version = db.prepare('SELECT * FROM product_master_versions WHERE id = ?').get(release.productMasterVersionId);
-    const prepared = release.runNumber ? expectedOutputForRelease(release, version, release.runNumber, db) : null;
+    const executableRelease = { ...release, printerIds };
+    const prepared = release.runNumber ? expectedOutputForRelease(executableRelease, version, release.runNumber, db) : null;
     const now = new Date().toISOString();
     db.prepare(`
       UPDATE batch_releases SET status = 'released', run_number = ?, run_code = ?, expected_output_json = ?,
-        reviewed_by_user_id = ?, reviewed_by_username = ?, reviewed_at = ?, rejection_reason = NULL, updated_at = ?
+        printer_ids_json = ?, reviewed_by_user_id = ?, reviewed_by_username = ?, reviewed_at = ?, rejection_reason = NULL, updated_at = ?
       WHERE id = ?
-    `).run(release.runNumber || null, prepared?.runCode || null, prepared ? JSON.stringify(prepared.expectedOutput) : null, actorUserId(actor), actor.username, now, now, id);
+    `).run(release.runNumber || null, prepared?.runCode || null, prepared ? JSON.stringify(prepared.expectedOutput) : null,
+      JSON.stringify(printerIds), actorUserId(actor), actor.username, now, now, id);
     const insertTarget = db.prepare(`
       INSERT OR IGNORE INTO batch_release_execution_targets (release_id, printer_id, status, updated_at)
       VALUES (?, ?, 'pending', ?)
     `);
-    for (const printerId of release.printerIds) insertTarget.run(id, printerId, now);
+    for (const printerId of printerIds) insertTarget.run(id, printerId, now);
+    db.prepare(`DELETE FROM batch_release_execution_targets WHERE release_id = ? AND printer_id NOT IN (${printerIds.map(() => '?').join(',')})`)
+      .run(id, ...printerIds);
     db.prepare(`
       UPDATE batch_release_execution_targets SET status = 'pending', error_message = NULL, result_json = NULL,
         verified_by_user_id = NULL, verified_by_username = NULL, verified_at = NULL,
