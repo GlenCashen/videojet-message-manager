@@ -224,6 +224,60 @@ test('QA, planner and packaging leader complete release approval without contact
     assert.ok(executionActions.has('batch-release-running'));
     assert.ok(executionActions.has('batch-release-run-ended'));
 
+    const auditEvent = (action) => executionAudit.data.find((event) => event.action === action);
+    const expectedAuditStatuses = {
+      'batch-release-run-assigned': 'released',
+      'batch-release-application-sent': 'awaiting_print_check',
+      'batch-release-print-verified': 'running',
+      'batch-release-running': 'running',
+      'batch-release-run-ended': 'completed'
+    };
+    for (const [action, expectedStatus] of Object.entries(expectedAuditStatuses)) {
+      const details = auditEvent(action)?.details || {};
+      assert.equal(details.releaseId, draftResult.data.release.id, `${action} records releaseId`);
+      assert.equal(details.productMasterId, masterResult.data.master.id, `${action} records productMasterId`);
+      assert.equal(details.brewSheetProduct, 'TBUNDRC-50', `${action} records brewSheetProduct`);
+      assert.equal(details.brewNumber, 'H0477', `${action} records brewNumber`);
+      assert.equal(details.runNumber, 50, `${action} records runNumber`);
+      assert.equal(details.runCode, 'T0050', `${action} records runCode`);
+      assert.equal(details.releaseStatus, expectedStatus, `${action} records releaseStatus`);
+      assert.equal(details.printerId, 'coder-1', `${action} records printerId`);
+      assert.equal(details.ok, true, `${action} records ok`);
+    }
+    const sentDetails = auditEvent('batch-release-application-sent').details;
+    assert.equal(sentDetails.reverify, false);
+    assert.equal(sentDetails.operatorMessage, null);
+    assert.equal(sentDetails.technicalMessage, null);
+
+    const failedPrintDraft = await jsonFetch(`${baseUrl}/api/batch-releases`, {
+      method: 'POST', role: 'planner', body: {
+        productMasterId: masterResult.data.master.id,
+        brewSheetProduct: 'TBUNDRC-FAIL',
+        brewNumber: 'H0999',
+        plannedProductionAt: '2026-06-18T06:32:08.000Z',
+        printerIds: ['coder-1']
+      }
+    });
+    const failedPrintId = failedPrintDraft.data.release.id;
+    await jsonFetch(`${baseUrl}/api/batch-releases/${failedPrintId}/submit`, { method: 'POST', role: 'planner', body: {} });
+    await jsonFetch(`${baseUrl}/api/batch-releases/${failedPrintId}/approve`, { method: 'POST', role: 'qa', body: {} });
+    await jsonFetch(`${baseUrl}/api/batch-releases/${failedPrintId}/targets/coder-1/apply`, { method: 'POST', role: 'operator', body: {} });
+    const failedPrint = await jsonFetch(`${baseUrl}/api/batch-releases/${failedPrintId}/targets/coder-1/print-check`, {
+      method: 'POST', role: 'operator', body: { passed: false, reason: 'First print BATCH number is wrong' }
+    });
+    assert.equal(failedPrint.response.ok, true, JSON.stringify(failedPrint.data));
+    const failedPrintAudit = await jsonFetch(`${baseUrl}/api/batch-releases/${failedPrintId}/audit`, { role: 'qa' });
+    const failedPrintDetails = failedPrintAudit.data.find((event) => event.action === 'batch-release-print-failed')?.details || {};
+    assert.equal(failedPrintDetails.releaseId, failedPrintId);
+    assert.equal(failedPrintDetails.productMasterId, masterResult.data.master.id);
+    assert.equal(failedPrintDetails.brewSheetProduct, 'TBUNDRC-FAIL');
+    assert.equal(failedPrintDetails.brewNumber, 'H0999');
+    assert.equal(failedPrintDetails.releaseStatus, failedPrint.data.release.status);
+    assert.equal(failedPrintDetails.printerId, 'coder-1');
+    assert.equal(failedPrintDetails.ok, false);
+    assert.equal(failedPrintDetails.reverify, false);
+    assert.equal(failedPrintDetails.reason, 'First print BATCH number is wrong');
+
     const rejectedDraft = await jsonFetch(`${baseUrl}/api/batch-releases`, {
       method: 'POST', role: 'planner', body: {
         productMasterId: masterResult.data.master.id,

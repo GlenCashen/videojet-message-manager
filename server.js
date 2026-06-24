@@ -1191,18 +1191,7 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
     }
     if (result.ok && result.messageMatches !== false) endOtherRunningTargets(job.printerId, job.releaseId);
     const release = finishBatchReleaseTarget(job.releaseId, job.printerId, result);
-    addLog({
-      action: result.ok && result.messageMatches !== false ? (result.reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain',
-      actor: `agent:${agent.id}`, targetType: 'batch-release', targetId: job.releaseId, printerId: job.printerId,
-      error: result.technicalMessage || result.error || null,
-      details: {
-        agentId: agent.id, jobId: job.id, payloadHash: job.payloadHash, status: release.status,
-        reverify: result.reverify === true,
-        ok: result.ok === true,
-        operatorMessage: result.operatorMessage || null,
-        technicalMessage: result.technicalMessage || result.error || null
-      }
-    });
+    releaseAudit.agentApplicationFinished(agent, release, job.printerId, result, job);
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: job.releaseId, printerId: job.printerId, status: release.status });
     res.json({ ok: true, releaseId: job.releaseId, printerId: job.printerId, status: release.status });
@@ -1759,10 +1748,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/end-run', (req, res) => {
     if (!user) return;
     const release = releaseExecutionService.endRun({ releaseId: req.params.id, printerId: req.params.printerId, user });
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
-    addLog({
-      action: 'batch-release-run-ended', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
-      printerId: req.params.printerId, details: { printerId: req.params.printerId, runCode: release.runCode, status: release.status, ok: true }
-    });
+    releaseAudit.runEnded(user, release, req.params.printerId);
     broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
     res.json({ ok: true, release: visibleBatchRelease(user, release) });
   } catch (error) {
@@ -1779,10 +1765,7 @@ app.post('/api/batch-releases/:id/return-for-review', (req, res) => {
     const assignedOperator = current.printerIds.some((printerId) => canOperatePrinter(user, printerId));
     if (!assignedOperator && !getCapabilities(user).reviewBatchReleases && !getCapabilities(user).createBatchReleases) return forbidden(res, 'You do not have permission to return this release for review.');
     const release = returnBatchReleaseForReview(req.params.id, req.body?.reason, user);
-    addLog({
-      action: 'batch-release-returned-for-review', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
-      details: { reason: release.rejectionReason, runCode: release.runCode, status: release.status, ok: true }
-    });
+    releaseAudit.returnedForReview(user, release);
     broadcast('batch-release-execution', { releaseId: release.id, status: release.status });
     broadcast('batch-release-changed', { releaseId: release.id, status: release.status, action: 'returned-for-review' });
     res.json({ ok: true, release });

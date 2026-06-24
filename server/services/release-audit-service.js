@@ -83,6 +83,7 @@ function createReleaseAuditService({ addLog, auditActor }) {
     const succeeded = result?.ok && result?.messageMatches !== false;
     record(succeeded ? (reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain', actor, release, {
       printerId: printer.id,
+      error: succeeded ? null : (result?.technicalMessage || result?.error || null),
       details: {
         operationId: result?.operationId || null,
         selectedMessage: result?.selectedMessage || null,
@@ -91,6 +92,27 @@ function createReleaseAuditService({ addLog, auditActor }) {
         verificationAvailable: result?.verificationAvailable,
         rawStatus: result?.rawStatus || null,
         reverify,
+        operatorMessage: result?.operatorMessage || null,
+        technicalMessage: result?.technicalMessage || result?.error || null,
+        ok: succeeded
+      }
+    });
+  }
+
+  function agentApplicationFinished(agent, release, printerId, result, job) {
+    const succeeded = result?.ok && result?.messageMatches !== false;
+    const reverify = result?.reverify === true;
+    record(succeeded ? (reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain', { username: `agent:${agent.id}`, developmentIdentity: true }, release, {
+      printerId,
+      error: succeeded ? null : (result?.technicalMessage || result?.error || null),
+      details: {
+        agentId: agent.id,
+        jobId: job.id,
+        payloadHash: job.payloadHash,
+        status: release.status,
+        reverify,
+        operatorMessage: result?.operatorMessage || null,
+        technicalMessage: result?.technicalMessage || result?.error || null,
         ok: succeeded
       }
     });
@@ -142,18 +164,31 @@ function createReleaseAuditService({ addLog, auditActor }) {
     record('batch-release-run-ended', actor, release, {
       printerId,
       details: {
+        status: release.status,
+        ok: true
+      }
+    });
+  }
+
+  function returnedForReview(actor, release) {
+    record('batch-release-returned-for-review', actor, release, {
+      details: {
+        reason: release.rejectionReason,
+        status: release.status,
         ok: true
       }
     });
   }
 
   return {
+    agentApplicationFinished,
     agentJobQueued,
     applicationFailed,
     applicationFinished,
     applicationStarted,
     printChecked,
     productionRunning,
+    returnedForReview,
     runAssigned,
     runEnded,
     runEndedBySwitch
