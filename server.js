@@ -63,6 +63,7 @@ import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-r
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { deleteMessage } from './server/repositories/message-repository.js';
 import { withOperatorError } from './server/operator-error-messages.js';
+import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -480,6 +481,17 @@ function sameDateRule(left = {}, right = {}) {
     && dateRuleAmount(left) === dateRuleAmount(right)
     && (left.format || 'DD/MM/YYYY') === (right.format || 'DD/MM/YYYY');
 }
+
+const releaseExecutionService = createReleaseExecutionService({
+  canOperatePrinter,
+  readPrinters,
+  loadMessages,
+  getMessageForPrinter,
+  renderPreview,
+  sameDateRule,
+  verifyBatchReleaseTarget,
+  endBatchReleaseTargetRun
+});
 
 function broadcast(type, payload) {
   for (const client of eventClients) {
@@ -1666,7 +1678,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     if (!user) return;
     let release = getBatchRelease(req.params.id);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
-    const { printer } = await releaseExecutionContext(release, req.params.printerId, user);
+    const { printer } = await releaseExecutionService.executionContext(release, req.params.printerId, user);
     if (PRINTER_EXECUTION_MODE === 'local' && stateChangingOperations.has(printer.id)) {
       const error = new Error('A message update is already in progress on this printer.');
       error.statusCode = 409;
@@ -1675,7 +1687,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     const assigningRun = !release.runNumber;
     release = reserveBatchReleaseRun(release.id);
     if (assigningRun) addLog({ action: 'batch-release-run-assigned', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id, details: { runNumber: release.runNumber, runCode: release.runCode, printerId: printer.id, ok: true } });
-    const execution = await releaseExecutionContext(release, req.params.printerId, user);
+    const execution = await releaseExecutionService.executionContext(release, req.params.printerId, user);
 
     const reverify = req.body?.reverify === true;
     beginBatchReleaseTarget(release.id, printer.id, user, { reapply: req.body?.reapply === true, reverify, reason: req.body?.reason });
@@ -1778,15 +1790,16 @@ app.post('/api/batch-releases/:id/targets/:printerId/print-check', (req, res) =>
   try {
     const user = requireUser(req, res);
     if (!user) return;
-    if (!canOperatePrinter(user, req.params.printerId)) return forbidden(res, 'You do not have permission to operate this printer.');
-    const release = verifyBatchReleaseTarget(req.params.id, req.params.printerId, {
-      passed: req.body?.passed === true,
-      reason: req.body?.reason
-    }, user);
-    if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     const passed = req.body?.passed === true;
-    const target = release.executionTargets.find((item) => item.printerId === req.params.printerId);
-    const reverify = target?.result?.reverify === true;
+    const checked = releaseExecutionService.verifyPrintCheck({
+      releaseId: req.params.id,
+      printerId: req.params.printerId,
+      passed,
+      reason: req.body?.reason,
+      user
+    });
+    if (!checked) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
+    const { release, reverify } = checked;
     addLog({
       action: passed ? (reverify ? 'batch-release-reverified' : 'batch-release-print-verified') : 'batch-release-print-failed', ...auditActor(user),
       targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId,
@@ -1817,8 +1830,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/end-run', (req, res) => {
   try {
     const user = requireUser(req, res);
     if (!user) return;
-    if (!canOperatePrinter(user, req.params.printerId)) return forbidden(res, 'You do not have permission to operate this printer.');
-    const release = endBatchReleaseTargetRun(req.params.id, req.params.printerId, user);
+    const release = releaseExecutionService.endRun({ releaseId: req.params.id, printerId: req.params.printerId, user });
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     addLog({
       action: 'batch-release-run-ended', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
