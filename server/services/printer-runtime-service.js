@@ -5,6 +5,24 @@ function createPrinterRuntimeService({
   releaseExecutionService,
   setPrinterMessage
 }) {
+  function agentActor(agent) {
+    return { username: `agent:${agent.id}`, developmentIdentity: true };
+  }
+
+  async function completeAgentReleaseApply({ agent, job, result }) {
+    insertMessageUpdateEvent(result, agentActor(agent));
+    if (result.ok && result.expectedOutput) await persistExpectedOutput(job.printerId, result.expectedOutput);
+
+    const { release: updated, endedReleaseIds } = releaseExecutionService.finishApply({
+      releaseId: job.releaseId,
+      printerId: job.printerId,
+      result
+    });
+    releaseAudit.agentApplicationFinished(agent, updated, job.printerId, result, job);
+
+    return { release: updated, endedReleaseIds };
+  }
+
   function markApplyFailed({ releaseId, printerId, failure, user }) {
     const updated = releaseExecutionService.markApplyFailed({ releaseId, printerId, failure });
     insertMessageUpdateEvent(failure, user || {});
@@ -39,7 +57,7 @@ function createPrinterRuntimeService({
     return { result, release: updated, endedReleaseIds };
   }
 
-  return { applyReleaseLocally, markApplyFailed };
+  return { applyReleaseLocally, completeAgentReleaseApply, markApplyFailed };
 }
 
 export { createPrinterRuntimeService };

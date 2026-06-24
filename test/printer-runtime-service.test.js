@@ -41,6 +41,7 @@ function createHarness({ sendResult = { ok: true, messageMatches: true } } = {})
     releaseAudit: {
       runEndedBySwitch: (...args) => calls.push(['runEndedBySwitch', ...args]),
       applicationFinished: (...args) => calls.push(['applicationFinished', ...args]),
+      agentApplicationFinished: (...args) => calls.push(['agentApplicationFinished', ...args]),
       applicationFailed: (...args) => calls.push(['applicationFailed', ...args])
     }
   });
@@ -95,6 +96,57 @@ test('applyReleaseLocally does not persist expected output after an uncertain se
   assert.equal(calls.some(([name]) => name === 'persistExpectedOutput'), false);
   assert.ok(calls.some(([name]) => name === 'finishApply'));
   assert.ok(calls.some(([name]) => name === 'applicationFinished'));
+});
+
+test('completeAgentReleaseApply records the agent result, persists output, finishes state, and audits', async () => {
+  const { calls, service, updatedRelease } = createHarness();
+  const agent = { id: 'agent-1' };
+  const job = {
+    id: 'job-1',
+    releaseId: 'release-1',
+    printerId: 'coder-1',
+    payloadHash: 'hash-1'
+  };
+  const expectedOutput = { messageId: 'bundy-15-month', fields: { BATCH: 'T0044' } };
+  const result = {
+    ok: true,
+    messageMatches: true,
+    operationId: 'job-1',
+    expectedOutput,
+    reverify: true
+  };
+
+  const response = await service.completeAgentReleaseApply({ agent, job, result });
+
+  assert.equal(response.release, updatedRelease);
+  assert.deepEqual(response.endedReleaseIds, ['old-release-1']);
+  assert.deepEqual(calls[0], ['insertMessageUpdateEvent', result, { username: 'agent:agent-1', developmentIdentity: true }]);
+  assert.deepEqual(calls[1], ['persistExpectedOutput', 'coder-1', expectedOutput]);
+  assert.deepEqual(calls[2], ['finishApply', { releaseId: 'release-1', printerId: 'coder-1', result }]);
+  assert.deepEqual(calls[3], ['agentApplicationFinished', agent, updatedRelease, 'coder-1', result, job]);
+});
+
+test('completeAgentReleaseApply does not persist output after a failed agent result', async () => {
+  const { calls, service } = createHarness();
+  const agent = { id: 'agent-1' };
+  const job = {
+    id: 'job-1',
+    releaseId: 'release-1',
+    printerId: 'coder-1',
+    payloadHash: 'hash-1'
+  };
+  const result = {
+    ok: false,
+    messageMatches: false,
+    operatorMessage: 'STOP PRODUCTION. Quarantine affected product and physically check printer.',
+    technicalMessage: 'Agent reported printer mismatch.'
+  };
+
+  await service.completeAgentReleaseApply({ agent, job, result });
+
+  assert.equal(calls.some(([name]) => name === 'persistExpectedOutput'), false);
+  assert.ok(calls.some(([name]) => name === 'finishApply'));
+  assert.ok(calls.some(([name]) => name === 'agentApplicationFinished'));
 });
 
 test('markApplyFailed records the failed target state, message update event, and audit entry', () => {

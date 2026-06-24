@@ -1198,9 +1198,7 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
       broadcast('printer-status', result);
       return res.json({ ok: true, jobId: job.id, printerId: job.printerId, status: job.status });
     }
-    if (result.ok && result.messageMatches !== false) endOtherRunningTargets(job.printerId, job.releaseId);
-    const release = finishBatchReleaseTarget(job.releaseId, job.printerId, result);
-    releaseAudit.agentApplicationFinished(agent, release, job.printerId, result, job);
+    const { release } = await printerRuntimeService.completeAgentReleaseApply({ agent, job, result });
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: job.releaseId, printerId: job.printerId, status: release.status });
     res.json({ ok: true, releaseId: job.releaseId, printerId: job.printerId, status: release.status });
