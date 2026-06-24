@@ -129,10 +129,30 @@ function formatDuration(ms) {
   return `${hours}h ${min}m`;
 }
 
+function expectedMessage(status) {
+  return status?.expectedOutput?.printerMessageName || null;
+}
+
+function readbackUnsupported(printer = {}, status = {}) {
+  return status?.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false;
+}
+
+function messageMismatch(printer = {}, status = {}) {
+  const expected = expectedMessage(status);
+  if (!expected || !status?.selectedMessage || readbackUnsupported(printer, status)) return null;
+  if (expected === status.selectedMessage) return null;
+  return {
+    expected,
+    actual: status.selectedMessage,
+    instruction: 'STOP PRODUCTION. The printer is not running the approved release message. Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.'
+  };
+}
+
 function statusTone(coderOrStatus) {
   const config = coderOrStatus?.config;
   if (config && !config.enabled) return 'disabled';
   if (coderOrStatus?.state === 'disabled') return 'disabled';
+  if (messageMismatch(config || {}, coderOrStatus)) return 'offline';
   if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') return 'offline';
   if (isStale(coderOrStatus)) return 'warning';
   if (coderOrStatus?.online || coderOrStatus?.state === 'online') return 'online';
@@ -177,12 +197,15 @@ export {
   alarmSummary,
   compactFaultLines,
   faultCountLabel,
+  expectedMessage,
   faultSummary,
   formatDuration,
   formatAge,
   isStale,
   isVisibleBusy,
+  messageMismatch,
   printerState,
+  readbackUnsupported,
   setLiveBadge,
   statusLabel,
   statusTimestamp,

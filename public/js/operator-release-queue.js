@@ -1,8 +1,9 @@
 import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { releaseExpectedOutput } from './release-preview.js';
+import { messageMismatch } from './status-ui.js';
 
-function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) {
+function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => null, printerId = null }) {
   const state = { releases: [], selected: null, busy: false, loading: false };
 
   function targetStatusLabel(status) {
@@ -39,7 +40,8 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
 
   function renderTarget(container, { release, target }, { spotlight = false } = {}) {
     const printer = getPrinter(target.printerId);
-    const actionText = {
+    const mismatch = target.status === 'running' ? messageMismatch(printer || {}, getStatus(target.printerId) || {}) : null;
+    const actionText = mismatch ? 'Resend and reverify' : {
       awaiting_print_check: 'Verify first print', failed: 'Resolve uncertain printer state', running: 'View running job', completed: 'Reapply job'
     }[target.status] || 'Review and send';
     const expected = releaseExpectedOutput(release, target.printerId);
@@ -59,6 +61,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
         el('span', { text: expected.provisional ? 'Planned expected print' : 'Expected print' }),
         el('pre', { text: expected.rendered })
       ]) : null,
+      mismatch ? el('p', { className: 'operator-release-error', text: `MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Resend this release and reverify the first print before restarting.` }) : null,
       target.error ? el('p', { className: 'operator-release-error', text: target.error }) : null,
       el('button', {
         className: 'primary', type: 'button', disabled: target.status === 'applying' ? 'disabled' : null,
@@ -147,10 +150,22 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     setNotice(elements.dialogNotice);
     if (target.status === 'awaiting_print_check') showPrintCheck();
     if (target.status === 'running') {
-      elements.confirmation.classList.add('hidden');
-      elements.send.classList.add('hidden');
-      elements.endRun.classList.remove('hidden');
-      setNotice(elements.dialogNotice, 'This approved release is currently running on the printer.', 'success');
+      const mismatch = messageMismatch(printer || {}, getStatus(target.printerId) || {});
+      if (mismatch) {
+        elements.confirmation.classList.remove('hidden');
+        elements.confirmation.querySelector('span').textContent = 'I have stopped production, quarantined product since the mismatch was detected, and confirm it is safe to resend the approved release.';
+        elements.send.classList.remove('hidden');
+        elements.failureField.classList.remove('hidden');
+        elements.reasonLabel.textContent = 'Mismatch response and reason for resend';
+        elements.send.textContent = 'Resend and reverify';
+        elements.endRun.classList.remove('hidden');
+        setNotice(elements.dialogNotice, `MESSAGE MISMATCH — expected ${mismatch.expected}, printer reports ${mismatch.actual}. Stop production, quarantine affected product, resend the release, then reverify the first print before restarting.`, 'error');
+      } else {
+        elements.confirmation.classList.add('hidden');
+        elements.send.classList.add('hidden');
+        elements.endRun.classList.remove('hidden');
+        setNotice(elements.dialogNotice, 'This approved release is currently running on the printer.', 'success');
+      }
     }
     if (target.status === 'completed') {
       elements.failureField.classList.remove('hidden');
@@ -195,13 +210,15 @@ function createOperatorReleaseQueue({ elements, getPrinter, printerId = null }) 
     if (!elements.confirmCheck.checked) return setNotice(elements.dialogNotice, 'Complete the operator confirmation before sending.', 'error');
     const { release, target } = state.selected;
     const reapply = target.status === 'completed';
+    const reverify = target.status === 'running' && Boolean(messageMismatch(getPrinter(target.printerId) || {}, getStatus(target.printerId) || {}));
     const reason = elements.failureReason.value.trim();
     if (reapply && !reason) return setNotice(elements.dialogNotice, 'Enter why this completed job is being reapplied.', 'error');
+    if (reverify && !reason) return setNotice(elements.dialogNotice, 'Record the mismatch response before resending and reverifying.', 'error');
     if (target.status === 'failed' && !reason) return setNotice(elements.dialogNotice, 'Record the physical printer check and reason before retrying.', 'error');
     setBusy(true);
     setNotice(elements.dialogNotice, 'Sending the approved release and checking printer readback...');
     try {
-      const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/apply`, { method: 'POST', body: { reapply, reason } });
+      const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/apply`, { method: 'POST', body: { reapply, reverify, reason } });
       replaceRelease(response.release);
       state.selected.release = response.release;
       state.selected.target = response.release.executionTargets.find((item) => item.printerId === target.printerId);

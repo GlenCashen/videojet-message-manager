@@ -369,6 +369,38 @@ test('approved printer targets move through send and first-print verification', 
   db.close();
 });
 
+test('a running target can be resent for reverify after a mismatch response', () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  const planner = actor('planner-reverify', 'planner');
+  const reviewer = actor('qa-reverify', 'qa');
+  const operator = actor('operator-reverify', 'operator');
+  const master = createProductMaster(masterInput('REVERIFY', 11), reviewer, db);
+  const draft = createBatchRelease(releaseInput(master.id, 'REVERIFY-01'), planner, db);
+  submitBatchRelease(draft.id, planner, db);
+  approveBatchRelease(draft.id, reviewer, db);
+  reserveBatchReleaseRun(draft.id, db);
+  beginBatchReleaseTarget(draft.id, 'coder-1', operator, {}, db);
+  finishBatchReleaseTarget(draft.id, 'coder-1', { ok: true, messageMatches: true }, db);
+  const running = verifyBatchReleaseTarget(draft.id, 'coder-1', { passed: true }, operator, db);
+  assert.equal(running.status, 'running');
+  assert.throws(
+    () => beginBatchReleaseTarget(draft.id, 'coder-1', operator, { reverify: true }, db),
+    /mismatch response/i
+  );
+  const reverifying = beginBatchReleaseTarget(draft.id, 'coder-1', operator, {
+    reverify: true,
+    reason: 'Stopped production after message mismatch; resend approved release and reverify.'
+  }, db);
+  assert.equal(reverifying.status, 'applying');
+  const awaiting = finishBatchReleaseTarget(draft.id, 'coder-1', { ok: true, messageMatches: true, reverify: true }, db);
+  assert.equal(awaiting.status, 'awaiting_print_check');
+  const reverified = verifyBatchReleaseTarget(draft.id, 'coder-1', { passed: true }, operator, db);
+  assert.equal(reverified.status, 'running');
+  assert.equal(reverified.runCode, 'T0011');
+  db.close();
+});
+
 test('failed first print returns to an editable release and preserves the consumed run', () => {
   const db = openDatabase(':memory:');
   runMigrations(db);

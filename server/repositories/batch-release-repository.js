@@ -203,7 +203,7 @@ function recoverInterruptedBatchReleaseTargets(db = getDb()) {
   })();
 }
 
-function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reason = '' } = {}, db = getDb()) {
+function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reverify = false, reason = '' } = {}, db = getDb()) {
   return db.transaction(() => {
     const release = getBatchRelease(id, db);
     if (!release) return null;
@@ -213,11 +213,13 @@ function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reason
     const target = release.executionTargets.find((item) => item.printerId === printerId);
     if (!target) throw new Error('This printer is not an execution target for the release.');
     const isReapply = reapply === true && target.status === 'completed';
-    if (!['pending', 'failed'].includes(target.status) && !isReapply) throw new Error('This printer target is already in progress or awaiting verification.');
+    const isReverify = reverify === true && target.status === 'running';
+    if (!['pending', 'failed'].includes(target.status) && !isReapply && !isReverify) throw new Error('This printer target is already in progress or awaiting verification.');
     if (target.status === 'failed' && !String(reason || '').trim()) {
       throw new Error('Confirm the physical printer state and enter a reason before retrying an uncertain send.');
     }
     if (isReapply && !String(reason || '').trim()) throw new Error('Enter a reason for reapplying a completed release.');
+    if (isReverify && !String(reason || '').trim()) throw new Error('Record the mismatch response before resending and reverifying this release.');
     const now = new Date().toISOString();
     db.prepare(`
       UPDATE batch_release_execution_targets SET status = 'applying', applied_by_user_id = ?, applied_by_username = ?,

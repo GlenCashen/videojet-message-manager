@@ -6,8 +6,11 @@ import { currentSession, loadSession } from './session.js';
 import {
   faultCountLabel,
   formatAge,
+  expectedMessage,
   isStale,
+  messageMismatch,
   printerState,
+  readbackUnsupported,
   setLiveBadge,
   statusLabel,
   statusTone,
@@ -50,14 +53,6 @@ function cardClass(status) {
   return `viewer-card status-${statusTone(status || {})}${alarmClass}`;
 }
 
-function expectedMessage(status) {
-  return status?.expectedOutput?.printerMessageName || null;
-}
-
-function readbackUnsupported(printer, status) {
-  return status.messageVerification === 'unsupported' || printer.capabilities?.currentMessageReadback === false;
-}
-
 function syncState(printer, status) {
   if (!status?.lastSuccessfulAt) return { label: 'WAITING', tone: 'neutral' };
   if (!state.serverConnected) return { label: 'SERVER OFFLINE', tone: 'bad' };
@@ -65,8 +60,7 @@ function syncState(printer, status) {
   if (isStale(status)) return { label: 'STALE', tone: 'stale' };
   if (status.consecutiveFailures > 0) return { label: 'RETRYING', tone: 'stale' };
   if (readbackUnsupported(printer, status)) return { label: 'READBACK N/A', tone: 'neutral' };
-  const expected = expectedMessage(status);
-  if (expected && expected !== status.selectedMessage) return { label: 'MISMATCH', tone: 'bad' };
+  if (messageMismatch(printer, status)) return { label: 'MISMATCH', tone: 'bad' };
   return { label: 'SYNCED', tone: 'good' };
 }
 
@@ -83,6 +77,8 @@ function createReadback(printer, status) {
     const modelLabel = (printer.protocol || 'wsi') === 'ngpcl' ? 'Markem NGPCL' : `Videojet ${printer.model || '1710'}`;
     syncMessage = `Current-message readback is unavailable on this ${modelLabel}. Status and faults are still polling normally.`;
   }
+  const mismatch = messageMismatch(printer, status);
+  if (mismatch) syncMessage = mismatch.instruction;
 
   return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [
     el('div', { className: 'readback-heading' }, [
@@ -99,6 +95,7 @@ function createReadback(printer, status) {
       el('span', { text: 'Latest attempt' }),
       el('strong', { text: status.lastAttemptAt ? new Date(status.lastAttemptAt).toLocaleString() : 'Waiting' })
     ]),
+    mismatch ? el('p', { className: 'viewer-warning', text: `MESSAGE MISMATCH — Expected ${mismatch.expected}, printer reports ${mismatch.actual}.` }) : null,
     el('p', { className: `sync-message sync-${sync.tone}`, text: syncMessage })
   ]);
 }

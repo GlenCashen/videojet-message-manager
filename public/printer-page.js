@@ -11,6 +11,7 @@ import {
   formatDuration,
   isStale,
   isVisibleBusy,
+  messageMismatch,
   printerState,
   setLiveBadge,
   statusLabel,
@@ -94,7 +95,8 @@ const releaseQueue = createOperatorReleaseQueue({
     failureReason: $('operatorPrintFailureReason'), cancel: $('cancelOperatorRelease'), send: $('sendOperatorRelease'),
     returnRelease: $('returnOperatorRelease'), report: $('reportOperatorPrintFailure'), verify: $('verifyOperatorPrint'), endRun: $('endOperatorRun')
   },
-  getPrinter: (id) => id === printerId ? printer : null
+  getPrinter: (id) => id === printerId ? printer : null,
+  getStatus: (id) => id === printerId ? latestStatus : null
 });
 
 function selectedMessageDefinition() {
@@ -309,7 +311,8 @@ function updateOperatorShell() {
   elements.trafficLight.appendChild(trafficLightMarkup(decodedStatus, { stale: stale || latestStatus?.online === false }));
 
   if (latestStatus) {
-    elements.connection.textContent = statusLabel(latestStatus);
+    const mismatch = messageMismatch(printer || {}, latestStatus);
+    elements.connection.textContent = mismatch ? 'MESSAGE MISMATCH — stop production' : statusLabel(latestStatus);
     elements.selectedMessage.textContent = latestStatus.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false
       ? `Readback unavailable (${printer?.model || '1710'})`
       : latestStatus.selectedMessage || '-';
@@ -319,7 +322,9 @@ function updateOperatorShell() {
     elements.checkedAt.textContent = formatAge(latestStatus.lastSuccessfulAt);
     renderExpectedOutput(latestStatus.expectedOutput);
 
-    if (isStale(latestStatus) && serverConnected) {
+    if (mismatch) {
+      setOperatorNotice(`MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.`, 'error', { sticky: true });
+    } else if (isStale(latestStatus) && serverConnected) {
       const errorDetail = latestStatus.lastError ? ` Latest WSI error: ${latestStatus.lastError}` : '';
       setOperatorNotice(`Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error');
     }
@@ -343,9 +348,12 @@ function renderExpectedOutput(expectedOutput) {
   }
 
   elements.expectedOutput.textContent = expectedOutput.rendered;
-  elements.expectedSource.textContent = expectedOutput.source === 'last-known'
-    ? 'Last expected output'
-    : 'Physical print check: Required';
+  const mismatch = messageMismatch(printer || {}, latestStatus || {});
+  elements.expectedSource.textContent = mismatch
+    ? `MESSAGE MISMATCH — expected ${mismatch.expected}, printer reports ${mismatch.actual}. Resend release and reverify first print.`
+    : expectedOutput.source === 'last-known'
+      ? 'Last expected output'
+      : 'Physical print check: Required';
 }
 
 function formatDateTime(value) {

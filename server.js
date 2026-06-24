@@ -498,6 +498,51 @@ function sendEvent(client, type, payload) {
   client.write(`event: ${type}\ndata: ${JSON.stringify({ type, payload })}\n\n`);
 }
 
+const activeReleaseMismatchKeys = new Set();
+
+function expectedMessageMismatch(status) {
+  const expected = status?.expectedOutput?.printerMessageName || null;
+  const actual = status?.selectedMessage || null;
+  if (!expected || !actual || status?.messageVerification === 'unsupported') return null;
+  if (expected === actual) return null;
+  return { expected, actual };
+}
+
+function runningReleaseForPrinter(printerId) {
+  return listBatchReleases({ limit: 500 })
+    .find((release) => release.executionTargets?.some((target) => target.printerId === printerId && target.status === 'running')) || null;
+}
+
+function recordReleaseMessageMismatch(status) {
+  const mismatch = expectedMessageMismatch(status);
+  const release = runningReleaseForPrinter(status.printerId);
+  const key = release ? `${release.id}:${status.printerId}` : `printer:${status.printerId}`;
+  if (!mismatch) {
+    activeReleaseMismatchKeys.delete(key);
+    return;
+  }
+  if (activeReleaseMismatchKeys.has(key)) return;
+  activeReleaseMismatchKeys.add(key);
+  addLog({
+    action: 'batch-release-message-mismatch',
+    actor: 'System',
+    targetType: release ? 'batch-release' : 'printer',
+    targetId: release?.id || status.printerId,
+    printerId: status.printerId,
+    selectedMessage: mismatch.actual,
+    requestedMessage: mismatch.expected,
+    details: {
+      printerId: status.printerId,
+      releaseId: release?.id || null,
+      runCode: release?.runCode || null,
+      expectedMessage: mismatch.expected,
+      selectedMessage: mismatch.actual,
+      instruction: 'STOP PRODUCTION. Printer message does not match the approved release. Quarantine product since detection, resend the release, and reverify the first print.',
+      ok: false
+    }
+  });
+}
+
 const statusCache = new StatusCache({
   staleAfterMs: STALE_AFTER_MS,
   offlineAfterFailures: OFFLINE_AFTER_FAILURES,
@@ -507,6 +552,7 @@ const statusCache = new StatusCache({
   },
   onStatusSuccess: (status) => {
     recordFaultTransitions(status);
+    recordReleaseMessageMismatch(status);
   }
 });
 
@@ -1096,6 +1142,7 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
     const reportedResult = req.body?.result || { ok: false, error: 'Printer agent returned no result.' };
     const result = withOperatorError({
       ...reportedResult,
+      reverify: current.context?.reverify === true || reportedResult.reverify === true,
       printerId: reportedResult.printerId || current.printerId,
       operationId: reportedResult.operationId || current.id,
       requestedMessage: reportedResult.requestedMessage || current.payload?.message?.printerMessageName
@@ -1126,11 +1173,12 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
     if (result.ok && result.messageMatches !== false) endOtherRunningTargets(job.printerId, job.releaseId);
     const release = finishBatchReleaseTarget(job.releaseId, job.printerId, result);
     addLog({
-      action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-printer-state-uncertain',
+      action: result.ok && result.messageMatches !== false ? (result.reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain',
       actor: `agent:${agent.id}`, targetType: 'batch-release', targetId: job.releaseId, printerId: job.printerId,
       error: result.technicalMessage || result.error || null,
       details: {
         agentId: agent.id, jobId: job.id, payloadHash: job.payloadHash, status: release.status,
+        reverify: result.reverify === true,
         ok: result.ok === true,
         operatorMessage: result.operatorMessage || null,
         technicalMessage: result.technicalMessage || result.error || null
@@ -1629,14 +1677,15 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     if (assigningRun) addLog({ action: 'batch-release-run-assigned', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id, details: { runNumber: release.runNumber, runCode: release.runCode, printerId: printer.id, ok: true } });
     const execution = await releaseExecutionContext(release, req.params.printerId, user);
 
-    beginBatchReleaseTarget(release.id, printer.id, user, { reapply: req.body?.reapply === true, reason: req.body?.reason });
+    const reverify = req.body?.reverify === true;
+    beginBatchReleaseTarget(release.id, printer.id, user, { reapply: req.body?.reapply === true, reverify, reason: req.body?.reason });
     began = true;
     if (PRINTER_EXECUTION_MODE === 'local') stateChangingOperations.add(printer.id);
     addLog({
-      action: 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
+      action: reverify ? 'batch-release-reverify-started' : 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
       printerId: printer.id, details: {
         printerId: printer.id, brewSheetProduct: release.brewSheetProduct, runCode: release.runCode,
-        reapply: req.body?.reapply === true, reason: req.body?.reason || null, ok: true
+        reapply: req.body?.reapply === true, reverify, reason: req.body?.reason || null, ok: true
       }
     });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: 'applying' });
@@ -1652,8 +1701,10 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
           plannedProductionAt: release.plannedProductionAt,
           message: printerAgentMessage(execution.message),
           fields: execution.expectedOutput.fields || {},
-          expectedRendered: execution.expectedOutput.rendered
-        }
+          expectedRendered: execution.expectedOutput.rendered,
+          reverify
+        },
+        context: { reverify }
       });
       addLog({
         action: 'batch-release-agent-job-queued', ...auditActor(user), targetType: 'batch-release',
@@ -1668,11 +1719,14 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
       });
     }
 
-    const result = await setPrinterMessage(printer, {
-      messageId: execution.expectedOutput.messageId,
-      fields: execution.expectedOutput.fields || {},
-      productionDate: release.plannedProductionAt
-    });
+    const result = {
+      ...await setPrinterMessage(printer, {
+        messageId: execution.expectedOutput.messageId,
+        fields: execution.expectedOutput.fields || {},
+        productionDate: release.plannedProductionAt
+      }),
+      reverify
+    };
     insertMessageUpdateEvent(result, user);
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
     const endedReleaseIds = result.ok && result.messageMatches !== false ? endOtherRunningTargets(printer.id, release.id) : [];
@@ -1685,9 +1739,9 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     }
     const updated = finishBatchReleaseTarget(release.id, printer.id, result);
     addLog({
-      action: result.ok && result.messageMatches !== false ? 'batch-release-application-sent' : 'batch-release-printer-state-uncertain',
+      action: result.ok && result.messageMatches !== false ? (reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain',
       ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id,
-      details: { printerId: printer.id, operationId: result.operationId, selectedMessage: result.selectedMessage, messageMatches: result.messageMatches, verificationAvailable: result.verificationAvailable, rawStatus: result.rawStatus || null, status: updated.status, ok: result.ok && result.messageMatches !== false }
+      details: { printerId: printer.id, operationId: result.operationId, selectedMessage: result.selectedMessage, messageMatches: result.messageMatches, verificationAvailable: result.verificationAvailable, rawStatus: result.rawStatus || null, status: updated.status, reverify, ok: result.ok && result.messageMatches !== false }
     });
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: updated.status });
@@ -1731,12 +1785,14 @@ app.post('/api/batch-releases/:id/targets/:printerId/print-check', (req, res) =>
     }, user);
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     const passed = req.body?.passed === true;
+    const target = release.executionTargets.find((item) => item.printerId === req.params.printerId);
+    const reverify = target?.result?.reverify === true;
     addLog({
-      action: passed ? 'batch-release-print-verified' : 'batch-release-print-failed', ...auditActor(user),
+      action: passed ? (reverify ? 'batch-release-reverified' : 'batch-release-print-verified') : 'batch-release-print-failed', ...auditActor(user),
       targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId,
-      details: { printerId: req.params.printerId, reason: passed ? null : String(req.body?.reason || '').trim(), status: release.status, ok: passed }
+      details: { printerId: req.params.printerId, reason: passed ? null : String(req.body?.reason || '').trim(), status: release.status, reverify, ok: passed }
     });
-    if (passed) addLog({ action: 'batch-release-running', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId, details: { printerId: req.params.printerId, runCode: release.runCode, status: 'running', ok: true } });
+    if (passed) addLog({ action: 'batch-release-running', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId, details: { printerId: req.params.printerId, runCode: release.runCode, status: 'running', reverify, ok: true } });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
     res.json({ ok: true, release: visibleBatchRelease(user, release) });
   } catch (error) {
