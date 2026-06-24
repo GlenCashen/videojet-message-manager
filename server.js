@@ -63,6 +63,7 @@ import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-r
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { deleteMessage } from './server/repositories/message-repository.js';
 import { withOperatorError } from './server/operator-error-messages.js';
+import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import {
   claimPrinterAgentJob,
@@ -481,6 +482,8 @@ function sameDateRule(left = {}, right = {}) {
     && dateRuleAmount(left) === dateRuleAmount(right)
     && (left.format || 'DD/MM/YYYY') === (right.format || 'DD/MM/YYYY');
 }
+
+const releaseAudit = createReleaseAuditService({ addLog, auditActor });
 
 const releaseExecutionService = createReleaseExecutionService({
   canOperatePrinter,
@@ -1649,16 +1652,10 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     });
     release = prepared.release;
     const execution = prepared.execution;
-    if (prepared.assigningRun) addLog({ action: 'batch-release-run-assigned', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id, details: { runNumber: release.runNumber, runCode: release.runCode, printerId: printer.id, ok: true } });
+    if (prepared.assigningRun) releaseAudit.runAssigned(user, release, printer);
     began = true;
     if (PRINTER_EXECUTION_MODE === 'local') stateChangingOperations.add(printer.id);
-    addLog({
-      action: reverify ? 'batch-release-reverify-started' : 'batch-release-application-started', ...auditActor(user), targetType: 'batch-release', targetId: release.id,
-      printerId: printer.id, details: {
-        printerId: printer.id, brewSheetProduct: release.brewSheetProduct, runCode: release.runCode,
-        reapply: req.body?.reapply === true, reverify, reason: req.body?.reason || null, ok: true
-      }
-    });
+    releaseAudit.applicationStarted(user, release, printer, { reapply: req.body?.reapply === true, reverify, reason: req.body?.reason });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: 'applying' });
 
     if (PRINTER_EXECUTION_MODE === 'agent') {
@@ -1677,11 +1674,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
         },
         context: { reverify }
       });
-      addLog({
-        action: 'batch-release-agent-job-queued', ...auditActor(user), targetType: 'batch-release',
-        targetId: release.id, printerId: printer.id,
-        details: { jobId: job.id, payloadHash: job.payloadHash, printerId: printer.id, ok: true }
-      });
+      releaseAudit.agentJobQueued(user, release, printer, job);
       return res.status(202).json({
         ok: true,
         queued: true,
@@ -1702,17 +1695,9 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
     const { release: updated, endedReleaseIds } = releaseExecutionService.finishApply({ releaseId: release.id, printerId: printer.id, result });
     for (const endedReleaseId of endedReleaseIds) {
-      addLog({
-        action: 'batch-release-run-ended-by-switch', ...auditActor(user), targetType: 'batch-release',
-        targetId: endedReleaseId, printerId: printer.id,
-        details: { printerId: printer.id, replacedByReleaseId: release.id, ok: true }
-      });
+      releaseAudit.runEndedBySwitch(user, endedReleaseId, printer, release);
     }
-    addLog({
-      action: result.ok && result.messageMatches !== false ? (reverify ? 'batch-release-reverify-sent' : 'batch-release-application-sent') : 'batch-release-printer-state-uncertain',
-      ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: printer.id,
-      details: { printerId: printer.id, operationId: result.operationId, selectedMessage: result.selectedMessage, messageMatches: result.messageMatches, verificationAvailable: result.verificationAvailable, rawStatus: result.rawStatus || null, status: updated.status, reverify, ok: result.ok && result.messageMatches !== false }
-    });
+    releaseAudit.applicationFinished(user, updated, printer, result, { reverify });
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: updated.status });
     res.status(result.ok && result.messageMatches !== false ? 200 : 409).json({ ok: result.ok && result.messageMatches !== false, release: visibleBatchRelease(user, updated), result });
@@ -1723,19 +1708,7 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
     if (began) {
       const updated = releaseExecutionService.markApplyFailed({ releaseId: req.params.id, printerId: req.params.printerId, failure });
       insertMessageUpdateEvent(failure, user || {});
-      addLog({
-        action: 'batch-release-printer-state-uncertain', ...(user ? auditActor(user) : {}), targetType: 'batch-release',
-        targetId: req.params.id, printerId: req.params.printerId,
-        error: failure.technicalMessage || error.message,
-        details: {
-          printerId: req.params.printerId,
-          error: failure.technicalMessage || error.message,
-          operatorMessage: failure.operatorMessage || null,
-          technicalMessage: failure.technicalMessage || error.message,
-          status: updated.status,
-          ok: false
-        }
-      });
+      releaseAudit.applicationFailed(user, req.params.id, req.params.printerId, failure, updated.status);
       broadcast('batch-release-execution', { releaseId: req.params.id, printerId: req.params.printerId, status: updated.status });
     }
     res.status(error.statusCode || (began ? 502 : 409)).json({ ...failure, release: began && user ? visibleBatchRelease(user, getBatchRelease(req.params.id)) : undefined });
@@ -1758,12 +1731,8 @@ app.post('/api/batch-releases/:id/targets/:printerId/print-check', (req, res) =>
     });
     if (!checked) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     const { release, reverify } = checked;
-    addLog({
-      action: passed ? (reverify ? 'batch-release-reverified' : 'batch-release-print-verified') : 'batch-release-print-failed', ...auditActor(user),
-      targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId,
-      details: { printerId: req.params.printerId, reason: passed ? null : String(req.body?.reason || '').trim(), status: release.status, reverify, ok: passed }
-    });
-    if (passed) addLog({ action: 'batch-release-running', ...auditActor(user), targetType: 'batch-release', targetId: release.id, printerId: req.params.printerId, details: { printerId: req.params.printerId, runCode: release.runCode, status: 'running', reverify, ok: true } });
+    releaseAudit.printChecked(user, release, req.params.printerId, { passed, reason: req.body?.reason, reverify });
+    if (passed) releaseAudit.productionRunning(user, release, req.params.printerId, { reverify });
     broadcast('batch-release-execution', { releaseId: release.id, printerId: req.params.printerId, status: release.status });
     res.json({ ok: true, release: visibleBatchRelease(user, release) });
   } catch (error) {
