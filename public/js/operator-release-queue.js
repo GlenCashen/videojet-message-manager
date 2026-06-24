@@ -20,8 +20,12 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     return 'neutral';
   }
 
+  function isProductionRelease(release) {
+    return ['released', 'applying', 'awaiting_print_check', 'running', 'failed', 'completed'].includes(release.status);
+  }
+
   function rows() {
-    return state.releases.flatMap((release) => (release.executionTargets || [])
+    return state.releases.filter(isProductionRelease).flatMap((release) => (release.executionTargets || [])
       .filter((target) => !printerId || target.printerId === printerId)
       .map((target) => ({ release, target })));
   }
@@ -73,7 +77,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
 
   function render() {
     const targets = rows();
-    const activeTargets = targets.filter(({ target }) => target.status !== 'ended').sort((a, b) => plannedTime(a) - plannedTime(b));
+    const activeTargets = targets.filter(({ release, target }) => release.status !== 'completed' && target.status !== 'ended').sort((a, b) => plannedTime(a) - plannedTime(b));
     const completedTargets = targets.filter(({ target }) => target.status === 'ended').sort((a, b) => plannedTime(b) - plannedTime(a));
     const current = activeTargets.find(({ target }) => target.status === 'running')
       || activeTargets.find(({ target }) => ['awaiting_print_check', 'applying', 'failed'].includes(target.status));
