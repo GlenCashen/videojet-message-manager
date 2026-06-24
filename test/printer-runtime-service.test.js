@@ -32,11 +32,16 @@ function createHarness({ sendResult = { ok: true, messageMatches: true } } = {})
       finishApply: (...args) => {
         calls.push(['finishApply', ...args]);
         return { release: updatedRelease, endedReleaseIds: ['old-release-1'] };
+      },
+      markApplyFailed: (...args) => {
+        calls.push(['markApplyFailed', ...args]);
+        return { id: release.id, status: 'failed' };
       }
     },
     releaseAudit: {
       runEndedBySwitch: (...args) => calls.push(['runEndedBySwitch', ...args]),
-      applicationFinished: (...args) => calls.push(['applicationFinished', ...args])
+      applicationFinished: (...args) => calls.push(['applicationFinished', ...args]),
+      applicationFailed: (...args) => calls.push(['applicationFailed', ...args])
     }
   });
   return { calls, service, updatedRelease };
@@ -90,4 +95,27 @@ test('applyReleaseLocally does not persist expected output after an uncertain se
   assert.equal(calls.some(([name]) => name === 'persistExpectedOutput'), false);
   assert.ok(calls.some(([name]) => name === 'finishApply'));
   assert.ok(calls.some(([name]) => name === 'applicationFinished'));
+});
+
+test('markApplyFailed records the failed target state, message update event, and audit entry', () => {
+  const { calls, service } = createHarness();
+  const failure = {
+    ok: false,
+    printerId: 'coder-1',
+    error: 'TCP timeout while sending release.',
+    operatorMessage: 'Physically check printer and record a reason before retry.',
+    technicalMessage: 'TCP timeout while sending release.'
+  };
+
+  const response = service.markApplyFailed({
+    releaseId: 'release-1',
+    printerId: 'coder-1',
+    failure,
+    user
+  });
+
+  assert.deepEqual(response.release, { id: 'release-1', status: 'failed' });
+  assert.deepEqual(calls[0], ['markApplyFailed', { releaseId: 'release-1', printerId: 'coder-1', failure }]);
+  assert.deepEqual(calls[1], ['insertMessageUpdateEvent', failure, user]);
+  assert.deepEqual(calls[2], ['applicationFailed', user, 'release-1', 'coder-1', failure, 'failed']);
 });

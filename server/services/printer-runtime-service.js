@@ -5,6 +5,13 @@ function createPrinterRuntimeService({
   releaseExecutionService,
   setPrinterMessage
 }) {
+  function markApplyFailed({ releaseId, printerId, failure, user }) {
+    const updated = releaseExecutionService.markApplyFailed({ releaseId, printerId, failure });
+    insertMessageUpdateEvent(failure, user || {});
+    releaseAudit.applicationFailed(user, releaseId, printerId, failure, updated.status);
+    return { release: updated };
+  }
+
   async function applyReleaseLocally({ release, printer, execution, user, reverify = false }) {
     const result = {
       ...await setPrinterMessage(printer, {
@@ -32,7 +39,7 @@ function createPrinterRuntimeService({
     return { result, release: updated, endedReleaseIds };
   }
 
-  return { applyReleaseLocally };
+  return { applyReleaseLocally, markApplyFailed };
 }
 
 export { createPrinterRuntimeService };

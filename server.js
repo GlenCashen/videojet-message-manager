@@ -1696,9 +1696,12 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
       ? { ...error.result, ok: false, error: error.result.error || error.message, checkedAt: new Date().toISOString() }
       : { ok: false, code: error.code || null, printerId: req.params.printerId, error: error.message, checkedAt: new Date().toISOString() });
     if (began) {
-      const updated = releaseExecutionService.markApplyFailed({ releaseId: req.params.id, printerId: req.params.printerId, failure });
-      insertMessageUpdateEvent(failure, user || {});
-      releaseAudit.applicationFailed(user, req.params.id, req.params.printerId, failure, updated.status);
+      const { release: updated } = printerRuntimeService.markApplyFailed({
+        releaseId: req.params.id,
+        printerId: req.params.printerId,
+        failure,
+        user
+      });
       broadcast('batch-release-execution', { releaseId: req.params.id, printerId: req.params.printerId, status: updated.status });
     }
     res.status(error.statusCode || (began ? 502 : 409)).json({ ...failure, release: began && user ? visibleBatchRelease(user, getBatchRelease(req.params.id)) : undefined });
