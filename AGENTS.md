@@ -15,6 +15,7 @@ Use these instructions whenever working in this repository. The app is a product
    ```
 4. If tests fail before editing, record the baseline failure and avoid claiming the new change caused or fixed unrelated failures.
 5. Keep commits small and reviewable.
+6. After each completed task, run the relevant checks and create a local git commit unless the user explicitly asks not to commit.
 
 ## Release workflow safety skill
 
