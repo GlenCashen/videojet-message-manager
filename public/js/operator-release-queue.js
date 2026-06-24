@@ -185,7 +185,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
       elements.reasonLabel.textContent = 'Physical check result and reason for retry';
       elements.send.textContent = 'Retry approved message';
       if (partiallyCompleted) {
-        setNotice(elements.dialogNotice, 'Another printer target is already completed or running, so this release cannot be edited. Retry the same approved message here, or create a new release if the approved data itself is wrong.', 'error');
+        setNotice(elements.dialogNotice, 'Another printer target is already completed or running, so this release cannot be edited without changing production history. Retry the same approved message here, or create a new corrected release for this printer only if the approved data is wrong.', 'error');
       } else {
         elements.returnRelease.classList.remove('hidden');
         setNotice(elements.dialogNotice, 'Retry the same approved message after checking the printer, or return the release for correction if the approved data is wrong.', 'error');
