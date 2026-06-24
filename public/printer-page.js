@@ -27,6 +27,7 @@ const elements = {
   message: $('operatorMessage'),
   statusPanel: $('operatorStatus'),
   connection: $('operatorConnection'),
+  expectedMessage: $('operatorExpectedMessage'),
   selectedMessage: $('operatorSelectedMessage'),
   alarmStatus: $('operatorAlarmStatus'),
   faults: $('operatorFaults'),
@@ -312,10 +313,13 @@ function updateOperatorShell() {
 
   if (latestStatus) {
     const mismatch = messageMismatch(printer || {}, latestStatus);
-    elements.connection.textContent = mismatch ? 'MESSAGE MISMATCH — stop production' : statusLabel(latestStatus);
-    elements.selectedMessage.textContent = latestStatus.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false
+    const expectedMessage = latestStatus.expectedOutput?.printerMessageName || null;
+    const selectedMessage = latestStatus.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false
       ? `Readback unavailable (${printer?.model || '1710'})`
       : latestStatus.selectedMessage || '-';
+    elements.connection.textContent = mismatch ? 'Mismatch' : statusLabel(latestStatus);
+    if (elements.expectedMessage) elements.expectedMessage.textContent = expectedMessage || 'No expected message';
+    elements.selectedMessage.textContent = selectedMessage;
     elements.alarmStatus.textContent = lightState.label;
     elements.faults.textContent = faultSummary(latestStatus.decodedStatus);
     elements.printerStatus.textContent = latestStatus.rawStatus || latestStatus.status || '-';
@@ -323,13 +327,17 @@ function updateOperatorShell() {
     renderExpectedOutput(latestStatus.expectedOutput);
 
     if (mismatch) {
-      setOperatorNotice(`MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.`, 'error', { sticky: true });
+      setOperatorNotice(`MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.`, 'error', { sticky: true, force: true });
     } else if (isStale(latestStatus) && serverConnected) {
       const errorDetail = latestStatus.lastError ? ` Latest WSI error: ${latestStatus.lastError}` : '';
-      setOperatorNotice(`Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error');
+      setOperatorNotice(`Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error', { force: true });
+    } else if (serverConnected) {
+      setOperatorNotice('', 'info', { force: true });
     }
   } else if (printer && !printer.enabled) {
     elements.connection.textContent = 'Disabled';
+    if (elements.expectedMessage) elements.expectedMessage.textContent = '-';
+    elements.selectedMessage.textContent = '-';
     elements.alarmStatus.textContent = '-';
     elements.faults.textContent = 'Coder is disabled';
     elements.checkedAt.textContent = 'No update yet';
