@@ -9,12 +9,12 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
   function targetStatusLabel(status) {
     return {
       pending: 'Approved / ready to send', applying: 'Sending to printer', awaiting_print_check: 'Sent / awaiting first-print check',
-      running: 'Running on printer', completed: 'Completed', failed: 'Attention required — printer state uncertain'
+      running: 'Running on printer', ended: 'Completed', failed: 'Attention required — printer state uncertain'
     }[status] || status;
   }
 
   function targetTone(status) {
-    if (['running', 'completed'].includes(status)) return 'good';
+    if (['running', 'ended'].includes(status)) return 'good';
     if (status === 'failed') return 'bad';
     if (['applying', 'awaiting_print_check'].includes(status)) return 'stale';
     return 'neutral';
@@ -42,7 +42,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     const printer = getPrinter(target.printerId);
     const mismatch = target.status === 'running' ? messageMismatch(printer || {}, getStatus(target.printerId) || {}) : null;
     const actionText = mismatch ? 'Resend and reverify' : {
-      awaiting_print_check: 'Verify first print', failed: 'Resolve uncertain printer state', running: 'View running job', completed: 'Reapply job'
+      awaiting_print_check: 'Verify first print', failed: 'Resolve uncertain printer state', running: 'View running job', ended: 'Reapply job'
     }[target.status] || 'Review and send';
     const expected = releaseExpectedOutput(release, target.printerId);
     container.appendChild(el('article', { className: `operator-release-item target-${target.status}${spotlight ? ' release-spotlight-card' : ''}` }, [
@@ -73,8 +73,8 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
 
   function render() {
     const targets = rows();
-    const activeTargets = targets.filter(({ target }) => target.status !== 'completed').sort((a, b) => plannedTime(a) - plannedTime(b));
-    const completedTargets = targets.filter(({ target }) => target.status === 'completed').sort((a, b) => plannedTime(b) - plannedTime(a));
+    const activeTargets = targets.filter(({ target }) => target.status !== 'ended').sort((a, b) => plannedTime(a) - plannedTime(b));
+    const completedTargets = targets.filter(({ target }) => target.status === 'ended').sort((a, b) => plannedTime(b) - plannedTime(a));
     const current = activeTargets.find(({ target }) => target.status === 'running')
       || activeTargets.find(({ target }) => ['awaiting_print_check', 'applying', 'failed'].includes(target.status));
     const next = activeTargets.find(({ target }) => target.status === 'pending');
@@ -124,7 +124,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     const printer = getPrinter(target.printerId);
     elements.title.textContent = {
       awaiting_print_check: 'Verify first printed code', running: 'Production run in progress',
-      completed: 'Reapply completed release', failed: 'Attention required — printer state uncertain'
+      ended: 'Reapply completed release', failed: 'Attention required — printer state uncertain'
     }[target.status] || 'Send approved release';
     elements.subtitle.textContent = `${printer?.name || target.printerId} · ${printer?.location || 'No line location'}`;
     clear(elements.facts);
@@ -167,13 +167,13 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
         setNotice(elements.dialogNotice, 'This approved release is currently running on the printer.', 'success');
       }
     }
-    if (target.status === 'completed') {
+    if (target.status === 'ended') {
       elements.failureField.classList.remove('hidden');
       elements.reasonLabel.textContent = 'Reason for reapplying this completed job';
       elements.send.textContent = 'Confirm reapply';
     }
     if (target.status === 'failed' && target.verifiedAt) {
-      const partiallyCompleted = release.executionTargets.some((item) => item.printerId !== target.printerId && ['completed', 'running'].includes(item.status));
+      const partiallyCompleted = release.executionTargets.some((item) => item.printerId !== target.printerId && ['ended', 'running'].includes(item.status));
       elements.confirmation.classList.remove('hidden');
       elements.confirmation.querySelector('span').textContent = 'I have physically checked this printer and confirm it is safe to resend the same approved message.';
       elements.send.classList.remove('hidden');
@@ -209,7 +209,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     if (state.busy || !state.selected) return;
     if (!elements.confirmCheck.checked) return setNotice(elements.dialogNotice, 'Complete the operator confirmation before sending.', 'error');
     const { release, target } = state.selected;
-    const reapply = target.status === 'completed';
+    const reapply = target.status === 'ended';
     const reverify = target.status === 'running' && Boolean(messageMismatch(getPrinter(target.printerId) || {}, getStatus(target.printerId) || {}));
     const reason = elements.failureReason.value.trim();
     if (reapply && !reason) return setNotice(elements.dialogNotice, 'Enter why this completed job is being reapplied.', 'error');

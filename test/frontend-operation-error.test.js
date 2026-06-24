@@ -162,7 +162,7 @@ test('individual printer page exposes release execution while dashboard stays re
   assert.ok(queue.includes('/print-check`'));
   assert.ok(queue.includes('/end-run`'));
   assert.ok(queue.includes('/return-for-review`'));
-  assert.ok(queue.includes("target.status !== 'completed'"));
+  assert.ok(queue.includes("target.status !== 'ended'"));
   assert.ok(queue.includes('/api/batch-releases?limit=500'));
   assert.ok(queue.includes('completedTargets.length'));
   assert.ok(printer.includes('First print verified'));

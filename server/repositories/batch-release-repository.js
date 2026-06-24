@@ -51,10 +51,9 @@ function releaseFromRow(row) {
 }
 
 function executionTargetFromRow(row) {
-  const status = row.status === 'completed' && row.running_at && !row.ended_at ? 'running' : row.status;
   return {
     printerId: row.printer_id,
-    status,
+    status: row.status,
     appliedByUserId: row.applied_by_user_id || null,
     appliedByUsername: row.applied_by_username || null,
     appliedAt: row.applied_at || null,
@@ -178,7 +177,7 @@ function listBatchReleasesPage({ limit = 25, offset = 0, statuses = [], search =
 function refreshBatchReleaseExecutionStatus(id, db) {
   const statuses = db.prepare('SELECT status FROM batch_release_execution_targets WHERE release_id = ?').all(id).map((row) => row.status);
   let status = 'released';
-  if (statuses.length && statuses.every((value) => value === 'completed')) status = 'completed';
+  if (statuses.length && statuses.every((value) => value === 'ended')) status = 'completed';
   else if (statuses.includes('applying')) status = 'applying';
   else if (statuses.includes('awaiting_print_check')) status = 'awaiting_print_check';
   else if (statuses.includes('failed')) status = 'failed';
@@ -212,7 +211,7 @@ function beginBatchReleaseTarget(id, printerId, actor, { reapply = false, reveri
     }
     const target = release.executionTargets.find((item) => item.printerId === printerId);
     if (!target) throw new Error('This printer is not an execution target for the release.');
-    const isReapply = reapply === true && target.status === 'completed';
+    const isReapply = reapply === true && target.status === 'ended';
     const isReverify = reverify === true && target.status === 'running';
     if (!['pending', 'failed'].includes(target.status) && !isReapply && !isReverify) throw new Error('This printer target is already in progress or awaiting verification.');
     if (target.status === 'failed' && !String(reason || '').trim()) {
@@ -256,7 +255,7 @@ function verifyBatchReleaseTarget(id, printerId, { passed, reason } = {}, actor,
     db.prepare(`
       UPDATE batch_release_execution_targets SET status = ?, verified_by_user_id = ?, verified_by_username = ?,
         verified_at = ?, running_at = ?, ended_at = NULL, error_message = ?, updated_at = ? WHERE release_id = ? AND printer_id = ?
-    `).run(passed === true ? 'completed' : 'failed', actorUserId(actor), actor.username, now, passed === true ? now : null, passed === true ? null : failureReason.slice(0, 500), now, id, printerId);
+    `).run(passed === true ? 'running' : 'failed', actorUserId(actor), actor.username, now, passed === true ? now : null, passed === true ? null : failureReason.slice(0, 500), now, id, printerId);
     refreshBatchReleaseExecutionStatus(id, db);
     return getBatchRelease(id, db);
   })();
@@ -271,7 +270,7 @@ function endBatchReleaseTargetRun(id, printerId, actor, db = getDb()) {
     if (target.status !== 'running') throw new Error('This production target is not currently running.');
     const now = new Date().toISOString();
     db.prepare(`
-      UPDATE batch_release_execution_targets SET ended_at = ?, updated_at = ? WHERE release_id = ? AND printer_id = ?
+      UPDATE batch_release_execution_targets SET status = 'ended', ended_at = ?, updated_at = ? WHERE release_id = ? AND printer_id = ?
     `).run(now, now, id, printerId);
     refreshBatchReleaseExecutionStatus(id, db);
     return getBatchRelease(id, db);
@@ -282,13 +281,13 @@ function endOtherRunningTargets(printerId, exceptReleaseId, db = getDb()) {
   return db.transaction(() => {
     const releaseIds = db.prepare(`
       SELECT release_id FROM batch_release_execution_targets
-      WHERE printer_id = ? AND release_id <> ? AND status = 'completed' AND running_at IS NOT NULL AND ended_at IS NULL
+      WHERE printer_id = ? AND release_id <> ? AND status = 'running'
     `).all(printerId, exceptReleaseId).map((row) => row.release_id);
     if (!releaseIds.length) return [];
     const now = new Date().toISOString();
     db.prepare(`
-      UPDATE batch_release_execution_targets SET ended_at = ?, updated_at = ?
-      WHERE printer_id = ? AND release_id <> ? AND status = 'completed' AND running_at IS NOT NULL AND ended_at IS NULL
+      UPDATE batch_release_execution_targets SET status = 'ended', ended_at = ?, updated_at = ?
+      WHERE printer_id = ? AND release_id <> ? AND status = 'running'
     `).run(now, now, printerId, exceptReleaseId);
     for (const releaseId of releaseIds) refreshBatchReleaseExecutionStatus(releaseId, db);
     return releaseIds;
@@ -555,7 +554,7 @@ function returnBatchReleaseForReview(id, reason, actor, db = getDb()) {
   return db.transaction(() => {
     const release = getBatchRelease(id, db);
     if (!release) return null;
-    if (release.executionTargets.some((target) => ['completed', 'running'].includes(target.status))) {
+    if (release.executionTargets.some((target) => ['ended', 'running'].includes(target.status))) {
       throw new Error('A partially completed release cannot be edited. Create a new release for the remaining work.');
     }
     if (!['released', 'failed', 'awaiting_print_check'].includes(release.status)) {

@@ -20,6 +20,7 @@ import * as removeRetiredSchema from './migrations/017_remove_retired_schema.js'
 import * as printerAgentJobs from './migrations/018_printer_agent_jobs.js';
 import * as manualPrinterAgentJobs from './migrations/019_manual_printer_agent_jobs.js';
 import * as printerProtocol from './migrations/020_printer_protocol.js';
+import * as explicitReleaseTargetStates from './migrations/021_explicit_release_target_states.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +29,7 @@ const migrations = [
   initialSchema, indexes, printerModels, printerReadbackMode, printerArchiving,
   batchReleases, releaseReviewClaims, releaseExecutionTargets, releaseRunningState, messageFormatRules,
   resetDevelopmentMasters, printerUserFields, canonicalPrinterFields, packagingCategories, removeRetiredSchema,
-  printerAgentJobs, manualPrinterAgentJobs, printerProtocol
+  printerAgentJobs, manualPrinterAgentJobs, printerProtocol, explicitReleaseTargetStates
 ]
   .sort((a, b) => a.version - b.version);
 
