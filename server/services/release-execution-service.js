@@ -12,6 +12,10 @@ function createReleaseExecutionService({
   getMessageForPrinter,
   renderPreview,
   sameDateRule,
+  reserveBatchReleaseRun,
+  beginBatchReleaseTarget,
+  finishBatchReleaseTarget,
+  endOtherRunningTargets,
   verifyBatchReleaseTarget,
   endBatchReleaseTargetRun
 }) {
@@ -54,6 +58,31 @@ function createReleaseExecutionService({
     return { printer, target, message, expectedOutput };
   }
 
+  async function prepareApply({ release, printerId, user, reapply = false, reverify = false, reason = '' }) {
+    const assigningRun = !release.runNumber;
+    const reservedRelease = reserveBatchReleaseRun(release.id);
+    const execution = await executionContext(reservedRelease, printerId, user);
+    beginBatchReleaseTarget(reservedRelease.id, execution.printer.id, user, { reapply, reverify, reason });
+    return {
+      assigningRun,
+      release: reservedRelease,
+      execution,
+      printer: execution.printer
+    };
+  }
+
+  function finishApply({ releaseId, printerId, result }) {
+    const endedReleaseIds = result?.ok && result?.messageMatches !== false
+      ? endOtherRunningTargets(printerId, releaseId)
+      : [];
+    const release = finishBatchReleaseTarget(releaseId, printerId, result);
+    return { release, endedReleaseIds };
+  }
+
+  function markApplyFailed({ releaseId, printerId, failure }) {
+    return finishBatchReleaseTarget(releaseId, printerId, failure);
+  }
+
   function verifyPrintCheck({ releaseId, printerId, passed, reason, user }) {
     if (!canOperatePrinter(user, printerId)) {
       throw httpError('You do not have permission to operate this printer.', 403);
@@ -79,6 +108,9 @@ function createReleaseExecutionService({
   return {
     endRun,
     executionContext,
+    finishApply,
+    markApplyFailed,
+    prepareApply,
     verifyPrintCheck
   };
 }
