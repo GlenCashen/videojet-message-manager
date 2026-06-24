@@ -224,7 +224,7 @@ test('printer-agent jobs preserve payloads and enforce claim ownership', () => {
   const release = createBatchRelease({
     productMasterId: master.id,
     brewSheetProduct: 'AGENTTEST-1',
-    brewNumber: '001',
+    brewNumber: 'H0001',
     plannedProductionAt: '2026-06-22T00:00:00.000Z'
   }, actor, db);
   const payload = {

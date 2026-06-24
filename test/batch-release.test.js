@@ -58,7 +58,7 @@ function releaseInput(productMasterId, brewSheetProduct) {
   return {
     productMasterId,
     brewSheetProduct,
-    brewNumber: '477',
+    brewNumber: 'H0477',
     plannedProductionAt: '2026-06-18T04:32:08.000Z',
     printerIds: ['coder-1']
   };
@@ -139,11 +139,11 @@ test('an approved release must be returned with a reason before correction', () 
 
   const corrected = updateBatchRelease(draft.id, {
     ...releaseInput(master.id, 'CORRECT-NEW'),
-    brewNumber: '999'
+    brewNumber: 'H0999'
   }, planner, db);
   assert.equal(corrected.status, 'draft');
   assert.equal(corrected.brewSheetProduct, 'CORRECT-NEW');
-  assert.equal(corrected.brewNumber, '999');
+  assert.equal(corrected.brewNumber, 'H0999');
   assert.equal(corrected.reviewedByUsername, null);
   assert.equal(corrected.executionTargets.length, 1);
   db.close();
@@ -311,11 +311,11 @@ test('a rejected release must be corrected as a draft before resubmission', () =
   assert.throws(() => submitBatchRelease(draft.id, planner, db), /must be edited/i);
   const corrected = updateBatchRelease(draft.id, {
     ...releaseInput(master.id, 'TBUNDRC-51'),
-    brewNumber: '478',
+    brewNumber: 'H0478',
     notes: 'Corrected against brew sheet'
   }, planner, db);
   assert.equal(corrected.status, 'draft');
-  assert.equal(corrected.brewNumber, '478');
+  assert.equal(corrected.brewNumber, 'H0478');
   assert.equal(corrected.rejectionReason, null);
   assert.equal(corrected.productMasterVersionId, draft.productMasterVersionId);
   assert.equal(corrected.productMasterVersion, 1);

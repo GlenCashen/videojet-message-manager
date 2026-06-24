@@ -44,7 +44,10 @@ test('printer-agent API requires credentials and accepts its configured identity
       PRINTER_EXECUTION_MODE: 'agent',
       PRINTER_AGENT_ID: 'line-agent',
       PRINTER_AGENT_TOKEN: 'test-secret',
-      PRINTER_AGENT_PRINTER_IDS: 'coder-1'
+      PRINTER_AGENT_PRINTER_IDS: 'coder-1',
+      PRINTER_AGENT_CREDENTIALS: JSON.stringify({
+        'line-agent': { token: 'test-secret', printerIds: ['coder-1'] }
+      })
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });

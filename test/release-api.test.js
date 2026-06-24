@@ -160,7 +160,7 @@ test('QA, planner and packaging leader complete release approval without contact
       body: {
         productMasterId: masterResult.data.master.id,
         brewSheetProduct: 'TBUNDRC-50',
-        brewNumber: '477',
+        brewNumber: 'H0477',
         plannedProductionAt: '2026-06-18T04:32:08.000Z',
         printerIds: ['coder-2']
       }
@@ -228,7 +228,7 @@ test('QA, planner and packaging leader complete release approval without contact
       method: 'POST', role: 'planner', body: {
         productMasterId: masterResult.data.master.id,
         brewSheetProduct: 'TBUNDRC-51',
-        brewNumber: '111',
+        brewNumber: 'H0111',
         plannedProductionAt: '2026-06-19T04:32:08.000Z',
         printerIds: ['coder-1']
       }
@@ -241,14 +241,14 @@ test('QA, planner and packaging leader complete release approval without contact
     const corrected = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}`, {
       method: 'PUT', role: 'planner', body: {
         brewSheetProduct: 'TBUNDRC-51',
-        brewNumber: '478',
+        brewNumber: 'H0478',
         plannedProductionAt: '2026-06-19T04:32:08.000Z',
         printerIds: ['coder-1'],
         notes: 'Corrected after QA review'
       }
     });
     assert.equal(corrected.data.release.status, 'draft');
-    assert.equal(corrected.data.release.brewNumber, '478');
+    assert.equal(corrected.data.release.brewNumber, 'H0478');
 
     const audit = await jsonFetch(`${baseUrl}/api/batch-releases/${rejectedId}/audit`, { role: 'qa' });
     assert.equal(audit.response.ok, true, JSON.stringify(audit.data));

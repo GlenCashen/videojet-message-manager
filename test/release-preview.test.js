@@ -6,7 +6,7 @@ test('release preview resolves the printer-specific approved message definition'
   const result = releaseExpectedOutput({
     plannedProductionAt: '2026-06-21T04:05:06.000Z',
     brewSheetProduct: 'TBUNDRC-50',
-    brewNumber: '477',
+    brewNumber: 'H0477',
     productMasterSpecification: {
       printerConfigurations: [{
         printerId: 'coder-1',

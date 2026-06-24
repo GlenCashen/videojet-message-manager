@@ -216,7 +216,7 @@ test('handles leap-year month-end dates', () => {
 test('sends multi-field WSI commands in order', async () => {
   const { args, commands } = updateArgs();
   const result = await executeMessageUpdate(args);
-  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'M12 MONTH', 'Q', 'E']);
+  assert.deepEqual(commands, ['M12 MONTH', 'Q', 'UBREW\nBR1246', 'UBATCH\nB260617A', 'E']);
   assert.equal(result.ok, true);
   assert.deepEqual(result.expectedOutput.fields, { brew: 'BR1246', batch: 'B260617A' });
   assert.equal(result.expectedOutput.printerMessageName, '12 MONTH');
@@ -226,22 +226,27 @@ test('sends multi-field WSI commands in order', async () => {
   ]);
 });
 
-test('sends an empty update for an optional blank printer field', async () => {
+test('refuses to send an empty update for an optional blank printer field', async () => {
   const optionalMessage = {
     ...getMessageById(definitions, '12-month'),
     fields: [{ key: 'batch', label: 'Batch code', printerFieldName: 'BATCH', required: false, maxLength: 30, transform: 'uppercase' }],
     previewLines: ['{{batch}}']
   };
   const { args, commands } = updateArgs({ message: optionalMessage, fields: {} });
-  await executeMessageUpdate(args);
-  assert.equal(commands[0], 'UBATCH\n');
+  await assert.rejects(executeMessageUpdate(args), (error) => {
+    assert.equal(error instanceof MessageUpdateError, true);
+    assert.equal(error.code, 'FIELD_VALUE_EMPTY');
+    assert.match(error.result.error, /refusing to send a blank printer field update/i);
+    return true;
+  });
+  assert.deepEqual(commands, ['M12 MONTH', 'Q']);
 });
 
 test('1710 updates skip unsupported current-message readback', async () => {
   const { args, commands } = updateArgs({ supportsCurrentMessageReadback: false });
   const result = await executeMessageUpdate(args);
 
-  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'M12 MONTH', 'E']);
+  assert.deepEqual(commands, ['M12 MONTH', 'UBREW\nBR1246', 'UBATCH\nB260617A', 'E']);
   assert.equal(result.ok, true);
   assert.equal(result.messageMatches, null);
   assert.equal(result.verificationAvailable, false);
@@ -400,7 +405,7 @@ test('stops on field ACK failure', async () => {
       assert.equal(error.code, 'FIELD_UPDATE_REJECTED');
       assert.equal(error.communicationSucceeded, true);
       assert.equal(error.result.printerOnline, true);
-      assert.equal(error.result.messageSelection, 'Not attempted');
+      assert.equal(error.result.messageSelection, 'Acknowledged');
       assert.deepEqual(error.result.fieldResults[0], { key: 'brew', printerFieldName: 'BREW', acknowledged: true });
       assert.equal(error.result.fieldResults[1].key, 'batch');
       assert.equal(error.result.fieldResults[1].printerFieldName, 'BATCH');
@@ -412,16 +417,19 @@ test('stops on field ACK failure', async () => {
       return true;
     }
   );
-  assert.deepEqual(commands, ['UBREW\nBR1246', 'UBATCH\nB260617A', 'Q', 'E']);
+  assert.deepEqual(commands, ['M12 MONTH', 'Q', 'UBREW\nBR1246', 'UBATCH\nB260617A', 'Q', 'E']);
 });
 
 test('reports message selection mismatch', async () => {
   const { args } = updateArgs({ selectedMessage: '9 MONTH' });
-  const result = await executeMessageUpdate(args);
-  assert.equal(result.ok, false);
-  assert.equal(result.messageMatches, false);
-  assert.equal(result.requestedMessage, '12 MONTH');
-  assert.equal(result.selectedMessage, '9 MONTH');
+  await assert.rejects(executeMessageUpdate(args), (error) => {
+    assert.equal(error instanceof MessageUpdateError, true);
+    assert.equal(error.code, 'MESSAGE_MISMATCH');
+    assert.equal(error.result.messageMatches, false);
+    assert.equal(error.result.requestedMessage, '12 MONTH');
+    assert.equal(error.result.selectedMessage, '9 MONTH');
+    return true;
+  });
 });
 
 test('field NACK refresh preserves cache online state and failures', async () => {
@@ -438,7 +446,7 @@ test('field NACK refresh preserves cache online state and failures', async () =>
       sendCommand: async ({ command }) => {
         commands.push(command);
         if (command === 'UBREW\nBR1246') return response('nack', '!00');
-        if (command === 'Q') return response('packet', 'TEST');
+        if (command === 'Q') return response('packet', commands.filter((item) => item === 'Q').length === 1 ? '12 MONTH' : 'TEST');
         if (command === 'E') return response('packet', '0000002');
         return response('ack');
       }
@@ -447,7 +455,7 @@ test('field NACK refresh preserves cache online state and failures', async () =>
   );
 
   const after = cache.get('coder-1');
-  assert.deepEqual(commands, ['UBREW\nBR1246', 'Q', 'E']);
+  assert.deepEqual(commands, ['M12 MONTH', 'Q', 'UBREW\nBR1246', 'Q', 'E']);
   assert.equal(after.online, true);
   assert.equal(after.consecutiveFailures, 0);
   assert.equal(after.selectedMessage, 'TEST');
