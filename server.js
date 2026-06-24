@@ -65,6 +65,7 @@ import { deleteMessage } from './server/repositories/message-repository.js';
 import { withOperatorError } from './server/operator-error-messages.js';
 import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
+import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -498,6 +499,14 @@ const releaseExecutionService = createReleaseExecutionService({
   endOtherRunningTargets,
   verifyBatchReleaseTarget,
   endBatchReleaseTargetRun
+});
+
+const printerRuntimeService = createPrinterRuntimeService({
+  insertMessageUpdateEvent,
+  persistExpectedOutput,
+  releaseAudit,
+  releaseExecutionService,
+  setPrinterMessage
 });
 
 function broadcast(type, payload) {
@@ -1672,21 +1681,13 @@ app.post('/api/batch-releases/:id/targets/:printerId/apply', async (req, res) =>
       });
     }
 
-    const result = {
-      ...await setPrinterMessage(printer, {
-        messageId: execution.expectedOutput.messageId,
-        fields: execution.expectedOutput.fields || {},
-        productionDate: release.plannedProductionAt
-      }),
+    const { result, release: updated } = await printerRuntimeService.applyReleaseLocally({
+      release,
+      printer,
+      execution,
+      user,
       reverify
-    };
-    insertMessageUpdateEvent(result, user);
-    if (result.ok && result.expectedOutput) await persistExpectedOutput(printer.id, result.expectedOutput);
-    const { release: updated, endedReleaseIds } = releaseExecutionService.finishApply({ releaseId: release.id, printerId: printer.id, result });
-    for (const endedReleaseId of endedReleaseIds) {
-      releaseAudit.runEndedBySwitch(user, endedReleaseId, printer, release);
-    }
-    releaseAudit.applicationFinished(user, updated, printer, result, { reverify });
+    });
     broadcast('printer-status', result);
     broadcast('batch-release-execution', { releaseId: release.id, printerId: printer.id, status: updated.status });
     res.status(result.ok && result.messageMatches !== false ? 200 : 409).json({ ok: result.ok && result.messageMatches !== false, release: visibleBatchRelease(user, updated), result });
