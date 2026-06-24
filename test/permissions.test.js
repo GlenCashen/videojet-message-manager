@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -45,7 +46,7 @@ async function waitForServer(baseUrl, child) {
 function startServer({ role, printerIds = '', extraEnv = {} }) {
   const port = randomPort();
   const emulatorPort = randomPort(35080);
-  const dbPath = extraEnv.DB_PATH || path.join(tmpdir(), `vmm-permissions-${port}.db`);
+  const dbPath = extraEnv.DB_PATH || path.join(mkdtempSync(path.join(tmpdir(), 'vmm-permissions-')), 'videojet.db');
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
