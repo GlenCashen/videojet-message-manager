@@ -22,6 +22,11 @@ function createHarness({ sendResult = { ok: true, messageMatches: true } } = {})
   const calls = [];
   const updatedRelease = { id: release.id, status: 'awaiting_print_check' };
   const service = createPrinterRuntimeService({
+    addLog: (...args) => calls.push(['addLog', ...args]),
+    auditActor: (actor) => ({
+      actor: actor.username,
+      actorUserId: actor.developmentIdentity ? null : (actor.id || null)
+    }),
     setPrinterMessage: async (...args) => {
       calls.push(['setPrinterMessage', ...args]);
       return sendResult;
@@ -96,6 +101,96 @@ test('applyReleaseLocally does not persist expected output after an uncertain se
   assert.equal(calls.some(([name]) => name === 'persistExpectedOutput'), false);
   assert.ok(calls.some(([name]) => name === 'finishApply'));
   assert.ok(calls.some(([name]) => name === 'applicationFinished'));
+});
+
+test('completeAgentManualJob records manual agent success with operator audit context', async () => {
+  const { calls, service } = createHarness();
+  const agent = { id: 'agent-1' };
+  const job = {
+    id: 'manual-job-1',
+    jobType: 'manual',
+    printerId: 'coder-1',
+    context: {
+      actorUserId: 'operator-1',
+      actorUsername: 'operator-one',
+      reason: 'Approved manual exception for maintenance test'
+    }
+  };
+  const expectedOutput = { printerMessageName: 'BUNDY 15 MONTH.job', fields: { BATCH: 'T0044' } };
+  const result = {
+    ok: true,
+    messageMatches: true,
+    operationId: 'manual-job-1',
+    requestedMessage: 'BUNDY 15 MONTH.job',
+    selectedMessage: 'BUNDY 15 MONTH.job',
+    rawStatus: '0000002',
+    fieldResults: [{ field: 'BATCH', ok: true }],
+    expectedOutput
+  };
+
+  const response = await service.completeAgentManualJob({ agent, job, result });
+
+  assert.equal(response.job, job);
+  assert.equal(response.result, result);
+  assert.deepEqual(calls[0], ['insertMessageUpdateEvent', result, { id: 'operator-1', username: 'operator-one', developmentIdentity: false }]);
+  assert.deepEqual(calls[1], ['persistExpectedOutput', 'coder-1', expectedOutput]);
+  assert.equal(calls[2][0], 'addLog');
+  assert.deepEqual(calls[2][1], {
+    action: 'message-update-success',
+    actor: 'operator-one',
+    actorUserId: 'operator-1',
+    targetType: 'printer',
+    targetId: 'coder-1',
+    printerId: 'coder-1',
+    operationId: 'manual-job-1',
+    requestedMessage: 'BUNDY 15 MONTH.job',
+    selectedMessage: 'BUNDY 15 MONTH.job',
+    rawStatus: '0000002',
+    decodedFaultCodes: [],
+    fieldResults: [{ field: 'BATCH', ok: true }],
+    error: null,
+    details: {
+      reason: 'Approved manual exception for maintenance test',
+      mode: 'manual-exception',
+      agentId: 'agent-1',
+      jobId: 'manual-job-1',
+      operatorMessage: null,
+      technicalMessage: null
+    }
+  });
+});
+
+test('completeAgentManualJob records manual agent failure without persisting expected output', async () => {
+  const { calls, service } = createHarness();
+  const agent = { id: 'agent-1' };
+  const job = {
+    id: 'manual-job-2',
+    jobType: 'manual',
+    printerId: 'coder-1',
+    context: { reason: 'Maintenance manual exception failed' }
+  };
+  const result = {
+    ok: false,
+    messageMatches: false,
+    operationId: 'manual-job-2',
+    requestedMessage: 'EXPECTED.job',
+    selectedMessage: 'WRONG.job',
+    operatorMessage: 'STOP PRODUCTION. Quarantine affected product and physically check printer.',
+    technicalMessage: 'Manual agent selected message mismatch.'
+  };
+
+  await service.completeAgentManualJob({ agent, job, result });
+
+  assert.equal(calls.some(([name]) => name === 'persistExpectedOutput'), false);
+  assert.deepEqual(calls[0], ['insertMessageUpdateEvent', result, { id: null, username: 'agent:agent-1', developmentIdentity: true }]);
+  assert.equal(calls[1][0], 'addLog');
+  assert.equal(calls[1][1].action, 'message-update-failure');
+  assert.equal(calls[1][1].actor, 'agent:agent-1');
+  assert.equal(calls[1][1].actorUserId, null);
+  assert.equal(calls[1][1].error, 'Manual agent selected message mismatch.');
+  assert.equal(calls[1][1].details.reason, 'Maintenance manual exception failed');
+  assert.equal(calls[1][1].details.operatorMessage, 'STOP PRODUCTION. Quarantine affected product and physically check printer.');
+  assert.equal(calls[1][1].details.technicalMessage, 'Manual agent selected message mismatch.');
 });
 
 test('completeAgentReleaseApply records the agent result, persists output, finishes state, and audits', async () => {

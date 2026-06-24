@@ -502,6 +502,8 @@ const releaseExecutionService = createReleaseExecutionService({
 });
 
 const printerRuntimeService = createPrinterRuntimeService({
+  addLog,
+  auditActor,
   insertMessageUpdateEvent,
   persistExpectedOutput,
   releaseAudit,
@@ -1176,25 +1178,8 @@ app.post('/api/printer-agent/v1/jobs/:id/complete', async (req, res) => {
       requestedMessage: reportedResult.requestedMessage || current.payload?.message?.printerMessageName
     });
     const job = completePrinterAgentJob(req.params.id, agent.id, result);
-    const actor = job.jobType === 'manual'
-      ? { id: job.context.actorUserId || null, username: job.context.actorUsername || `agent:${agent.id}`, developmentIdentity: !job.context.actorUserId }
-      : { username: `agent:${agent.id}`, developmentIdentity: true };
-    insertMessageUpdateEvent(result, actor);
-    if (result.ok && result.expectedOutput) await persistExpectedOutput(job.printerId, result.expectedOutput);
     if (job.jobType === 'manual') {
-      addLog({
-        action: result.ok && result.messageMatches !== false ? 'message-update-success' : 'message-update-failure',
-        ...auditActor(actor), targetType: 'printer', targetId: job.printerId, printerId: job.printerId,
-        operationId: result.operationId, requestedMessage: result.requestedMessage || result.expectedOutput?.printerMessageName,
-        selectedMessage: result.selectedMessage, rawStatus: result.rawStatus,
-        decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [], fieldResults: result.fieldResults,
-        error: result.technicalMessage || result.error || null,
-        details: {
-          reason: job.context.reason, mode: 'manual-exception', agentId: agent.id, jobId: job.id,
-          operatorMessage: result.operatorMessage || null,
-          technicalMessage: result.technicalMessage || result.error || null
-        }
-      });
+      await printerRuntimeService.completeAgentManualJob({ agent, job, result });
       broadcast('printer-status', result);
       return res.json({ ok: true, jobId: job.id, printerId: job.printerId, status: job.status });
     }

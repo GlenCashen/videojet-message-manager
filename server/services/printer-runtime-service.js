@@ -1,4 +1,6 @@
 function createPrinterRuntimeService({
+  addLog,
+  auditActor,
   insertMessageUpdateEvent,
   persistExpectedOutput,
   releaseAudit,
@@ -9,9 +11,49 @@ function createPrinterRuntimeService({
     return { username: `agent:${agent.id}`, developmentIdentity: true };
   }
 
+  function manualAgentActor(agent, job) {
+    return {
+      id: job.context.actorUserId || null,
+      username: job.context.actorUsername || `agent:${agent.id}`,
+      developmentIdentity: !job.context.actorUserId
+    };
+  }
+
+  async function recordAgentResult({ actor, printerId, result }) {
+    insertMessageUpdateEvent(result, actor);
+    if (result.ok && result.expectedOutput) await persistExpectedOutput(printerId, result.expectedOutput);
+  }
+
+  async function completeAgentManualJob({ agent, job, result }) {
+    const actor = manualAgentActor(agent, job);
+    await recordAgentResult({ actor, printerId: job.printerId, result });
+    addLog({
+      action: result.ok && result.messageMatches !== false ? 'message-update-success' : 'message-update-failure',
+      ...auditActor(actor),
+      targetType: 'printer',
+      targetId: job.printerId,
+      printerId: job.printerId,
+      operationId: result.operationId,
+      requestedMessage: result.requestedMessage || result.expectedOutput?.printerMessageName,
+      selectedMessage: result.selectedMessage,
+      rawStatus: result.rawStatus,
+      decodedFaultCodes: result.decodedStatus?.faults?.map((fault) => fault.code) || [],
+      fieldResults: result.fieldResults,
+      error: result.technicalMessage || result.error || null,
+      details: {
+        reason: job.context.reason,
+        mode: 'manual-exception',
+        agentId: agent.id,
+        jobId: job.id,
+        operatorMessage: result.operatorMessage || null,
+        technicalMessage: result.technicalMessage || result.error || null
+      }
+    });
+    return { job, result };
+  }
+
   async function completeAgentReleaseApply({ agent, job, result }) {
-    insertMessageUpdateEvent(result, agentActor(agent));
-    if (result.ok && result.expectedOutput) await persistExpectedOutput(job.printerId, result.expectedOutput);
+    await recordAgentResult({ actor: agentActor(agent), printerId: job.printerId, result });
 
     const { release: updated, endedReleaseIds } = releaseExecutionService.finishApply({
       releaseId: job.releaseId,
@@ -57,7 +99,7 @@ function createPrinterRuntimeService({
     return { result, release: updated, endedReleaseIds };
   }
 
-  return { applyReleaseLocally, completeAgentReleaseApply, markApplyFailed };
+  return { applyReleaseLocally, completeAgentManualJob, completeAgentReleaseApply, markApplyFailed };
 }
 
 export { createPrinterRuntimeService };
