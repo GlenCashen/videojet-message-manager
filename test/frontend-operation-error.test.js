@@ -165,6 +165,28 @@ test('printer modal and live-status polish keeps release badges and compact labe
   assert.match(css, /\.printer-status-facts span,[\s\S]*overflow-wrap: anywhere/);
 });
 
+test('printer live status uses the dashboard card shell without duplicated production controls', async () => {
+  const html = await readFile('public/printer.html', 'utf8');
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const css = await readFile('public/styles.css', 'utf8');
+  const statusStart = html.indexOf('<article class="printer-status-hero"');
+  const statusEnd = html.indexOf('<article class="panel current-job-panel"', statusStart);
+  const statusBlock = html.slice(statusStart, statusEnd);
+
+  assert.ok(statusBlock.includes('class="viewer-card operator-status-card status-unknown"'));
+  assert.ok(statusBlock.includes('class="viewer-facts operator-status-facts"'));
+  assert.ok(statusBlock.includes('class="current-message-readback operator-readback"'));
+  assert.ok(statusBlock.includes('id="operatorLatestAttempt"'));
+  assert.equal(statusBlock.includes('Current running job'), false);
+  assert.equal(statusBlock.includes('Expected print'), false);
+  assert.equal(statusBlock.includes('Open printer'), false);
+  assert.ok(page.includes('viewer-card operator-status-card status-${tone}'));
+  assert.ok(page.includes('operatorStatusName'));
+  assert.ok(page.includes('operatorLatestAttempt'));
+  assert.match(css, /\.operator-status-card\s*{[\s\S]*cursor: default/);
+  assert.match(css, /\.operator-status-controls \.viewer-comm\s*{[\s\S]*white-space: nowrap/);
+});
+
 test('manual message review replaces the edit form before audited confirmation', async () => {
   const css = await readFile('public/styles.css', 'utf8');
   const page = await readFile('public/printer-page.js', 'utf8');

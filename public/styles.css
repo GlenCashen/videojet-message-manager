@@ -1466,8 +1466,7 @@ summary:focus-visible {
 .next-release-panel { margin-top: 0; }
 
 .printer-status-hero {
-  border-color: rgba(87, 200, 255, .46);
-  box-shadow: inset 0 4px 0 var(--accent), 0 18px 38px rgba(0, 0, 0, .22);
+  min-width: 0;
 }
 
 .operator-status {
@@ -1488,6 +1487,92 @@ summary:focus-visible {
 .operator-status.status-warning { border-top-color: var(--amber); }
 .operator-status.status-disabled,
 .operator-status.status-unknown { border-top-color: var(--grey); }
+
+.operator-status-card {
+  cursor: default;
+  min-height: 0;
+  padding: 16px;
+}
+
+.operator-status-card:hover {
+  border-color: var(--line);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
+}
+
+.operator-status-card.status-online:hover { border-top-color: var(--green); }
+.operator-status-card.status-offline:hover { border-top-color: var(--red); }
+.operator-status-card.status-warning:hover { border-top-color: var(--amber); }
+.operator-status-card.status-disabled,
+.operator-status-card.status-unknown { border-top-color: var(--grey); }
+
+.operator-status-card-top {
+  align-items: flex-start;
+}
+
+.operator-status-card h2 {
+  font-size: 1.55rem;
+}
+
+.operator-status-card .muted {
+  margin-top: 4px;
+}
+
+.operator-status-controls {
+  align-items: flex-end;
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.operator-status-controls .viewer-comm {
+  display: inline-flex;
+  justify-content: center;
+  max-width: none;
+  padding: 8px 14px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.operator-status-controls button {
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+.operator-status-facts {
+  grid-template-columns: minmax(132px, .62fr) minmax(0, 2.1fr) minmax(132px, .78fr);
+}
+
+.operator-status-facts .viewer-message-fact {
+  border-color: rgba(69, 199, 255, .32);
+  box-shadow: inset 0 0 0 1px rgba(69, 199, 255, .06);
+}
+
+.operator-readback {
+  gap: 12px;
+  padding: 16px;
+}
+
+.operator-readback .readback-heading > strong {
+  color: var(--text);
+  font-size: 1.18rem;
+}
+
+.operator-readback .readback-facts {
+  grid-template-columns: minmax(150px, .72fr) minmax(0, 1fr);
+}
+
+.operator-readback .readback-facts span {
+  font-size: .82rem;
+}
+
+.operator-readback .readback-facts strong {
+  color: #f4f8ff;
+  font-size: 1.08rem;
+  font-weight: 950;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .printer-status-facts span,
 .printer-state-primary > span,
@@ -1888,6 +1973,7 @@ body.server-disconnected .dashboard-panel {
   .fault-option-grid { grid-template-columns: 1fr; }
   .operator-side-column { position: static; }
   .printer-status-facts,
+  .operator-status-facts,
   .current-expected-output,
   .release-spotlight-card { grid-template-columns: 1fr; }
   .release-spotlight-card .primary { width: 100%; }
@@ -1907,6 +1993,19 @@ body.server-disconnected .dashboard-panel {
   .message-dialog-header { display: grid; }
   .message-dialog-actions,
   .viewer-card-actions { flex-direction: column-reverse; }
+  .operator-status-card-top,
+  .operator-status-controls {
+    align-items: stretch;
+    justify-items: stretch;
+  }
+  .operator-status-card-top {
+    flex-direction: column;
+  }
+  .operator-status-controls .viewer-comm,
+  .operator-status-controls button {
+    width: 100%;
+  }
+  .operator-readback .readback-facts { grid-template-columns: 1fr; }
   .message-dialog-actions button { width: 100%; }
   .actions button,
   .card-actions button,
@@ -2610,6 +2709,21 @@ textarea::placeholder {
 .viewer-card.status-online { border-top-color: var(--green); }
 .viewer-card.status-offline { border-top-color: var(--red); }
 .viewer-card.status-warning { border-top-color: var(--amber); }
+
+.operator-status-card,
+.operator-status-card:hover {
+  border-color: var(--line);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
+  cursor: default;
+  min-height: 0;
+}
+
+.operator-status-card.status-online,
+.operator-status-card.status-online:hover { border-top-color: var(--green); }
+.operator-status-card.status-offline,
+.operator-status-card.status-offline:hover { border-top-color: var(--red); }
+.operator-status-card.status-warning,
+.operator-status-card.status-warning:hover { border-top-color: var(--amber); }
 
 .viewer-running-release,
 .viewer-expected,

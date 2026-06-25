@@ -25,35 +25,51 @@
     <p id="operatorMessage" class="notice hidden" aria-live="polite"></p>
 
     <section class="printer-command-grid" aria-label="Printer operation summary">
-      <article class="panel printer-status-hero" aria-labelledby="statusTitle">
-        <div class="section-heading compact-heading">
-          <div>
-            <p class="breadcrumb">Live printer state</p>
-            <h2 id="statusTitle">Printer status</h2>
-            <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
-          </div>
-          <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
-        </div>
-        <div id="operatorStatus" class="operator-summary-card operator-status status-unknown">
-          <div class="printer-status-facts">
-            <div class="status-fact compact printer-state-primary">
-              <span>Printer status</span>
-              <div class="printer-state-inline">
-                <div id="operatorTrafficLight"></div>
-                <strong id="operatorAlarmStatus">-</strong>
-              </div>
+      <article class="printer-status-hero" aria-labelledby="statusTitle">
+        <div id="operatorStatus" class="viewer-card operator-status-card status-unknown">
+          <div class="viewer-card-top operator-status-card-top">
+            <div>
+              <p class="breadcrumb">Live printer state</p>
+              <h2 id="statusTitle"><span id="operatorStatusName">Printer status</span></h2>
+              <p id="operatorLiveNote" class="muted">Waiting for live printer data.</p>
             </div>
-            <div class="status-fact message-fact printer-message-pair">
-              <span>Message</span>
-              <div class="printer-message-lines">
+            <div class="operator-status-controls">
+              <strong id="operatorConnection" class="viewer-comm">Not checked</strong>
+              <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
+            </div>
+          </div>
+
+          <div class="viewer-facts operator-status-facts">
+            <div class="viewer-state-fact">
+              <span>Printer status</span>
+              <div id="operatorTrafficLight"></div>
+              <strong id="operatorAlarmStatus">-</strong>
+            </div>
+            <div class="viewer-message-fact">
+              <span>Last known message</span>
+              <div class="viewer-message-lines">
                 <small>Expected</small><strong id="operatorExpectedMessage">-</strong>
                 <small>Current</small><strong id="operatorSelectedMessage">-</strong>
               </div>
             </div>
-            <div class="status-fact compact"><span>Faults</span><strong id="operatorFaults">-</strong></div>
-            <div class="status-fact compact"><span>Communication</span><strong id="operatorConnection">Not checked</strong></div>
-            <div class="status-fact compact"><span>Last update</span><strong id="operatorCheckedAt">No update yet</strong></div>
+            <div>
+              <span>Last known active faults</span>
+              <strong id="operatorFaults">-</strong>
+            </div>
           </div>
+
+          <section class="current-message-readback operator-readback" aria-labelledby="operatorReadbackTitle">
+            <div class="readback-heading">
+              <strong id="operatorReadbackTitle">Current printer message</strong>
+            </div>
+            <div class="readback-facts">
+              <span>Expected message</span><strong id="operatorReadbackExpected">-</strong>
+              <span>Current printer message</span><strong id="operatorReadbackCurrent">-</strong>
+              <span>Last successful sync</span><strong id="operatorCheckedAt">No update yet</strong>
+              <span>Latest attempt</span><strong id="operatorLatestAttempt">No attempt yet</strong>
+            </div>
+          </section>
+
           <div class="printer-status-meta">
             <span>Source <strong id="operatorDataSource">Last known status</strong></span>
             <span>Access <strong id="operatorAccessLevel">Loading</strong></span>

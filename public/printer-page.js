@@ -7,7 +7,6 @@ import { canOperatePrinter, currentSession, loadSession } from './js/session.js'
 import {
   activeFaults,
   faultSummary,
-  formatAge,
   formatDuration,
   isStale,
   isVisibleBusy,
@@ -26,9 +25,12 @@ const elements = {
   checkButton: $('operatorCheckButton'),
   message: $('operatorMessage'),
   statusPanel: $('operatorStatus'),
+  statusName: $('operatorStatusName'),
   connection: $('operatorConnection'),
   expectedMessage: $('operatorExpectedMessage'),
   selectedMessage: $('operatorSelectedMessage'),
+  readbackExpected: $('operatorReadbackExpected'),
+  readbackCurrent: $('operatorReadbackCurrent'),
   alarmStatus: $('operatorAlarmStatus'),
   faults: $('operatorFaults'),
   dataSource: $('operatorDataSource'),
@@ -43,6 +45,7 @@ const elements = {
   faultHistoryList: $('faultHistoryList'),
   printerStatus: $('operatorPrinterStatus'),
   checkedAt: $('operatorCheckedAt'),
+  latestAttempt: $('operatorLatestAttempt'),
   host: $('operatorHost'),
   mode: $('operatorMode'),
   model: $('operatorModel'),
@@ -334,7 +337,7 @@ function updateOperatorShell() {
   const lightState = printerState(decodedStatus);
   const mismatch = latestStatus ? messageMismatch(printer || {}, latestStatus) : null;
 
-  elements.statusPanel.className = `operator-summary-card operator-status status-${tone}`;
+  elements.statusPanel.className = `viewer-card operator-status-card status-${tone}`;
   elements.dataSource.textContent = sourceText;
   elements.liveNote.textContent = operatorLiveNote(latestStatus, mismatch);
   clear(elements.trafficLight);
@@ -348,10 +351,13 @@ function updateOperatorShell() {
     elements.connection.textContent = statusLabel(displayStatus);
     if (elements.expectedMessage) elements.expectedMessage.textContent = expectedMessage || 'No expected message';
     elements.selectedMessage.textContent = selectedMessage;
+    if (elements.readbackExpected) elements.readbackExpected.textContent = expectedMessage || 'No expected message';
+    if (elements.readbackCurrent) elements.readbackCurrent.textContent = selectedMessage;
     elements.alarmStatus.textContent = lightState.label;
     elements.faults.textContent = faultSummary(latestStatus.decodedStatus);
     elements.printerStatus.textContent = latestStatus.rawStatus || latestStatus.status || '-';
-    elements.checkedAt.textContent = formatAge(latestStatus.lastSuccessfulAt);
+    elements.checkedAt.textContent = formatDateTime(latestStatus.lastSuccessfulAt);
+    if (elements.latestAttempt) elements.latestAttempt.textContent = latestStatus.lastAttemptAt ? formatDateTime(latestStatus.lastAttemptAt) : 'No attempt yet';
     renderExpectedOutput(latestStatus.expectedOutput);
 
     if (mismatch) {
@@ -370,9 +376,12 @@ function updateOperatorShell() {
     elements.connection.textContent = 'Disabled';
     if (elements.expectedMessage) elements.expectedMessage.textContent = '-';
     elements.selectedMessage.textContent = '-';
+    if (elements.readbackExpected) elements.readbackExpected.textContent = '-';
+    if (elements.readbackCurrent) elements.readbackCurrent.textContent = '-';
     elements.alarmStatus.textContent = '-';
     elements.faults.textContent = 'Coder is disabled';
     elements.checkedAt.textContent = 'No update yet';
+    if (elements.latestAttempt) elements.latestAttempt.textContent = 'No attempt yet';
     renderExpectedOutput(null);
   }
 
@@ -464,6 +473,7 @@ function renderFaultPanels() {
 function applyPrinterConfig(value) {
   printer = value;
   elements.title.textContent = printer.name;
+  if (elements.statusName) elements.statusName.textContent = printer.name;
   elements.subtitle.textContent = printer.location || 'No location set';
   elements.breadcrumb.textContent = `Dashboard / ${printer.name}`;
   elements.host.textContent = `${printer.host}:${printer.port}`;
