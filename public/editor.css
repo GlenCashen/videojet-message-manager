@@ -337,3 +337,338 @@
   .editor-app .message-format-grid, .editor-app .message-field-editor-grid { grid-template-columns: 1fr; }
   .editor-app .printer-user-field-form { grid-template-columns: 1fr; }
 }
+
+/* Admin control-room theme: lighter, review-focused surfaces distinct from live operator dashboards. */
+.editor-app {
+  color-scheme: light;
+  --bg: #eef3f8;
+  --panel: #ffffff;
+  --panel-2: #f7fafc;
+  --panel-3: #eef3f8;
+  --line: #d8e0ea;
+  --line-strong: #afbdcc;
+  --text: #172033;
+  --muted: #56657a;
+  --muted-2: #748196;
+  --accent: #1c63d5;
+  --accent-2: #0f4fb6;
+  --admin-navy: #102a43;
+  --admin-navy-2: #0a1d31;
+  --admin-blue-soft: #eaf2ff;
+  --admin-shadow: 0 12px 30px rgba(31, 49, 74, .08);
+  --admin-shadow-soft: 0 1px 2px rgba(31, 49, 74, .06);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .62), rgba(255, 255, 255, 0) 280px),
+    linear-gradient(135deg, #f5f8fb 0%, #edf3f8 54%, #e9f0f7 100%);
+  color: var(--text);
+}
+
+.editor-app .shell {
+  padding-top: 18px;
+}
+
+.editor-app .app-header {
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--admin-shadow-soft);
+  margin: 0 0 18px;
+  min-height: 78px;
+}
+
+.editor-app .app-header h1 {
+  color: #101828;
+  font-size: clamp(1.6rem, 2.4vw, 2.15rem);
+  letter-spacing: -.025em;
+}
+
+.editor-app .app-header .muted,
+.editor-app .muted {
+  color: var(--muted);
+}
+
+.editor-app #topNavigation {
+  background: linear-gradient(180deg, var(--admin-navy), var(--admin-navy-2));
+  border-right: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 8px 0 28px rgba(16, 42, 67, .16);
+}
+
+.editor-app #topNavigation::before {
+  color: #f8fbff;
+  letter-spacing: .14em;
+}
+
+.editor-app #topNavigation .nav-link,
+.editor-app #topNavigation #editorSubnav .sub-nav-link {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #c9d7e8;
+  font-weight: 800;
+  letter-spacing: .025em;
+}
+
+.editor-app #topNavigation .nav-link:hover,
+.editor-app #topNavigation #editorSubnav .sub-nav-link:hover {
+  background: rgba(255, 255, 255, .08);
+  border-color: rgba(255, 255, 255, .10);
+  color: #ffffff;
+}
+
+.editor-app #topNavigation .nav-link.active,
+.editor-app #topNavigation #editorSubnav .sub-nav-link.active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #0b2c4a;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .18);
+}
+
+.editor-app .nav-identity {
+  color: #a9bdd2;
+}
+
+.editor-app .panel,
+.editor-app .coder-card,
+.editor-app .status-card,
+.editor-app .message-config-panel,
+.editor-app .message-definition-section,
+.editor-app .printer-user-fields-section,
+.editor-app .release-register,
+.editor-app .master-register,
+.editor-app .production-workspace,
+.editor-app .production-form-panel,
+.editor-app .release-workflow-layout .sub-panel {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--admin-shadow);
+  color: var(--text);
+}
+
+.editor-app .panel::before,
+.editor-app .coder-card::before,
+.editor-app .sub-panel::before {
+  display: none;
+}
+
+.editor-app #releaseWorkflowPanel {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.editor-app .section-heading,
+.editor-app .message-config-panel > details > summary,
+.editor-app .release-register .section-heading,
+.editor-app .master-register .section-heading,
+.production-page-heading {
+  border-bottom-color: var(--line);
+}
+
+.editor-app .section-heading h2,
+.editor-app .section-heading h3,
+.editor-app .message-config-panel summary strong,
+.production-page-heading h2,
+.master-tab-toolbar h3 {
+  color: #101828;
+}
+
+.editor-app button {
+  border-radius: 8px;
+  box-shadow: none;
+  font-weight: 850;
+}
+
+.editor-app button.primary {
+  background: linear-gradient(180deg, #2970ff, #155eef);
+  border-color: #155eef;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(21, 94, 239, .16);
+}
+
+.editor-app button.primary:hover {
+  background: linear-gradient(180deg, #3b7cff, #0f4fd1);
+  border-color: #0f4fd1;
+}
+
+.editor-app button.secondary,
+.editor-app button.ghost,
+.editor-app .bordered {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #344054;
+}
+
+.editor-app button.secondary:hover,
+.editor-app button.ghost:hover {
+  background: #f8fbff;
+  border-color: #98a9bd;
+  color: #172033;
+}
+
+.editor-app input,
+.editor-app select,
+.editor-app textarea {
+  background: #ffffff;
+  border-color: #b8c5d6;
+  color: #172033;
+}
+
+.editor-app input::placeholder,
+.editor-app textarea::placeholder {
+  color: #8492a6;
+}
+
+.editor-app .live-indicator,
+.editor-app .badge,
+.editor-app .status-pill {
+  box-shadow: none;
+}
+
+.editor-app .coder-card {
+  border-left-width: 4px;
+}
+
+.editor-app .card-top h3,
+.editor-app .coder-card h3 {
+  color: #101828;
+}
+
+.editor-app .detail,
+.editor-app .message-list-item,
+.editor-app .printer-user-field-card,
+.editor-app .message-field-choice,
+.editor-app .message-field-editor-row,
+.editor-app .master-register-row,
+.editor-app .master-printer-card,
+.editor-app .review-printer-requirement,
+.editor-app .inherited-printer-list,
+.editor-app .release-form-preview,
+.editor-app .release-summary-strip,
+.editor-app .production-control-notes {
+  background: #f8fbff;
+  border-color: #dbe4ef;
+}
+
+.editor-app .message-list-item.active,
+.editor-app .master-printer-card.enabled,
+.editor-app .message-job-target-option:has(input:checked) {
+  background: #eef5ff;
+  border-color: #9dc1ff;
+  box-shadow: inset 4px 0 0 #2970ff;
+}
+
+.editor-app .message-live-preview,
+.editor-app .master-config-preview,
+.editor-app .release-output {
+  background: #101828;
+  border: 1px solid #1f2a3a;
+  border-radius: 8px;
+  color: #f8fbff;
+}
+
+.editor-app .message-live-preview pre,
+.editor-app .master-config-preview pre,
+.editor-app .release-output {
+  color: #ffffff;
+}
+
+.release-summary-strip {
+  overflow: hidden;
+}
+
+.release-summary-strip > div {
+  background: #ffffff;
+}
+
+.release-summary-strip span,
+.release-fact span,
+.editor-app .master-register-meta > span:not(.badge) {
+  color: var(--muted-2);
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.release-row {
+  background: #ffffff;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+.editor-app .release-row:hover {
+  background: #fbfdff;
+}
+
+.release-row-heading h4,
+.editor-app .master-register-main h4 {
+  color: #101828;
+  font-size: 1.02rem;
+}
+
+.release-row-actions button {
+  min-width: 112px;
+}
+
+.production-workspace {
+  overflow: hidden;
+}
+
+.production-page-heading {
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.production-tabs {
+  background: #ffffff;
+  border-bottom-color: var(--line);
+}
+
+.production-tab {
+  color: #64748b;
+}
+
+.production-tab:hover {
+  background: #f8fbff;
+  color: #172033;
+}
+
+.production-tab.active {
+  border-bottom-color: #2970ff;
+  color: #155eef;
+}
+
+.production-control-notes {
+  color: #344054;
+}
+
+.editor-app .release-review-dialog {
+  background: #ffffff;
+  border-left: 1px solid var(--line);
+  color: #172033;
+}
+
+.editor-app .release-attestation {
+  background: #eef5ff;
+  border-color: #b5ccff;
+  color: #172033;
+}
+
+.editor-app .message-dialog::backdrop {
+  background: rgba(15, 23, 42, .42);
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 900px) {
+  .editor-app .shell {
+    padding-top: 0;
+  }
+
+  .editor-app .app-header {
+    border-radius: 0 0 12px 12px;
+    margin: 0 -18px 18px;
+  }
+
+  .editor-app #topNavigation {
+    border-radius: 0;
+    box-shadow: 0 8px 20px rgba(16, 42, 67, .14);
+  }
+}

@@ -193,6 +193,20 @@ test('printer live status uses the dashboard card shell without duplicated produ
   assert.match(css, /\.operator-stale-warning\s*{[\s\S]*margin: 0/);
 });
 
+test('editor and production release pages use a lighter admin theme after dark operator styles', async () => {
+  const editorCss = await readFile('public/editor.css', 'utf8');
+  const editorHtml = await readFile('public/index.html', 'utf8');
+  const productionHtml = await readFile('public/production-releases.html', 'utf8');
+
+  assert.ok(editorHtml.includes('<body class="editor-app">'));
+  assert.ok(productionHtml.includes('<body class="editor-app production-releases-app">'));
+  assert.match(editorCss, /Admin control-room theme/);
+  assert.match(editorCss, /\.editor-app\s*{[\s\S]*color-scheme: light/);
+  assert.match(editorCss, /\.editor-app\s*{[\s\S]*--bg: #eef3f8/);
+  assert.match(editorCss, /\.editor-app \.panel,[\s\S]*\.editor-app \.production-workspace,[\s\S]*background: #ffffff/);
+  assert.match(editorCss, /\.editor-app \.message-live-preview,[\s\S]*background: #101828/);
+});
+
 test('manual message review replaces the edit form before audited confirmation', async () => {
   const css = await readFile('public/styles.css', 'utf8');
   const page = await readFile('public/printer-page.js', 'utf8');
