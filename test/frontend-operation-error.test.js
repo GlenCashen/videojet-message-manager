@@ -52,6 +52,19 @@ test('release completion events refresh an open send dialog immediately', async 
   assert.equal(queue.includes('return { load, refresh: load }'), false);
 });
 
+test('printer status changes rerender current release mismatch actions immediately', async () => {
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+  const applyStart = page.indexOf('function applyPrinterStatus(value)');
+  const applyEnd = page.indexOf('\nasync function loadMessages()', applyStart);
+  const applyBlock = page.slice(applyStart, applyEnd);
+
+  assert.ok(queue.includes('function rerenderCurrent()'));
+  assert.ok(queue.includes('rerender: rerenderCurrent'));
+  assert.ok(applyBlock.includes('updateOperatorShell();'));
+  assert.ok(applyBlock.includes('releaseQueue.rerender();'));
+});
+
 test('top navigation does not expose Users as a top-level link', async () => {
   const navigation = await readFile('public/js/navigation.js', 'utf8');
   assert.equal(navigation.includes("navLink('/editor#users', 'Users'"), false);

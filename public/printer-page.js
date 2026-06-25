@@ -478,6 +478,7 @@ function applyPrinterStatus(value) {
   }
 
   updateOperatorShell();
+  releaseQueue.rerender();
 }
 
 async function loadMessages() {

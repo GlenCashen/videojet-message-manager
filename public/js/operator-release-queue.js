@@ -106,6 +106,18 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     for (const row of historyRows) renderTarget(elements.completedList, row);
   }
 
+  function rerenderCurrent() {
+    const activeTargets = rows()
+      .filter(({ release, target }) => release.status !== 'completed' && target.status !== 'ended')
+      .sort((a, b) => plannedTime(a) - plannedTime(b));
+    const current = activeTargets.find(({ target }) => target.status === 'running')
+      || activeTargets.find(({ target }) => ['awaiting_print_check', 'applying', 'failed'].includes(target.status));
+
+    clear(elements.current);
+    if (current) renderTarget(elements.current, current, { spotlight: true });
+    else elements.current.appendChild(el('div', { className: 'operator-release-empty' }, [el('strong', { text: 'No job is running' }), el('p', { className: 'muted', text: 'Start an approved release from the next job or release schedule.' })]));
+  }
+
   function setBusy(value) {
     state.busy = value;
     for (const button of [elements.close, elements.cancel, elements.send, elements.verify, elements.report, elements.returnRelease, elements.endRun]) button.disabled = value;
@@ -364,7 +376,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
   window.setInterval(load, 10000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
-  return { load, refresh: () => load({ refreshOpenDialog: true }) };
+  return { load, refresh: () => load({ refreshOpenDialog: true }), rerender: rerenderCurrent };
 }
 
 export { createOperatorReleaseQueue };
