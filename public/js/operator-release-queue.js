@@ -6,6 +6,13 @@ import { messageMismatch } from './status-ui.js';
 function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => null, printerId = null }) {
   const state = { releases: [], selected: null, busy: false, loading: false };
 
+  function closeOnBackdrop(dialog, closeAction) {
+    dialog.addEventListener('click', (event) => {
+      if (event.target !== dialog) return;
+      closeAction();
+    });
+  }
+
   function targetStatusLabel(status) {
     return {
       pending: 'Approved / ready to send', applying: 'Sending to printer', awaiting_print_check: 'Sent / awaiting first-print check',
@@ -371,6 +378,9 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
   elements.endRun.addEventListener('click', endRun);
   elements.close.addEventListener('click', close);
   elements.cancel.addEventListener('click', close);
+  closeOnBackdrop(elements.upcomingDialog, () => elements.upcomingDialog.close());
+  closeOnBackdrop(elements.completedDialog, () => elements.completedDialog.close());
+  closeOnBackdrop(elements.dialog, close);
   elements.dialog.addEventListener('cancel', (event) => { if (state.busy) event.preventDefault(); });
 
   window.setInterval(load, 10000);

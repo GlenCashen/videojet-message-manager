@@ -466,7 +466,12 @@ h3 { margin: 0; font-size: 1.15rem; }
 .message-dialog {
   width: min(920px, calc(100% - 32px));
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: hidden;
   padding: 0;
+  position: fixed;
+  inset: 0;
   color: var(--text);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
@@ -484,6 +489,7 @@ h3 { margin: 0; font-size: 1.15rem; }
   gap: 16px;
   padding: 22px;
   max-height: calc(100vh - 34px);
+  max-height: calc(100dvh - 34px);
   overflow: auto;
 }
 
@@ -492,6 +498,8 @@ h3 { margin: 0; font-size: 1.15rem; }
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
+  border-bottom: 1px solid rgba(81, 97, 116, .58);
+  padding-bottom: 14px;
 }
 
 .message-dialog-header h2 {
@@ -1348,16 +1356,17 @@ summary:focus-visible {
 
 .review-content {
   display: grid;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 18px;
 }
 
 .review-line {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
+  display: grid;
+  grid-template-columns: minmax(120px, .38fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  border-bottom: 1px solid rgba(81, 97, 116, .62);
+  padding-bottom: 10px;
 }
 
 .review-line span,
@@ -1376,10 +1385,14 @@ summary:focus-visible {
 
 .review-preview pre {
   margin: 0;
+  padding: 14px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(81, 97, 116, .76);
+  border-radius: 8px;
+  background: #091018;
   color: var(--text);
-  font: inherit;
-  font-weight: 850;
+  font: 850 .98rem/1.42 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
 .compact-grid { margin-top: 14px; }
@@ -1628,13 +1641,45 @@ summary:focus-visible {
 .current-expected-output { border-top: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: minmax(180px, .45fr) minmax(280px, 1fr); margin-top: 18px; padding-top: 16px; }
 .current-expected-output h3,
 .current-expected-output p { margin: 0 0 5px; }
-.release-browser-shell { max-width: 1120px; }
-.release-browser-list { max-height: min(64vh, 720px); overflow-y: auto; padding-right: 6px; }
-.release-search { display: grid; gap: 7px; margin-top: 18px; }
-.release-search span { color: #344054; font-size: .78rem; font-weight: 800; }
+.release-browser-shell {
+  max-width: 1120px;
+  overflow: hidden;
+}
+.release-browser-list {
+  max-height: min(58vh, 620px);
+  max-height: min(58dvh, 620px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.release-search { display: grid; gap: 7px; margin-top: 4px; }
+.release-search span {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 850;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
 .manual-message-shell { max-width: 780px; }
 .manual-warning { background: #fff8e7; border-color: #d89a18; color: #6b4600; display: block; }
-.manual-message-shell .review-panel { margin-top: 18px; }
+.manual-message-shell.review-active {
+  max-width: 720px;
+}
+.manual-message-shell.review-active .manual-warning,
+.manual-message-shell.review-active #operatorSetForm {
+  display: none;
+}
+.manual-message-shell .review-panel {
+  margin-top: 0;
+  padding: 18px;
+  border: 1px solid rgba(111, 126, 145, .76);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(13, 20, 30, .98), rgba(8, 13, 20, .98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+.manual-message-shell .review-panel h3 {
+  margin: 0 0 14px;
+  font-size: 1.3rem;
+}
 
 .summary-row {
   display: flex;
@@ -2535,11 +2580,76 @@ textarea::placeholder {
 
 .message-dialog {
   border-color: rgba(111, 126, 145, .92);
+  inset: 0;
+  margin: auto;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  position: fixed;
   box-shadow: 0 30px 100px rgba(0, 0, 0, .78);
+}
+
+#upcomingReleaseDialog,
+#completedReleaseDialog {
+  width: min(1160px, calc(100% - 32px));
+}
+
+#operatorReleaseDialog {
+  width: min(860px, calc(100% - 32px));
+}
+
+#manualMessageDialog {
+  width: min(820px, calc(100% - 32px));
 }
 
 .message-dialog-shell {
   gap: 14px;
+}
+
+.manual-message-shell {
+  overflow: hidden;
+}
+
+.operator-release-dialog-shell {
+  overflow: auto;
+}
+
+.operator-release-facts {
+  padding: 14px;
+  border: 1px solid rgba(81, 97, 116, .66);
+  border-radius: var(--radius-md);
+  background: rgba(5, 10, 17, .32);
+}
+
+.operator-release-preview {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0;
+}
+
+.operator-release-preview h3 {
+  margin: 0;
+}
+
+.operator-release-preview pre {
+  min-height: 106px;
+  margin: 0;
+  font: 850 .94rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.operator-release-dialog-shell .release-attestation {
+  align-items: center;
+  color: var(--text);
+  display: grid;
+  gap: 14px;
+  grid-template-columns: auto minmax(0, 1fr);
+  margin: 4px 0;
+  padding: 14px 16px;
+}
+
+.operator-release-dialog-actions {
+  margin-top: 6px;
+  padding-top: 16px;
 }
 
 .message-dialog::backdrop {

@@ -187,8 +187,15 @@ function setFieldErrors(errors = {}) {
 }
 
 function hideReview() {
+  elements.controlsPanel.classList.remove('review-active');
   elements.reviewPanel.classList.add('hidden');
   clear(elements.reviewContent);
+}
+
+function closeManualDialog() {
+  if (manualBusy) return;
+  hideReview();
+  elements.manualDialog.close();
 }
 
 function renderMessageFields() {
@@ -573,6 +580,7 @@ function renderReview(preview) {
   const definition = selectedMessageDefinition();
   const fields = currentFieldValues();
   clear(elements.reviewContent);
+  elements.controlsPanel.classList.add('review-active');
   elements.reviewPanel.classList.remove('hidden');
   elements.reviewPanel.querySelector('h3').textContent = `Apply to ${printer.name}?`;
 
@@ -774,7 +782,10 @@ elements.openManualMessage.addEventListener('click', () => {
   if (!elements.manualDialog.open) elements.manualDialog.showModal();
 });
 elements.closeManualMessage.addEventListener('click', () => {
-  if (!manualBusy) elements.manualDialog.close();
+  closeManualDialog();
+});
+elements.manualDialog.addEventListener('click', (event) => {
+  if (event.target === elements.manualDialog) closeManualDialog();
 });
 elements.manualDialog.addEventListener('cancel', (event) => {
   if (manualBusy) event.preventDefault();

@@ -113,6 +113,28 @@ test('audited manual change closes before submission and tracks queued agent com
   assert.doesNotMatch(page, /Requested: \$\{result\.requestedMessage\}/);
 });
 
+test('printer modals are viewport anchored and close from the backdrop', async () => {
+  const css = await readFile('public/styles.css', 'utf8');
+  const page = await readFile('public/printer-page.js', 'utf8');
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+
+  assert.match(css, /\.message-dialog\s*{[\s\S]*position: fixed/);
+  assert.match(css, /\.message-dialog\s*{[\s\S]*inset: 0/);
+  assert.ok(page.includes('event.target === elements.manualDialog'));
+  assert.ok(queue.includes('function closeOnBackdrop'));
+  assert.ok(queue.includes('event.target !== dialog'));
+});
+
+test('manual message review replaces the edit form before audited confirmation', async () => {
+  const css = await readFile('public/styles.css', 'utf8');
+  const page = await readFile('public/printer-page.js', 'utf8');
+
+  assert.ok(page.includes("elements.controlsPanel.classList.add('review-active')"));
+  assert.ok(page.includes("elements.controlsPanel.classList.remove('review-active')"));
+  assert.ok(css.includes('.manual-message-shell.review-active #operatorSetForm'));
+  assert.ok(css.includes('.manual-message-shell.review-active .manual-warning'));
+});
+
 test('production releases require an independent review and expose no direct operator send', async () => {
   const editorHtml = await readFile('public/index.html', 'utf8');
   const productionHtml = await readFile('public/production-releases.html', 'utf8');
