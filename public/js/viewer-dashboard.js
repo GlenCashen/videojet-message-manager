@@ -55,12 +55,12 @@ function cardClass(status) {
 
 function syncState(printer, status) {
   if (!status?.lastSuccessfulAt) return { label: 'WAITING', tone: 'neutral' };
+  if (messageMismatch(printer, status)) return { label: 'MISMATCH', tone: 'bad' };
   if (!state.serverConnected) return { label: 'SERVER OFFLINE', tone: 'bad' };
   if (status.online === false) return { label: 'OFFLINE', tone: 'bad' };
   if (isStale(status)) return { label: 'STALE', tone: 'stale' };
   if (status.consecutiveFailures > 0) return { label: 'RETRYING', tone: 'stale' };
   if (readbackUnsupported(printer, status)) return { label: 'READBACK N/A', tone: 'neutral' };
-  if (messageMismatch(printer, status)) return { label: 'MISMATCH', tone: 'bad' };
   return { label: 'SYNCED', tone: 'good' };
 }
 
@@ -102,7 +102,8 @@ function createReadback(printer, status) {
 
 function createCard(printer) {
   const status = state.statuses[printer.id] || {};
-  const offline = status.online === false;
+  const mismatch = messageMismatch(printer, status);
+  const offline = status.online === false && !mismatch;
   const title = offline ? 'Last known status' : 'Status';
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';

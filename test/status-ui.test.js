@@ -40,3 +40,19 @@ test('failed poll attempts without a success do not look like fresh printer data
   assert.equal(statusTone(status), 'warning');
   assert.equal(statusLabel(status), 'Connection retrying');
 });
+
+test('message mismatch remains the primary label when the printer later goes offline', () => {
+  const status = {
+    config: { enabled: true },
+    online: false,
+    stale: true,
+    lastSuccessfulAt: new Date(Date.now() - STALE_AFTER_MS - 1000).toISOString(),
+    expectedOutput: { printerMessageName: 'Expected.job' },
+    selectedMessage: 'Actual.job',
+    consecutiveFailures: 3,
+    lastError: 'timeout'
+  };
+
+  assert.equal(statusLabel(status), 'Mismatch');
+  assert.equal(statusTone(status), 'offline');
+});

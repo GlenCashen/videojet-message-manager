@@ -302,29 +302,40 @@ function schedulePreview() {
   previewTimer = window.setTimeout(refreshPreviewNow, PREVIEW_DEBOUNCE_MS);
 }
 
+function operatorLiveNote(status, mismatch) {
+  if (!status?.lastSuccessfulAt) return 'Waiting for the first successful printer update.';
+  if (!serverConnected) return 'Live data lost. Showing the last successful printer state.';
+  if (mismatch) return 'Message mismatch detected. Automatic polling continues.';
+  if (status.online === false) return `Printer is offline. Automatic polling continues. ${status.lastError || ''}`.trim();
+  if (isStale(status)) return `Data is stale. Automatic polling continues. ${status.lastError || ''}`.trim();
+  if (Number(status.consecutiveFailures || 0) > 0) return `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
+  return 'Live status is streaming.';
+}
+
 function updateOperatorShell() {
   const sourceText = serverConnected ? 'Live data stream' : 'Last known status';
-  const visibleBusy = isVisibleBusy(latestStatus);
-  const tone = printer?.enabled ? statusTone(latestStatus || { state: 'not-checked' }) : 'disabled';
+  const displayStatus = latestStatus
+    ? { ...latestStatus, config: printer || {} }
+    : { state: 'not-checked', config: printer || {} };
+  const visibleBusy = isVisibleBusy(displayStatus);
+  const tone = printer?.enabled ? statusTone(displayStatus) : 'disabled';
   const decodedStatus = latestStatus?.decodedStatus || null;
   const stale = latestStatus ? isStale(latestStatus) : false;
   const lightState = printerState(decodedStatus);
+  const mismatch = latestStatus ? messageMismatch(printer || {}, latestStatus) : null;
 
   elements.statusPanel.className = `operator-summary-card operator-status status-${tone}`;
   elements.dataSource.textContent = sourceText;
-  elements.liveNote.textContent = serverConnected
-    ? 'Live status is streaming.'
-    : 'Live data lost. Showing last known state.';
+  elements.liveNote.textContent = operatorLiveNote(latestStatus, mismatch);
   clear(elements.trafficLight);
   elements.trafficLight.appendChild(trafficLightMarkup(decodedStatus, { stale: stale || latestStatus?.online === false }));
 
   if (latestStatus) {
-    const mismatch = messageMismatch(printer || {}, latestStatus);
     const expectedMessage = latestStatus.expectedOutput?.printerMessageName || null;
     const selectedMessage = latestStatus.messageVerification === 'unsupported' || printer?.capabilities?.currentMessageReadback === false
       ? `Readback unavailable (${printer?.model || '1710'})`
       : latestStatus.selectedMessage || '-';
-    elements.connection.textContent = mismatch ? 'Mismatch' : statusLabel(latestStatus);
+    elements.connection.textContent = statusLabel(displayStatus);
     if (elements.expectedMessage) elements.expectedMessage.textContent = expectedMessage || 'No expected message';
     elements.selectedMessage.textContent = selectedMessage;
     elements.alarmStatus.textContent = lightState.label;
@@ -335,6 +346,9 @@ function updateOperatorShell() {
 
     if (mismatch) {
       setOperatorNotice(`MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.`, 'error', { sticky: true, force: true });
+    } else if (latestStatus.online === false && serverConnected) {
+      const errorDetail = latestStatus.lastError ? ` Latest printer error: ${latestStatus.lastError}` : '';
+      setOperatorNotice(`Printer is offline. Automatic polling continues.${errorDetail}`, 'error', { force: true });
     } else if (isStale(latestStatus) && serverConnected) {
       const errorDetail = latestStatus.lastError ? ` Latest WSI error: ${latestStatus.lastError}` : '';
       setOperatorNotice(`Printer status is stale. Waiting for a fresh server update.${errorDetail}`, 'error', { force: true });
