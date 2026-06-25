@@ -177,9 +177,13 @@ function statusLabel(coderOrStatus) {
       : 'Busy';
   }
 
-  if (messageMismatch(config || {}, coderOrStatus)) return 'Mismatch';
-
   const stale = isStale(coderOrStatus);
+  if (messageMismatch(config || {}, coderOrStatus)) {
+    if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') return 'Mismatch / Offline';
+    if (hasPollFailures(coderOrStatus)) return stale ? 'Mismatch / Stale' : 'Mismatch / Retrying';
+    if (stale) return 'Mismatch / Stale';
+    return 'Mismatch';
+  }
   if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') {
     return stale ? 'Offline — last known status' : 'Offline';
   }

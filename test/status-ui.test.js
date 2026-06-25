@@ -53,6 +53,6 @@ test('message mismatch remains the primary label when the printer later goes off
     lastError: 'timeout'
   };
 
-  assert.equal(statusLabel(status), 'Mismatch');
+  assert.equal(statusLabel(status), 'Mismatch / Offline');
   assert.equal(statusTone(status), 'offline');
 });

@@ -55,7 +55,13 @@ function cardClass(status) {
 
 function syncState(printer, status) {
   if (!status?.lastSuccessfulAt) return { label: 'WAITING', tone: 'neutral' };
-  if (messageMismatch(printer, status)) return { label: 'MISMATCH', tone: 'bad' };
+  if (messageMismatch(printer, status)) {
+    if (!state.serverConnected) return { label: 'MISMATCH / SERVER OFFLINE', tone: 'bad' };
+    if (status.online === false) return { label: 'MISMATCH / OFFLINE', tone: 'bad' };
+    if (isStale(status)) return { label: 'MISMATCH / STALE', tone: 'bad' };
+    if (status.consecutiveFailures > 0) return { label: 'MISMATCH / RETRYING', tone: 'bad' };
+    return { label: 'MISMATCH', tone: 'bad' };
+  }
   if (!state.serverConnected) return { label: 'SERVER OFFLINE', tone: 'bad' };
   if (status.online === false) return { label: 'OFFLINE', tone: 'bad' };
   if (isStale(status)) return { label: 'STALE', tone: 'stale' };
@@ -78,7 +84,18 @@ function createReadback(printer, status) {
     syncMessage = `Current-message readback is unavailable on this ${modelLabel}. Status and faults are still polling normally.`;
   }
   const mismatch = messageMismatch(printer, status);
-  if (mismatch) syncMessage = mismatch.instruction;
+  if (mismatch) {
+    const connectionDetail = !state.serverConnected
+      ? ' Live server connection lost.'
+      : status.online === false
+        ? ` Printer is offline; automatic polling continues. ${status.lastError || ''}`.trimEnd()
+        : isStale(status)
+          ? ` Data is stale; automatic polling continues. ${status.lastError || ''}`.trimEnd()
+          : status.consecutiveFailures > 0
+            ? ` Latest poll failed; retrying automatically. ${status.lastError || ''}`.trimEnd()
+            : '';
+    syncMessage = `${mismatch.instruction}${connectionDetail}`;
+  }
 
   return el('section', { className: 'current-message-readback', 'aria-label': 'Current printer message readback' }, [
     el('div', { className: 'readback-heading' }, [
@@ -102,8 +119,7 @@ function createReadback(printer, status) {
 
 function createCard(printer) {
   const status = state.statuses[printer.id] || {};
-  const mismatch = messageMismatch(printer, status);
-  const offline = status.online === false && !mismatch;
+  const offline = status.online === false;
   const title = offline ? 'Last known status' : 'Status';
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';

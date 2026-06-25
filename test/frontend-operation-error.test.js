@@ -98,7 +98,7 @@ test('failed printer poll attempts do not refresh dashboard successful-update ti
   assert.ok(applyBlock.includes('result.ok === false || result.online === false ? null : result.checkedAt'));
 });
 
-test('mismatch remains primary over stale and offline status labels', async () => {
+test('mismatch and stale or offline status are shown together', async () => {
   const viewer = await readFile('public/js/viewer-dashboard.js', 'utf8');
   const printerPage = await readFile('public/printer-page.js', 'utf8');
 
@@ -108,8 +108,11 @@ test('mismatch remains primary over stale and offline status labels', async () =
 
   assert.ok(syncBlock.indexOf('messageMismatch(printer, status)') < syncBlock.indexOf('status.online === false'));
   assert.ok(syncBlock.indexOf('messageMismatch(printer, status)') < syncBlock.indexOf('isStale(status)'));
-  assert.ok(viewer.includes('const offline = status.online === false && !mismatch'));
+  assert.ok(viewer.includes("label: 'MISMATCH / OFFLINE'"));
+  assert.ok(viewer.includes('const offline = status.online === false'));
   assert.ok(printerPage.includes('function operatorLiveNote(status, mismatch)'));
+  assert.ok(printerPage.includes('Message mismatch detected. Printer is offline'));
+  assert.ok(printerPage.includes('mismatchStatusDetail(latestStatus)'));
   assert.ok(printerPage.includes('elements.connection.textContent = statusLabel(displayStatus)'));
   assert.equal(printerPage.includes("mismatch ? 'Mismatch' : statusLabel"), false);
 });
