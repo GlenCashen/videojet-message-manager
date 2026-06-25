@@ -1574,6 +1574,11 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+.operator-stale-warning {
+  font-size: .98rem;
+  margin: 0;
+}
+
 .printer-status-facts span,
 .printer-state-primary > span,
 .release-card-preview > span {

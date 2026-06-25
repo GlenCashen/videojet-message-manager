@@ -177,14 +177,19 @@ test('printer live status uses the dashboard card shell without duplicated produ
   assert.ok(statusBlock.includes('class="viewer-facts operator-status-facts"'));
   assert.ok(statusBlock.includes('class="current-message-readback operator-readback"'));
   assert.ok(statusBlock.includes('id="operatorLatestAttempt"'));
+  assert.ok(statusBlock.includes('id="operatorMismatchWarning" class="viewer-warning hidden"'));
+  assert.ok(statusBlock.includes('id="operatorStaleWarning" class="viewer-warning operator-stale-warning hidden"'));
   assert.equal(statusBlock.includes('Current running job'), false);
   assert.equal(statusBlock.includes('Expected print'), false);
   assert.equal(statusBlock.includes('Open printer'), false);
   assert.ok(page.includes('viewer-card operator-status-card status-${tone}'));
   assert.ok(page.includes('operatorStatusName'));
   assert.ok(page.includes('operatorLatestAttempt'));
+  assert.ok(page.includes("elements.mismatchWarning.classList.toggle('hidden', !mismatch)"));
+  assert.ok(page.includes("elements.staleWarning.classList.toggle('hidden', !stale)"));
   assert.match(css, /\.operator-status-card\s*{[\s\S]*cursor: default/);
   assert.match(css, /\.operator-status-controls \.viewer-comm\s*{[\s\S]*white-space: nowrap/);
+  assert.match(css, /\.operator-stale-warning\s*{[\s\S]*margin: 0/);
 });
 
 test('manual message review replaces the edit form before audited confirmation', async () => {

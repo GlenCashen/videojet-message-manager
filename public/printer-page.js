@@ -31,6 +31,8 @@ const elements = {
   selectedMessage: $('operatorSelectedMessage'),
   readbackExpected: $('operatorReadbackExpected'),
   readbackCurrent: $('operatorReadbackCurrent'),
+  mismatchWarning: $('operatorMismatchWarning'),
+  staleWarning: $('operatorStaleWarning'),
   alarmStatus: $('operatorAlarmStatus'),
   faults: $('operatorFaults'),
   dataSource: $('operatorDataSource'),
@@ -340,6 +342,13 @@ function updateOperatorShell() {
   elements.statusPanel.className = `viewer-card operator-status-card status-${tone}`;
   elements.dataSource.textContent = sourceText;
   elements.liveNote.textContent = operatorLiveNote(latestStatus, mismatch);
+  if (elements.mismatchWarning) {
+    elements.mismatchWarning.classList.toggle('hidden', !mismatch);
+    elements.mismatchWarning.textContent = mismatch ? `MESSAGE MISMATCH - Expected ${mismatch.expected}, printer reports ${mismatch.actual}.` : '';
+  }
+  if (elements.staleWarning) {
+    elements.staleWarning.classList.toggle('hidden', !stale);
+  }
   clear(elements.trafficLight);
   elements.trafficLight.appendChild(trafficLightMarkup(decodedStatus, { stale: stale || latestStatus?.online === false }));
 
