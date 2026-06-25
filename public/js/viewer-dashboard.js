@@ -120,6 +120,13 @@ function createCard(printer) {
       el('h2', { text: printer.name }),
       el('span', { className: 'viewer-comm', text: communicationText(status) })
     ]),
+    running ? el('section', { className: 'viewer-running-release' }, [
+      el('span', { text: 'Current running job' }),
+      el('strong', { text: `${running.release.brewSheetProduct} · ${running.release.runCode || 'Run pending'}` }),
+      el('small', { text: `Started ${running.target.runningAt ? new Date(running.target.runningAt).toLocaleString() : 'recently'}` })
+    ]) : el('section', { className: 'viewer-running-release idle' }, [
+      el('span', { text: 'Current running job' }), el('strong', { text: 'No release running' })
+    ]),
     el('div', { className: 'viewer-facts' }, [
       el('div', { className: 'viewer-state-fact' }, [
         el('span', { text: offline || isStale(status) ? `Last known ${title.toLowerCase()}` : title }),
@@ -134,13 +141,6 @@ function createCard(printer) {
         el('span', { text: faultLabel }),
         el('strong', { text: faultCountLabel(status.decodedStatus) })
       ])
-    ]),
-    running ? el('section', { className: 'viewer-running-release' }, [
-      el('span', { text: 'Current running job' }),
-      el('strong', { text: `${running.release.brewSheetProduct} · ${running.release.runCode || 'Run pending'}` }),
-      el('small', { text: `Started ${running.target.runningAt ? new Date(running.target.runningAt).toLocaleString() : 'recently'}` })
-    ]) : el('section', { className: 'viewer-running-release idle' }, [
-      el('span', { text: 'Current running job' }), el('strong', { text: 'No release running' })
     ]),
     el('div', { className: 'viewer-expected' }, [
       el('span', { text: 'Expected print' }),
