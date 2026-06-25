@@ -2100,6 +2100,7 @@ h3 {
   border-radius: var(--radius-lg);
   color: var(--text);
   box-shadow: var(--shadow-panel);
+  position: relative;
 }
 
 .panel,
@@ -2117,10 +2118,13 @@ h3 {
 .sub-panel::before {
   background: linear-gradient(90deg, transparent, rgba(87, 200, 255, .42), transparent);
   content: '';
-  display: block;
   height: 1px;
-  margin: -1px 0 12px;
+  left: 18px;
   opacity: .58;
+  pointer-events: none;
+  position: absolute;
+  right: 18px;
+  top: 0;
 }
 
 .nav-shell,
@@ -2175,7 +2179,7 @@ button:hover,
 .primary:hover,
 .secondary:hover,
 .ghost:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 button:disabled,
@@ -2391,22 +2395,81 @@ textarea::placeholder {
   backdrop-filter: blur(4px);
 }
 
+.editor-app #releaseReviewDialog {
+  align-items: initial;
+  justify-content: initial;
+  margin: auto;
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  width: min(720px, calc(100% - 32px));
+}
+
+.release-review-dialog {
+  margin: 0;
+  min-height: auto;
+  width: auto;
+}
+
 .operator-release-panel,
 .operator-release-item,
 .release-review-dialog,
 .release-row,
 .release-pagination,
 .release-attestation,
-.release-presence.mine {
+.release-presence.mine,
+.release-summary-strip,
+.release-summary-strip > div,
+.inherited-printer-list,
+.release-form-preview,
+.production-tab-panel,
+.production-form-panel,
+.release-card-printer-codes,
+.review-printer-requirement,
+.editor-app .release-workflow-layout .sub-panel {
   --line: #354458;
   --line-strong: #5a6b80;
   --muted: #aeb9c8;
   background: linear-gradient(180deg, rgba(24, 34, 46, .98), rgba(15, 22, 31, .98));
+  border-color: rgba(81, 97, 116, .72);
   color: var(--text);
 }
 
 .operator-release-item {
   border-left-width: 5px;
+}
+
+.release-summary-strip,
+.inherited-printer-list,
+.release-form-preview,
+.release-card-printer-codes,
+.review-printer-requirement {
+  border: 1px solid rgba(81, 97, 116, .72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.release-summary-strip > div {
+  border-color: rgba(81, 97, 116, .72);
+}
+
+.release-compact-summary,
+.inherited-printer-list > strong,
+.release-form-preview-heading p,
+.review-printer-requirement,
+.review-printer-requirement p {
+  color: var(--muted);
+}
+
+.inherited-printer,
+.badge.packaging-cans,
+.badge.packaging-bottles {
+  background: rgba(87, 200, 255, .12);
+  border: 1px solid rgba(87, 200, 255, .36);
+  color: #caefff;
+}
+
+.release-form-preview-heading h4,
+.review-printer-requirement strong {
+  color: var(--text);
 }
 
 .operator-release-compact-facts span,
