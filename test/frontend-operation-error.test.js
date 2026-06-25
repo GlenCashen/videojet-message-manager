@@ -87,6 +87,17 @@ test('traffic-light printer state helper is shared by dashboard and printer page
   assert.ok(printerPage.includes('trafficLightMarkup(decodedStatus'));
 });
 
+test('failed printer poll attempts do not refresh dashboard successful-update timestamps', async () => {
+  const dashboard = await readFile('public/js/dashboard.js', 'utf8');
+  const applyStart = dashboard.indexOf('function applyCheckResult(result)');
+  const applyEnd = dashboard.indexOf('\nfunction applyCheckError', applyStart);
+  const applyBlock = dashboard.slice(applyStart, applyEnd);
+
+  assert.equal(applyBlock.includes('checkedAt: result.lastAttemptAt'), false);
+  assert.ok(applyBlock.includes('lastAttemptAt: result.lastAttemptAt'));
+  assert.ok(applyBlock.includes('result.ok === false || result.online === false ? null : result.checkedAt'));
+});
+
 test('manual message changes retain guarded review but operator-only accounts use releases', async () => {
   const dashboard = await readFile('public/js/viewer-dashboard.js', 'utf8');
   const printerPage = await readFile('public/printer-page.js', 'utf8');

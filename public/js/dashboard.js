@@ -46,6 +46,7 @@ function setCoderFromConfig(printer) {
     decodedStatus: current.decodedStatus || null,
     expectedOutput: current.expectedOutput || null,
     lastSuccessfulAt: current.lastSuccessfulAt || null,
+    lastAttemptAt: current.lastAttemptAt || null,
     consecutiveFailures: current.consecutiveFailures || 0,
     revision: current.revision || 0,
     busy: isVisibleBusy(current),
@@ -73,14 +74,15 @@ function applyCheckResult(result) {
     rawStatus: result.rawStatus || result.status || current.rawStatus || null,
     decodedStatus: result.decodedStatus || current.decodedStatus || null,
     expectedOutput: result.expectedOutput || current.expectedOutput || null,
-    lastSuccessfulAt: result.lastSuccessfulAt || result.checkedAt || current.lastSuccessfulAt,
+    lastSuccessfulAt: result.lastSuccessfulAt || (result.ok === false || result.online === false ? null : result.checkedAt) || current.lastSuccessfulAt,
+    lastAttemptAt: result.lastAttemptAt || current.lastAttemptAt || null,
     consecutiveFailures: result.consecutiveFailures ?? current.consecutiveFailures ?? 0,
     revision: result.revision ?? current.revision ?? 0,
     busy: visibleBusy,
     stale: Boolean(result.stale),
     currentOperation: visibleBusy ? result.currentOperation || null : null,
-    checkedAt: result.lastAttemptAt || result.checkedAt || new Date().toISOString(),
-    lastError: result.ok === false ? result.error || 'Check failed.' : '',
+    checkedAt: result.checkedAt || current.checkedAt || null,
+    lastError: result.lastError || (result.ok === false ? result.error || 'Check failed.' : ''),
     checking: false
   };
 }
@@ -91,7 +93,7 @@ function applyCheckError(id, error) {
   state.coders[id] = {
     ...state.coders[id],
     state: 'offline',
-    checkedAt: new Date().toISOString(),
+    lastAttemptAt: new Date().toISOString(),
     lastError: normalizeError(error),
     checking: false
   };
@@ -138,7 +140,7 @@ function printerModelLabel(printer) {
 function cardValues(coder) {
   const printer = coder.config;
   const visibleBusy = isVisibleBusy(coder);
-  const timestamp = statusTimestamp(coder);
+  const timestamp = coder.lastAttemptAt || coder.checkedAt || statusTimestamp(coder);
 
   const printerLight = printerState(coder.decodedStatus);
   return {

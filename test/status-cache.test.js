@@ -37,6 +37,21 @@ test('offline threshold waits for configured failures', () => {
   assert.equal(cache.get('coder-1').online, false);
 });
 
+test('failed polls record attempts without refreshing the last successful update', async () => {
+  const cache = new StatusCache({ staleAfterMs: 1000, offlineAfterFailures: 3 });
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  const success = cache.applySuccess('coder-1', { selectedMessage: '9 MONTH', rawStatus: '0000001', responseTimeMs: 10 });
+
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  const failed = cache.applyFailure('coder-1', new Error('timeout'));
+
+  assert.equal(failed.online, true);
+  assert.equal(failed.consecutiveFailures, 1);
+  assert.equal(failed.lastSuccessfulAt, success.lastSuccessfulAt);
+  assert.notEqual(failed.lastAttemptAt, success.lastSuccessfulAt);
+  assert.match(failed.lastError, /timeout/);
+});
+
 test('a successful poll automatically recovers an offline printer', () => {
   const events = [];
   const transitions = [];

@@ -6,7 +6,13 @@ function isVisibleBusy(status) {
 }
 
 function statusTimestamp(status) {
-  return status?.lastSuccessfulAt || status?.checkedAt || status?.lastAttemptAt || null;
+  if (status?.lastSuccessfulAt) return status.lastSuccessfulAt;
+  if (status?.ok === false || status?.online === false || Number(status?.consecutiveFailures || 0) > 0) return null;
+  return status?.checkedAt || null;
+}
+
+function hasPollFailures(status) {
+  return Number(status?.consecutiveFailures || 0) > 0;
 }
 
 function isStale(status) {
@@ -154,6 +160,7 @@ function statusTone(coderOrStatus) {
   if (coderOrStatus?.state === 'disabled') return 'disabled';
   if (messageMismatch(config || {}, coderOrStatus)) return 'offline';
   if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') return 'offline';
+  if (hasPollFailures(coderOrStatus)) return 'warning';
   if (isStale(coderOrStatus)) return 'warning';
   if (coderOrStatus?.online || coderOrStatus?.state === 'online') return 'online';
   return 'unknown';
@@ -173,6 +180,10 @@ function statusLabel(coderOrStatus) {
   const stale = isStale(coderOrStatus);
   if (coderOrStatus?.ok === false || coderOrStatus?.online === false || coderOrStatus?.state === 'offline') {
     return stale ? 'Offline — last known status' : 'Offline';
+  }
+
+  if (hasPollFailures(coderOrStatus)) {
+    return stale ? 'Connection stale' : 'Connection retrying';
   }
 
   if (coderOrStatus?.online || coderOrStatus?.state === 'online') {
@@ -201,6 +212,7 @@ export {
   faultSummary,
   formatDuration,
   formatAge,
+  hasPollFailures,
   isStale,
   isVisibleBusy,
   messageMismatch,
