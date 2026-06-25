@@ -310,10 +310,10 @@ function schedulePreview() {
 function operatorLiveNote(status, mismatch) {
   if (!status?.lastSuccessfulAt) return 'Waiting for the first successful printer update.';
   if (!serverConnected) return 'Live data lost. Showing the last successful printer state.';
-  if (mismatch && status.online === false) return `Message mismatch detected. Printer is offline; automatic polling continues. ${status.lastError || ''}`.trim();
-  if (mismatch && isStale(status)) return `Message mismatch detected. Data is stale; automatic polling continues. ${status.lastError || ''}`.trim();
-  if (mismatch && Number(status.consecutiveFailures || 0) > 0) return `Message mismatch detected. Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
-  if (mismatch) return 'Message mismatch detected. Automatic polling continues.';
+  if (mismatch && status.online === false) return `Printer is offline; automatic polling continues. ${status.lastError || ''}`.trim();
+  if (mismatch && isStale(status)) return `Data is stale; automatic polling continues. ${status.lastError || ''}`.trim();
+  if (mismatch && Number(status.consecutiveFailures || 0) > 0) return `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
+  if (mismatch) return 'Automatic polling continues.';
   if (status.online === false) return `Printer is offline. Automatic polling continues. ${status.lastError || ''}`.trim();
   if (isStale(status)) return `Data is stale. Automatic polling continues. ${status.lastError || ''}`.trim();
   if (Number(status.consecutiveFailures || 0) > 0) return `Latest poll failed; retrying automatically. ${status.lastError || ''}`.trim();
@@ -406,12 +406,9 @@ function renderExpectedOutput(expectedOutput) {
   }
 
   elements.expectedOutput.textContent = expectedOutput.rendered;
-  const mismatch = messageMismatch(printer || {}, latestStatus || {});
-  elements.expectedSource.textContent = mismatch
-    ? `MESSAGE MISMATCH — expected ${mismatch.expected}, printer reports ${mismatch.actual}. Resend release and reverify first print.`
-    : expectedOutput.source === 'last-known'
-      ? 'Last expected output'
-      : 'Physical print check: Required';
+  elements.expectedSource.textContent = expectedOutput.source === 'last-known'
+    ? 'Last expected output'
+    : 'Physical print check: Required';
 }
 
 function formatDateTime(value) {

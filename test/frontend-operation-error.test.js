@@ -111,7 +111,7 @@ test('mismatch and stale or offline status are shown together', async () => {
   assert.ok(viewer.includes("label: 'MISMATCH / OFFLINE'"));
   assert.ok(viewer.includes('const offline = status.online === false'));
   assert.ok(printerPage.includes('function operatorLiveNote(status, mismatch)'));
-  assert.ok(printerPage.includes('Message mismatch detected. Printer is offline'));
+  assert.ok(printerPage.includes('Printer is offline; automatic polling continues.'));
   assert.ok(printerPage.includes('mismatchStatusDetail(latestStatus)'));
   assert.ok(printerPage.includes('elements.connection.textContent = statusLabel(displayStatus)'));
   assert.equal(printerPage.includes("mismatch ? 'Mismatch' : statusLabel"), false);
@@ -187,6 +187,7 @@ test('printer live status uses the dashboard card shell without duplicated produ
   assert.ok(page.includes('operatorLatestAttempt'));
   assert.ok(page.includes("elements.mismatchWarning.classList.toggle('hidden', !mismatch)"));
   assert.ok(page.includes("elements.staleWarning.classList.toggle('hidden', !stale)"));
+  assert.equal(page.includes('MESSAGE MISMATCH — expected ${mismatch.expected}, printer reports ${mismatch.actual}. Resend release and reverify first print.'), false);
   assert.match(css, /\.operator-status-card\s*{[\s\S]*cursor: default/);
   assert.match(css, /\.operator-status-controls \.viewer-comm\s*{[\s\S]*white-space: nowrap/);
   assert.match(css, /\.operator-stale-warning\s*{[\s\S]*margin: 0/);
