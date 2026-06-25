@@ -2825,6 +2825,26 @@ textarea::placeholder {
   margin: 4px 0;
 }
 
+.release-progress {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(87, 200, 255, .38);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(87, 200, 255, .14), rgba(9, 16, 24, .92));
+  box-shadow: inset 5px 0 0 var(--accent);
+}
+
+.release-progress strong {
+  color: #d7f0ff;
+  font-size: 1.08rem;
+}
+
+.release-progress p {
+  color: var(--muted);
+  margin: 0;
+}
+
 .operator-release-preview h3 {
   margin: 0;
 }

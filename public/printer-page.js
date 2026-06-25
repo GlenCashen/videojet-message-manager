@@ -96,6 +96,7 @@ const releaseQueue = createOperatorReleaseQueue({
     completedDialog: $('completedReleaseDialog'), completedClose: $('closeCompletedReleases'), notice: $('operatorReleaseNotice'),
     refresh: $('refreshOperatorReleases'), dialog: $('operatorReleaseDialog'), title: $('operatorReleaseDialogTitle'),
     subtitle: $('operatorReleaseDialogSubtitle'), close: $('closeOperatorReleaseDialog'), dialogNotice: $('operatorReleaseDialogNotice'),
+    progress: $('operatorReleaseProgress'), progressTitle: $('operatorReleaseProgressTitle'), progressText: $('operatorReleaseProgressText'),
     facts: $('operatorReleaseFacts'), preview: $('operatorReleasePreview'), confirmation: $('operatorReleaseConfirmation'),
     confirmCheck: $('operatorReleaseConfirmationCheck'), failureField: $('operatorPrintFailureField'), reasonLabel: $('operatorReleaseReasonLabel'),
     failureReason: $('operatorPrintFailureReason'), cancel: $('cancelOperatorRelease'), send: $('sendOperatorRelease'),

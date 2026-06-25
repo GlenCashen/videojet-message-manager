@@ -285,6 +285,29 @@ test('individual printer page exposes release execution while dashboard stays re
   assert.match(styles, /\.operator-release-preview pre\s*\{[^}]*color:\s*#172033/);
 });
 
+test('release modal uses stable sending and first-print phases', async () => {
+  const printer = await readFile('public/printer.html', 'utf8');
+  const printerPage = await readFile('public/printer-page.js', 'utf8');
+  const queue = await readFile('public/js/operator-release-queue.js', 'utf8');
+  const styles = await readFile('public/styles.css', 'utf8');
+  const sendStart = queue.indexOf('async function send()');
+  const sendEnd = queue.indexOf('\n  async function returnForReview()', sendStart);
+  const sendBlock = queue.slice(sendStart, sendEnd);
+
+  assert.ok(printer.includes('id="operatorReleaseProgress"'));
+  assert.ok(printer.includes('id="operatorReleaseProgressTitle"'));
+  assert.ok(printer.includes('id="operatorReleaseProgressText"'));
+  assert.ok(printerPage.includes("progress: $('operatorReleaseProgress')"));
+  assert.ok(queue.includes('function showSending'));
+  assert.ok(queue.includes("if (target.status === 'applying')"));
+  assert.ok(queue.includes('showSending({ persisted: true })'));
+  assert.ok(queue.includes('function showPrintCheck'));
+  assert.ok(queue.includes('hideProgress();'));
+  assert.ok(sendBlock.indexOf('showSending({ reapply, reverify });') < sendBlock.indexOf('await apiJson('));
+  assert.ok(sendBlock.includes('open(latestRelease, latestTarget);'));
+  assert.match(styles, /\.release-progress\s*{[\s\S]*box-shadow: inset 5px 0 0 var\(--accent\)/);
+});
+
 test('new messages define fields that product masters infer', async () => {
   const html = await readFile('public/index.html', 'utf8');
   const messageConfig = await readFile('public/js/message-config.js', 'utf8');

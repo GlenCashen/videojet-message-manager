@@ -165,6 +165,10 @@
       <div class="message-dialog-shell operator-release-dialog-shell">
         <header class="message-dialog-header"><div><p class="breadcrumb">Approved production release</p><h2 id="operatorReleaseDialogTitle">Review release</h2><p id="operatorReleaseDialogSubtitle" class="muted"></p></div><button id="closeOperatorReleaseDialog" class="ghost dialog-close" type="button">Close</button></header>
         <p id="operatorReleaseDialogNotice" class="notice hidden" aria-live="polite"></p>
+        <section id="operatorReleaseProgress" class="release-progress hidden" aria-live="polite">
+          <strong id="operatorReleaseProgressTitle">Sending release</strong>
+          <p id="operatorReleaseProgressText">The approved message is being sent to the printer.</p>
+        </section>
         <div id="operatorReleaseFacts" class="operator-release-facts"></div>
         <section class="operator-release-preview"><h3>Approved expected print</h3><pre id="operatorReleasePreview"></pre></section>
         <label id="operatorReleaseConfirmation" class="release-attestation"><input id="operatorReleaseConfirmationCheck" type="checkbox"><span>Confirm the first printed code matches the expected printed code before marking this release as running.</span></label>

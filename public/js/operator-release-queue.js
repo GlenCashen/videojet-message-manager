@@ -134,7 +134,29 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     return el('div', {}, [el('span', { text: label }), el('strong', { text: value || '-' })]);
   }
 
+  function hideProgress() {
+    elements.progress.classList.add('hidden');
+  }
+
+  function showSending({ reapply = false, reverify = false, persisted = false } = {}) {
+    elements.title.textContent = reverify ? 'Resending approved release' : reapply ? 'Reapplying completed release' : 'Sending approved release';
+    elements.progressTitle.textContent = reverify ? 'Resending release to printer' : 'Sending release to printer';
+    elements.progressText.textContent = persisted
+      ? 'The approved message is being sent to the printer. This view will move to first-print verification when readback completes.'
+      : 'The approved message is being sent and printer readback is being checked.';
+    elements.progress.classList.remove('hidden');
+    elements.confirmation.classList.add('hidden');
+    elements.failureField.classList.add('hidden');
+    elements.send.classList.add('hidden');
+    elements.verify.classList.add('hidden');
+    elements.report.classList.add('hidden');
+    elements.returnRelease.classList.add('hidden');
+    elements.endRun.classList.add('hidden');
+    setNotice(elements.dialogNotice);
+  }
+
   function showPrintCheck() {
+    hideProgress();
     elements.confirmation.classList.remove('hidden');
     elements.confirmation.querySelector('span').textContent = 'Confirm the first printed code matches the expected printed code before marking this release as running.';
     elements.send.classList.add('hidden');
@@ -162,6 +184,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     elements.preview.textContent = releaseExpectedOutput(release, target.printerId).rendered;
     elements.confirmCheck.checked = false;
     elements.failureReason.value = '';
+    hideProgress();
     elements.confirmation.classList.remove('hidden');
     elements.confirmation.querySelector('span').textContent = 'I have checked the product, batch, physical line, printer and approved expected printed code.';
     elements.send.classList.remove('hidden');
@@ -173,8 +196,11 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     elements.reasonLabel.textContent = 'Print problem';
     elements.send.textContent = 'Send approved release';
     setNotice(elements.dialogNotice);
-    if (target.status === 'awaiting_print_check') showPrintCheck();
-    if (target.status === 'running') {
+    if (target.status === 'applying') {
+      showSending({ persisted: true });
+    } else if (target.status === 'awaiting_print_check') {
+      showPrintCheck();
+    } else if (target.status === 'running') {
       const mismatch = messageMismatch(printer || {}, getStatus(target.printerId) || {});
       if (mismatch) {
         elements.confirmation.classList.remove('hidden');
@@ -241,7 +267,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     if (reverify && !reason) return setNotice(elements.dialogNotice, 'Record the mismatch response before resending and reverifying.', 'error');
     if (target.status === 'failed' && !reason) return setNotice(elements.dialogNotice, 'Record the physical printer check and reason before retrying.', 'error');
     setBusy(true);
-    setNotice(elements.dialogNotice, 'Sending the approved release and checking printer readback...');
+    showSending({ reapply, reverify });
     try {
       const response = await apiJson(`/api/batch-releases/${encodeURIComponent(release.id)}/targets/${encodeURIComponent(target.printerId)}/apply`, { method: 'POST', body: { reapply, reverify, reason } });
       replaceRelease(response.release);
@@ -250,6 +276,13 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
       open(state.selected.release, state.selected.target);
     } catch (error) {
       if (error.data?.release) replaceRelease(error.data.release);
+      const latestRelease = error.data?.release || state.selected.release;
+      const latestTarget = latestRelease?.executionTargets.find((item) => item.printerId === target.printerId);
+      if (latestRelease && latestTarget) {
+        state.selected.release = latestRelease;
+        state.selected.target = latestTarget;
+        open(latestRelease, latestTarget);
+      }
       if (error.data?.code === 'RELEASE_DEFINITION_CHANGED') {
         elements.failureField.classList.remove('hidden');
         elements.reasonLabel.textContent = 'Reason for returning this release';
