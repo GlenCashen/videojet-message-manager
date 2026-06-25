@@ -103,7 +103,7 @@ function createReadback(printer, status) {
 function createCard(printer) {
   const status = state.statuses[printer.id] || {};
   const offline = status.online === false;
-  const title = offline ? 'Last known printer status' : 'Printer status';
+  const title = offline ? 'Last known status' : 'Status';
   const messageLabel = offline ? 'Last known message' : 'Message';
   const faultLabel = offline ? 'Last known active faults' : 'Faults';
   const lightState = printerState(status.decodedStatus);
@@ -129,13 +129,18 @@ function createCard(printer) {
     ]),
     el('div', { className: 'viewer-facts' }, [
       el('div', { className: 'viewer-state-fact' }, [
-        el('span', { text: offline || isStale(status) ? `Last known ${title.toLowerCase()}` : title }),
+        el('span', { text: offline || isStale(status) ? 'Last known status' : title }),
         trafficLightMarkup(status.decodedStatus, { stale: offline || isStale(status) }),
         el('strong', { text: lightState.label })
       ]),
-      el('div', {}, [
+      el('div', { className: 'viewer-message-fact' }, [
         el('span', { text: messageLabel }),
-        el('strong', { text: readbackUnsupported(printer, status) ? 'Readback unavailable' : status.selectedMessage || '-' })
+        el('div', { className: 'viewer-message-lines' }, [
+          el('small', { text: 'Expected' }),
+          el('strong', { text: expectedMessage(status) || 'No expected message' }),
+          el('small', { text: 'Current' }),
+          el('strong', { text: readbackUnsupported(printer, status) ? 'Readback unavailable' : status.selectedMessage || '-' })
+        ])
       ]),
       el('div', {}, [
         el('span', { text: faultLabel }),

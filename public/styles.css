@@ -625,11 +625,11 @@ h3 { margin: 0; font-size: 1.15rem; }
 
 .viewer-facts {
   display: grid;
-  grid-template-columns: minmax(82px, .58fr) minmax(0, 1.55fr) minmax(72px, .95fr);
+  grid-template-columns: minmax(94px, .52fr) minmax(0, 2fr) minmax(92px, .8fr);
   gap: 8px;
 }
 
-.viewer-facts div {
+.viewer-facts > div {
   display: grid;
   gap: 5px;
   align-content: start;
@@ -656,10 +656,49 @@ h3 { margin: 0; font-size: 1.15rem; }
   grid-column: 1 / -1;
 }
 
-.viewer-state-fact .traffic-light-group { gap: 3px; opacity: .72; }
+.viewer-state-fact .traffic-light-group {
+  flex-direction: column;
+  gap: 4px;
+  opacity: .72;
+}
 .viewer-state-fact .traffic-light { height: 13px; width: 13px; }
 .viewer-state-fact .traffic-light span { height: 7px; width: 7px; }
-.viewer-state-fact strong { color: #f4f8ff; font-size: 1.16rem; font-weight: 950; }
+.viewer-state-fact strong {
+  color: #f4f8ff;
+  font-size: 1.08rem;
+  font-weight: 950;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.viewer-message-fact {
+  min-width: 0;
+}
+
+.viewer-message-lines {
+  align-items: baseline;
+  display: grid;
+  gap: 5px 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.viewer-message-lines small {
+  color: #8fa3bf;
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.viewer-message-lines strong {
+  font-size: 1.04rem;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
 
 .viewer-warning {
   margin: 0;
@@ -2357,7 +2396,7 @@ textarea::placeholder {
 
 .viewer-running-release,
 .viewer-expected,
-.viewer-facts div,
+.viewer-facts > div,
 .current-message-readback,
 .message-dialog-preview,
 .message-dialog-preview pre,
