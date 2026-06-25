@@ -487,7 +487,9 @@ h3 { margin: 0; font-size: 1.15rem; }
 .message-dialog-shell {
   display: grid;
   gap: 16px;
+  margin: 0 auto;
   padding: 22px;
+  width: 100%;
   max-height: calc(100vh - 34px);
   max-height: calc(100dvh - 34px);
   overflow: auto;
@@ -1495,14 +1497,17 @@ summary:focus-visible {
   font-size: .7rem;
   font-weight: 850;
   letter-spacing: .06em;
+  line-height: 1.15;
   margin-bottom: 5px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
 }
 
 .printer-status-facts {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(112px, .55fr) minmax(0, 2fr) minmax(110px, .8fr);
+  grid-template-columns: minmax(126px, .6fr) minmax(0, 2fr) minmax(126px, .8fr);
 }
 .printer-status-facts > div {
   align-content: start;
@@ -1571,6 +1576,10 @@ summary:focus-visible {
   white-space: nowrap;
   word-break: normal;
 }
+.printer-status-facts .compact span {
+  font-size: .64rem;
+  letter-spacing: .045em;
+}
 .printer-status-facts .compact strong { font-size: .98rem; }
 .printer-status-meta { color: var(--muted-2); display: flex; flex-wrap: wrap; font-size: .75rem; gap: 16px; padding: 12px 2px 2px; }
 .printer-status-meta strong { color: var(--text); margin-left: 5px; }
@@ -1584,6 +1593,19 @@ summary:focus-visible {
 .release-spotlight { margin-top: 12px; }
 .release-spotlight-card { grid-template-columns: minmax(270px, 1fr) minmax(240px, .8fr) auto; }
 .release-spotlight-card .operator-release-item-main { grid-template-columns: 1fr; }
+.operator-release-item .badge {
+  align-self: start;
+  border-radius: 7px;
+  box-shadow: none;
+  display: inline-flex;
+  font-size: .68rem;
+  justify-self: start;
+  letter-spacing: .065em;
+  line-height: 1;
+  margin-bottom: 6px;
+  padding: 6px 9px;
+  width: fit-content;
+}
 .current-running-job-card {
   background: linear-gradient(135deg, rgba(61, 220, 132, .18), rgba(9, 16, 24, .96) 62%);
   border: 2px solid rgba(61, 220, 132, .58);
@@ -1616,9 +1638,7 @@ summary:focus-visible {
   color: #c1d1c9;
   font-weight: 750;
 }
-.current-running-job-card .badge {
-  margin-bottom: 7px;
-}
+.current-running-job-card .badge { margin-bottom: 8px; }
 .current-running-job-card .operator-release-compact-facts span,
 .current-running-job-card .operator-release-compact-facts strong {
   color: #d5e8dd;
@@ -1659,8 +1679,67 @@ summary:focus-visible {
   letter-spacing: .055em;
   text-transform: uppercase;
 }
-.manual-message-shell { max-width: 780px; }
-.manual-warning { background: #fff8e7; border-color: #d89a18; color: #6b4600; display: block; }
+.manual-message-shell { max-width: 1040px; }
+.manual-warning {
+  background: rgba(245, 184, 65, .12);
+  border-color: rgba(245, 184, 65, .44);
+  border-left: 4px solid var(--amber);
+  color: #ffdda0;
+  display: block;
+  font-size: .9rem;
+  line-height: 1.35;
+  margin: 0;
+  padding: 10px 12px;
+  white-space: normal;
+}
+.manual-message-form {
+  align-items: stretch;
+  gap: 16px 18px;
+  grid-template-columns: minmax(280px, .78fr) minmax(360px, 1fr);
+}
+.manual-form-section,
+.manual-preview-section {
+  border: 1px solid rgba(81, 97, 116, .72);
+  border-radius: var(--radius-md);
+  background: rgba(5, 10, 17, .32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+.manual-form-section {
+  align-content: start;
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+}
+.manual-form-section textarea {
+  min-height: 104px;
+}
+.manual-form-section .message-fields {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  gap: 12px;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  padding: 0;
+}
+.manual-form-section .message-fields label {
+  border: 1px solid rgba(81, 97, 116, .72);
+  border-radius: var(--radius-sm);
+  background: #091018;
+  padding: 12px;
+}
+.manual-preview-section {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+}
+.manual-message-actions {
+  grid-column: 2;
+  justify-content: flex-end;
+  padding-top: 0;
+}
 .manual-message-shell.review-active {
   max-width: 720px;
 }
@@ -2599,7 +2678,7 @@ textarea::placeholder {
 }
 
 #manualMessageDialog {
-  width: min(820px, calc(100% - 32px));
+  width: min(1080px, calc(100% - 32px));
 }
 
 .message-dialog-shell {
@@ -2698,6 +2777,18 @@ textarea::placeholder {
 
 .operator-release-item {
   border-left-width: 5px;
+}
+
+.operator-release-item .badge {
+  border-radius: 7px;
+  box-shadow: none;
+  display: inline-flex;
+  font-size: .68rem;
+  justify-self: start;
+  letter-spacing: .065em;
+  line-height: 1;
+  padding: 6px 9px;
+  width: fit-content;
 }
 
 .operator-release-item.current-running-job-card {
@@ -2802,5 +2893,13 @@ table,
   .viewer-card-actions > *,
   .message-dialog-actions button {
     width: 100%;
+  }
+
+  .manual-message-form {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-message-actions {
+    grid-column: 1;
   }
 }

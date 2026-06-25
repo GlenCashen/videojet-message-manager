@@ -120,19 +120,34 @@ test('printer modals are viewport anchored and close from the backdrop', async (
 
   assert.match(css, /\.message-dialog\s*{[\s\S]*position: fixed/);
   assert.match(css, /\.message-dialog\s*{[\s\S]*inset: 0/);
+  assert.match(css, /\.message-dialog-shell\s*{[\s\S]*margin: 0 auto/);
   assert.ok(page.includes('event.target === elements.manualDialog'));
   assert.ok(queue.includes('function closeOnBackdrop'));
   assert.ok(queue.includes('event.target !== dialog'));
 });
 
+test('printer modal and live-status polish keeps release badges and compact labels contained', async () => {
+  const css = await readFile('public/styles.css', 'utf8');
+
+  assert.match(css, /\.operator-release-item \.badge\s*{[\s\S]*width: fit-content/);
+  assert.match(css, /\.operator-release-item \.badge\s*{[\s\S]*border-radius: 7px/);
+  assert.match(css, /\.printer-status-facts \.compact span\s*{[\s\S]*font-size: \.64rem/);
+  assert.match(css, /\.printer-status-facts span,[\s\S]*overflow-wrap: anywhere/);
+});
+
 test('manual message review replaces the edit form before audited confirmation', async () => {
   const css = await readFile('public/styles.css', 'utf8');
   const page = await readFile('public/printer-page.js', 'utf8');
+  const html = await readFile('public/printer.html', 'utf8');
 
   assert.ok(page.includes("elements.controlsPanel.classList.add('review-active')"));
   assert.ok(page.includes("elements.controlsPanel.classList.remove('review-active')"));
   assert.ok(css.includes('.manual-message-shell.review-active #operatorSetForm'));
   assert.ok(css.includes('.manual-message-shell.review-active .manual-warning'));
+  assert.ok(html.includes('class="grid manual-message-form"'));
+  assert.ok(html.includes('class="manual-form-section"'));
+  assert.ok(html.includes('class="preview-panel print-preview manual-preview-section"'));
+  assert.match(css, /\.manual-message-form\s*{[\s\S]*grid-template-columns: minmax\(280px, \.78fr\) minmax\(360px, 1fr\)/);
 });
 
 test('production releases require an independent review and expose no direct operator send', async () => {

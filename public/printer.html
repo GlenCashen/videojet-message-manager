@@ -129,13 +129,15 @@
     <dialog id="manualMessageDialog" class="message-dialog" aria-labelledby="manualMessageDialogTitle">
       <div id="operatorControlsPanel" class="message-dialog-shell manual-message-shell">
         <header class="message-dialog-header"><div><p class="breadcrumb">Audited exception</p><h2 id="manualMessageDialogTitle">Set message manually</h2><p class="muted">Use only when an approved production release does not apply.</p></div><button id="closeManualMessage" class="ghost dialog-close" type="button">Close</button></header>
-        <p class="notice warning manual-warning">This bypasses the release workflow. Your identity, reason, message and field values will be recorded in the audit log.</p>
-        <form id="operatorSetForm" class="grid">
-          <label for="operatorMessageName">Message<select id="operatorMessageName"></select></label>
-          <label class="wide" for="manualMessageReason">Reason for manual change *<textarea id="manualMessageReason" rows="3" minlength="5" maxlength="500" required placeholder="Explain why the approved release workflow cannot be used"></textarea></label>
-          <div id="messageFields" class="wide message-fields"></div>
-          <section class="wide preview-panel print-preview" aria-labelledby="previewTitle"><h3 id="previewTitle">Expected print preview</h3><p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p></section>
-          <div class="actions wide"><button id="operatorSetButton" class="primary" type="submit">Review manual change</button></div>
+        <p class="notice warning manual-warning">Bypasses the release workflow. Identity, reason, message and field values are recorded in the audit log.</p>
+        <form id="operatorSetForm" class="grid manual-message-form">
+          <section class="manual-form-section" aria-label="Manual message details">
+            <label for="operatorMessageName">Message<select id="operatorMessageName"></select></label>
+            <label for="manualMessageReason">Reason for manual change *<textarea id="manualMessageReason" rows="3" minlength="5" maxlength="500" required placeholder="Explain why the approved release workflow cannot be used"></textarea></label>
+            <div id="messageFields" class="message-fields"></div>
+          </section>
+          <section class="preview-panel print-preview manual-preview-section" aria-labelledby="previewTitle"><h3 id="previewTitle">Expected print preview</h3><p id="expectedPreview" class="muted">Preview unavailable until this message is configured.</p></section>
+          <div class="actions manual-message-actions"><button id="operatorSetButton" class="primary" type="submit">Review manual change</button></div>
         </form>
         <section id="reviewPanel" class="review-panel hidden" aria-labelledby="reviewTitle"><h3 id="reviewTitle">Apply to coder?</h3><div id="reviewContent" class="review-content"></div><div class="actions"><button id="cancelReviewButton" class="secondary" type="button">Back</button><button id="confirmSetButton" class="primary" type="button">Confirm audited change</button></div></section>
       </div>
