@@ -45,15 +45,17 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
   function renderTarget(container, { release, target }, { spotlight = false } = {}) {
     const printer = getPrinter(target.printerId);
     const mismatch = target.status === 'running' ? messageMismatch(printer || {}, getStatus(target.printerId) || {}) : null;
+    const currentSpotlight = spotlight && container === elements.current;
     const actionText = mismatch ? 'Resend and reverify' : {
       awaiting_print_check: 'Verify first print', failed: 'Resolve uncertain printer state', running: 'View running job', ended: 'Reapply job'
     }[target.status] || 'Review and send';
     const expected = releaseExpectedOutput(release, target.printerId);
-    container.appendChild(el('article', { className: `operator-release-item target-${target.status}${spotlight ? ' release-spotlight-card' : ''}` }, [
+    container.appendChild(el('article', { className: `operator-release-item target-${target.status}${spotlight ? ' release-spotlight-card' : ''}${currentSpotlight ? ' current-running-job-card' : ''}` }, [
       el('div', { className: 'operator-release-item-main' }, [
         el('div', {}, [
+          currentSpotlight ? el('span', { className: 'current-job-eyebrow', text: 'Current running job' }) : null,
           el('span', { className: `badge ${targetTone(target.status)}`, text: targetStatusLabel(target.status) }),
-          el('h3', { text: release.brewSheetProduct }),
+          el('h3', { text: currentSpotlight ? `${release.brewSheetProduct} · ${release.runCode || 'Run pending'}` : release.brewSheetProduct }),
           el('p', { className: 'muted', text: `${printer?.name || target.printerId} · ${printer?.location || 'No line location'} · ${release.runCode || 'Tracked run pending'}` })
         ]),
         el('div', { className: 'operator-release-compact-facts' }, [

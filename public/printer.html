@@ -35,16 +35,24 @@
           <button id="operatorCheckButton" class="secondary" type="button">Check status</button>
         </div>
         <div id="operatorStatus" class="operator-summary-card operator-status status-unknown">
-          <div class="printer-state-primary">
-            <div id="operatorTrafficLight"></div>
-            <div><span>Current state</span><strong id="operatorAlarmStatus">-</strong></div>
-          </div>
           <div class="printer-status-facts">
+            <div class="status-fact compact printer-state-primary">
+              <span>Printer status</span>
+              <div class="printer-state-inline">
+                <div id="operatorTrafficLight"></div>
+                <strong id="operatorAlarmStatus">-</strong>
+              </div>
+            </div>
+            <div class="status-fact message-fact printer-message-pair">
+              <span>Message</span>
+              <div class="printer-message-lines">
+                <small>Expected</small><strong id="operatorExpectedMessage">-</strong>
+                <small>Current</small><strong id="operatorSelectedMessage">-</strong>
+              </div>
+            </div>
+            <div class="status-fact compact"><span>Faults</span><strong id="operatorFaults">-</strong></div>
             <div class="status-fact compact"><span>Communication</span><strong id="operatorConnection">Not checked</strong></div>
             <div class="status-fact compact"><span>Last update</span><strong id="operatorCheckedAt">No update yet</strong></div>
-            <div class="status-fact message-fact"><span>Expected message</span><strong id="operatorExpectedMessage">-</strong></div>
-            <div class="status-fact message-fact"><span>Selected message</span><strong id="operatorSelectedMessage">-</strong></div>
-            <div class="status-fact compact"><span>Active faults</span><strong id="operatorFaults">-</strong></div>
           </div>
           <div class="printer-status-meta">
             <span>Source <strong id="operatorDataSource">Last known status</strong></span>

@@ -1451,22 +1451,31 @@ summary:focus-visible {
 .next-release-panel { margin-top: 0; }
 
 .printer-status-hero {
-  border-color: rgba(69, 199, 255, .48);
+  border-color: rgba(87, 200, 255, .46);
   box-shadow: inset 0 4px 0 var(--accent), 0 18px 38px rgba(0, 0, 0, .22);
 }
 
-.printer-state-primary {
-  align-items: center;
-  background: var(--panel-3);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  display: flex;
-  gap: 20px;
-  padding: 18px;
+.operator-status {
+  background: linear-gradient(180deg, rgba(24, 34, 46, .98), rgba(15, 22, 31, .98));
+  border: 1px solid rgba(81, 97, 116, .72);
+  border-radius: var(--radius-lg);
+  border-top: 5px solid var(--grey);
+  box-shadow: var(--shadow-panel);
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px;
+  position: relative;
 }
 
-.printer-state-primary span,
+.operator-status.status-online { border-top-color: var(--green); }
+.operator-status.status-offline { border-top-color: var(--red); }
+.operator-status.status-warning { border-top-color: var(--amber); }
+.operator-status.status-disabled,
+.operator-status.status-unknown { border-top-color: var(--grey); }
+
 .printer-status-facts span,
+.printer-state-primary > span,
 .release-card-preview > span {
   color: var(--muted-2);
   display: block;
@@ -1477,33 +1486,78 @@ summary:focus-visible {
   text-transform: uppercase;
 }
 
-.printer-state-primary strong { font-size: 1.75rem; }
 .printer-status-facts {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 12px;
+  grid-template-columns: minmax(112px, .55fr) minmax(0, 2fr) minmax(110px, .8fr);
 }
 .printer-status-facts > div {
-  background: linear-gradient(180deg, rgba(22, 29, 44, .98), rgba(17, 24, 39, .98));
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 12px 14px;
+  align-content: start;
+  background: #091018;
+  border: 1px solid rgba(81, 97, 116, .76);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+  padding: 9px;
+}
+.printer-state-primary {
+  align-items: center;
+  grid-template-columns: 1fr;
+}
+.printer-state-inline {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.printer-state-primary .traffic-light-group {
+  flex-direction: column;
+  gap: 4px;
+  opacity: .76;
+}
+.printer-state-primary .traffic-light { height: 13px; width: 13px; }
+.printer-state-primary .traffic-light span { height: 7px; width: 7px; }
+.printer-state-primary strong {
+  color: #f4f8ff;
+  font-size: 1.08rem;
+  font-weight: 950;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
 }
 .printer-status-facts > div.message-fact {
   border-color: rgba(69, 199, 255, .32);
   box-shadow: inset 0 0 0 1px rgba(69, 199, 255, .06);
-  min-height: 82px;
+  min-width: 0;
 }
-.printer-status-facts > div.compact { min-height: 62px; }
 .printer-status-facts strong {
   display: block;
   font-size: 1rem;
   line-height: 1.28;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
-.printer-status-facts .message-fact strong { font-size: 1.08rem; }
+.printer-message-lines {
+  align-items: baseline;
+  display: grid;
+  gap: 5px 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.printer-message-lines small {
+  color: #8fa3bf;
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.printer-message-lines strong {
+  font-size: 1.04rem;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
 .printer-status-facts .compact strong { font-size: .98rem; }
 .printer-status-meta { color: var(--muted-2); display: flex; flex-wrap: wrap; font-size: .75rem; gap: 16px; padding: 12px 2px 2px; }
 .printer-status-meta strong { color: var(--text); margin-left: 5px; }
@@ -1517,13 +1571,52 @@ summary:focus-visible {
 .release-spotlight { margin-top: 12px; }
 .release-spotlight-card { grid-template-columns: minmax(270px, 1fr) minmax(240px, .8fr) auto; }
 .release-spotlight-card .operator-release-item-main { grid-template-columns: 1fr; }
+.current-running-job-card {
+  background: linear-gradient(135deg, rgba(61, 220, 132, .18), rgba(9, 16, 24, .96) 62%);
+  border: 2px solid rgba(61, 220, 132, .58);
+  border-left: 7px solid var(--green);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 12px 28px rgba(0, 0, 0, .3);
+  color: var(--text);
+  gap: 16px;
+  padding: 16px;
+}
+.current-running-job-card .current-job-eyebrow {
+  color: #9ed9b7;
+  display: block;
+  font-size: .78rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+.current-running-job-card h3 {
+  color: #f2fff6;
+  font-size: 1.36rem;
+  font-weight: 950;
+  line-height: 1.12;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.current-running-job-card .muted {
+  color: #c1d1c9;
+  font-weight: 750;
+}
+.current-running-job-card .badge {
+  margin-bottom: 7px;
+}
+.current-running-job-card .operator-release-compact-facts span,
+.current-running-job-card .operator-release-compact-facts strong {
+  color: #d5e8dd;
+}
 .release-card-preview { min-width: 0; }
 .release-card-preview pre,
 .current-expected-output pre {
-  background: #f7f9fc;
-  border: 1px solid #c9d2df;
+  background: #091018;
+  border: 1px solid rgba(81, 97, 116, .76);
   border-radius: 7px;
-  color: #172033;
+  color: var(--text);
   font: 800 .85rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
   margin: 0;
   min-height: 62px;
@@ -2495,6 +2588,24 @@ textarea::placeholder {
 
 .operator-release-item {
   border-left-width: 5px;
+}
+
+.operator-release-item.current-running-job-card {
+  background: linear-gradient(135deg, rgba(61, 220, 132, .18), rgba(9, 16, 24, .96) 62%);
+  border: 2px solid rgba(61, 220, 132, .58);
+  border-left: 7px solid var(--green);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 12px 28px rgba(0, 0, 0, .3);
+}
+
+.operator-release-item.current-running-job-card h3 {
+  color: #f2fff6;
+}
+
+.operator-release-item.current-running-job-card .muted,
+.operator-release-item.current-running-job-card .operator-release-compact-facts span,
+.operator-release-item.current-running-job-card .operator-release-compact-facts strong {
+  color: #c1d1c9;
 }
 
 .release-summary-strip,
