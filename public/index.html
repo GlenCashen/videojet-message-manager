@@ -484,6 +484,53 @@
       </details>
     </section>
 
+    <section id="notificationPanel" class="panel message-config-panel hidden" aria-labelledby="notificationsTitle">
+      <details id="notificationDetails">
+        <summary>
+          <span>
+            <strong id="notificationsTitle">Email lists</strong>
+            <span class="muted">Manage notification recipients for release approvals and future printer events</span>
+          </span>
+          <button id="refreshNotificationListsButton" class="ghost" type="button">Refresh</button>
+        </summary>
+        <p id="notificationMessage" class="notice hidden" aria-live="polite"></p>
+        <div class="message-config-layout notification-config-layout">
+          <div id="notificationList" class="message-list" aria-label="Email notification lists"></div>
+          <form id="notificationForm" class="message-form hidden">
+            <input id="notificationListId" type="hidden">
+            <label for="notificationName">List name
+              <input id="notificationName" maxlength="80" autocomplete="off" required>
+            </label>
+            <label for="notificationEvent">Event
+              <select id="notificationEvent" required></select>
+            </label>
+            <label class="wide" for="notificationDescription">Description
+              <textarea id="notificationDescription" rows="3" maxlength="500"></textarea>
+            </label>
+            <label class="checkbox-line" for="notificationEnabled">
+              <input id="notificationEnabled" type="checkbox">
+              Enabled
+            </label>
+            <fieldset class="wide notification-recipient-section" id="notificationRoles">
+              <legend>Role recipients</legend>
+            </fieldset>
+            <fieldset class="wide notification-recipient-section" id="notificationUsers">
+              <legend>Individual recipients</legend>
+            </fieldset>
+            <label class="wide" for="notificationEmails">Additional email addresses
+              <textarea id="notificationEmails" rows="4" placeholder="shift-leads@example.com&#10;packaging@example.com"></textarea>
+              <small>One address per line. These can be shared mailbox or distribution list addresses.</small>
+            </label>
+            <div class="actions wide">
+              <button id="newNotificationListButton" class="secondary" type="button">New list</button>
+              <button id="deleteNotificationListButton" class="secondary danger-button" type="button">Delete list</button>
+              <button id="saveNotificationListButton" class="primary" type="submit">Save list</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
+
     <section id="logPanel" class="panel log-panel" aria-labelledby="logTitle">
       <details>
         <summary>

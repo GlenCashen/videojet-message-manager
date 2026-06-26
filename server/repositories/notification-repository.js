@@ -46,6 +46,11 @@ function getNotificationList(id, db = getDb()) {
   return listFromRow(db.prepare('SELECT * FROM notification_lists WHERE id = ?').get(id));
 }
 
+function deleteNotificationList(id, db = getDb()) {
+  const result = db.prepare('DELETE FROM notification_lists WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
 function upsertNotificationList(list, db = getDb()) {
   const now = new Date().toISOString();
   const id = list.id || crypto.randomUUID();
@@ -105,6 +110,7 @@ function insertNotificationDelivery(delivery, db = getDb()) {
 }
 
 export {
+  deleteNotificationList,
   getNotificationList,
   insertNotificationDelivery,
   listNotificationLists,

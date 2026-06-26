@@ -10,6 +10,7 @@ import { state } from './js/state.js';
 import { setLiveBadge } from './js/status-ui.js';
 import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { elements } from './js/elements.js';
+import { loadNotificationLists, setupNotificationLists } from './js/notification-lists.js';
 import { loadUsers, setupUserManagement } from './js/user-management.js';
 
 function canLoadLogs() {
@@ -23,6 +24,7 @@ function applyCapabilityLayout() {
   elements.devPanel?.classList.toggle('hidden', !hasCapability('accessDiagnostics'));
   elements.logPanel?.classList.toggle('hidden', !canLoadLogs());
   elements.userPanel?.classList.toggle('hidden', !hasCapability('manageUsers'));
+  elements.notificationPanel?.classList.toggle('hidden', !hasCapability('manageUsers'));
 }
 
 function editorSections() {
@@ -31,6 +33,7 @@ function editorSections() {
     { id: 'printers', label: 'Printers', href: '/editor#printers', visible: true, panel: document.querySelector('.dashboard-panel') },
     { id: 'messages', label: 'Messages', href: '/editor#messages', visible: hasCapability('editMessages'), panel: elements.messageConfigPanel },
     { id: 'users', label: 'Users', href: '/editor/users', visible: hasCapability('manageUsers'), panel: elements.userPanel },
+    { id: 'notifications', label: 'Notifications', href: '/editor/notifications', visible: hasCapability('manageUsers'), panel: elements.notificationPanel },
     { id: 'faults', label: 'Fault history', href: '/editor/faults', visible: hasCapability('viewFaultHistory'), panel: elements.faultHistoryPanel },
     { id: 'audit', label: 'Audit', href: '/editor#audit', visible: canLoadLogs(), panel: elements.logPanel },
     { id: 'diagnostics', label: 'Diagnostics', href: '/editor#diagnostics', visible: hasCapability('accessDiagnostics'), panel: elements.devPanel }
@@ -40,6 +43,7 @@ function editorSections() {
 function currentEditorSection() {
   const pathPart = window.location.pathname.split('/')[2];
   if (pathPart === 'users') return 'users';
+  if (pathPart === 'notifications') return 'notifications';
   if (pathPart === 'faults') return 'faults';
   const hash = window.location.hash.replace('#', '');
   if (hash) return hash;
@@ -217,6 +221,7 @@ async function start() {
     if (hasCapability('editMessages')) setupMessageConfig();
     if (hasCapability('accessDiagnostics')) setupSinglePrinterTools({ loadLogs: safeLoadLogs });
     if (hasCapability('manageUsers')) setupUserManagement();
+    if (hasCapability('manageUsers')) setupNotificationLists();
     setupEventStream();
 
     await Promise.all([
@@ -224,7 +229,8 @@ async function start() {
       loadPrinters().then(loadStatuses),
       safeLoadLogs(),
       hasCapability('editMessages') ? loadMessageConfig() : Promise.resolve(),
-      hasCapability('manageUsers') ? loadUsers() : Promise.resolve()
+      hasCapability('manageUsers') ? loadUsers() : Promise.resolve(),
+      hasCapability('manageUsers') ? loadNotificationLists() : Promise.resolve()
     ]);
     applyEditorSectionContext({ scroll: currentEditorSection() !== 'overview' });
   } catch (error) {
