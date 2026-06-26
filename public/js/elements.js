@@ -102,6 +102,7 @@ const elements = {
   userId: $('userId'),
   userUsername: $('userUsername'),
   userDisplayName: $('userDisplayName'),
+  userEmail: $('userEmail'),
   userPassword: $('userPassword'),
   userPrinterIds: $('userPrinterIds'),
   userRoles: $('userRoles'),

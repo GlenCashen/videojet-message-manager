@@ -66,6 +66,7 @@ import { withOperatorError } from './server/operator-error-messages.js';
 import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
+import { notifyReleasePendingReview } from './server/notifications/notification-service.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -1570,6 +1571,9 @@ app.post('/api/batch-releases/:id/submit', (req, res) => {
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     addLog({ action: 'batch-release-submitted', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, ok: true } });
     broadcast('batch-release-changed', { releaseId: release.id, status: release.status, action: 'submitted' });
+    notifyReleasePendingReview(release, user).catch((error) => {
+      console.error(`Release approval notification failed for ${release.id}: ${error.message}`);
+    });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });

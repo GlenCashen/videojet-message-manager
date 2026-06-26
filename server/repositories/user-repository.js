@@ -9,6 +9,7 @@ function rowToUser(row, db) {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
+    email: row.email || null,
     roles,
     printerIds,
     enabled: Boolean(row.enabled),
@@ -49,11 +50,12 @@ function upsertUserRecord(user, db = getDb()) {
   const now = new Date().toISOString();
   db.prepare(`
     INSERT INTO users (
-      id, username, display_name, password_hash, enabled, must_change_password, created_at, updated_at, last_login_at, disabled_at
-    ) VALUES (@id, @username, @displayName, @passwordHash, @enabled, @mustChangePassword, @createdAt, @updatedAt, @lastLoginAt, @disabledAt)
+      id, username, display_name, email, password_hash, enabled, must_change_password, created_at, updated_at, last_login_at, disabled_at
+    ) VALUES (@id, @username, @displayName, @email, @passwordHash, @enabled, @mustChangePassword, @createdAt, @updatedAt, @lastLoginAt, @disabledAt)
     ON CONFLICT(id) DO UPDATE SET
       username = excluded.username,
       display_name = excluded.display_name,
+      email = excluded.email,
       password_hash = excluded.password_hash,
       enabled = excluded.enabled,
       must_change_password = excluded.must_change_password,
@@ -64,6 +66,7 @@ function upsertUserRecord(user, db = getDb()) {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
+    email: user.email || null,
     passwordHash: user.passwordHash,
     enabled: user.enabled === false ? 0 : 1,
     mustChangePassword: user.mustChangePassword ? 1 : 0,

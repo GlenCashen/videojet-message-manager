@@ -21,8 +21,29 @@ Use [.env.example](../.env.example) as the local template.
 | `BOOTSTRAP_ADMIN_USERNAME` | none | Creates the first admin user only when no users exist. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | none | Initial password for the first admin. The user must change it on first login. |
 | `BOOTSTRAP_ADMIN_DISPLAY_NAME` | username | Optional display name for the bootstrap admin. |
+| `BOOTSTRAP_ADMIN_EMAIL` | none | Optional email address for the bootstrap admin, used by notification lists. |
 
 Remove bootstrap credentials from the service configuration after the first admin has signed in and changed the password.
+
+## Email Notifications
+
+Email notifications are routed through notification lists in SQLite. The first built-in list is `release-reviewers`, which targets enabled users with `packaging_leader`, `qa`, or `admin` roles when a release is submitted for independent review. The release creator is excluded from role-based approval notifications.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EMAIL_ENABLED` | `false` | Master switch for email notification delivery. Delivery attempts are still skipped/logged when disabled. |
+| `EMAIL_TRANSPORT` | `disabled` | `disabled`, `log`, or `smtp`. Use `log` to print notification payloads without sending mail. |
+| `EMAIL_FROM` | none | Sender address used for SMTP email. Required when `EMAIL_TRANSPORT=smtp`. |
+| `EMAIL_BASE_URL` | `APP_BASE_URL` or none | Base URL placed in notification links, for example `https://codes.example.com`. |
+| `SMTP_HOST` | none | SMTP server host. Required for SMTP transport. |
+| `SMTP_PORT` | `587`, or `465` when `SMTP_SECURE=true` | SMTP server port. |
+| `SMTP_SECURE` | `false` | Use implicit TLS, usually port 465. |
+| `SMTP_REQUIRE_TLS` | `false` | Require STARTTLS before authentication and delivery, usually for port 587. |
+| `SMTP_USER` | none | Optional SMTP username. |
+| `SMTP_PASS` | none | Optional SMTP password. |
+| `SMTP_TIMEOUT_MS` | `10000` | SMTP connection timeout. |
+
+To use release approval emails, add email addresses to reviewer user accounts in the Users screen, set `EMAIL_ENABLED=true`, configure the transport, and restart the server.
 
 ## Printer Defaults And Timing
 

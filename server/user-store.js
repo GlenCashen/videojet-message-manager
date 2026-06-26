@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_USERS_PATH = path.join(__dirname, '..', 'data', 'users.json');
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,40}$/i;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
 
 function usersPath(filePath) {
@@ -86,6 +87,13 @@ function validateRoles(roles) {
   return normalized;
 }
 
+function normalizeEmail(email) {
+  const value = String(email || '').trim().toLowerCase();
+  if (!value) return null;
+  if (value.length > 254 || !EMAIL_PATTERN.test(value)) throw new Error('Email address must be valid.');
+  return value;
+}
+
 function validatePrinterIds(printerIds = [], printers = []) {
   if (!Array.isArray(printerIds)) throw new Error('printerIds must be an array.');
   if (printerIds.includes('*')) throw new Error('Wildcard printer assignment is only available for development identity.');
@@ -108,11 +116,13 @@ function normalizeUserRecord(input, printers, existing = {}) {
   const printerIds = validatePrinterIds(input.printerIds ?? existing.printerIds ?? [], printers);
   const displayName = String(input.displayName ?? existing.displayName ?? username).trim();
   if (!displayName || displayName.length > 80) throw new Error('Display name must be 1-80 characters.');
+  const email = normalizeEmail(input.email ?? existing.email);
 
   return {
     id: existing.id || crypto.randomUUID(),
     username,
     displayName,
+    email,
     roles,
     printerIds,
     enabled: input.enabled ?? existing.enabled ?? true,
@@ -249,6 +259,7 @@ async function ensureBootstrapAdmin({ printers = [], enableDevIdentity = false, 
   const admin = normalizeUserRecord({
     username,
     displayName: process.env.BOOTSTRAP_ADMIN_DISPLAY_NAME || username,
+    email: process.env.BOOTSTRAP_ADMIN_EMAIL || null,
     roles: ['admin'],
     printerIds: printers.map((printer) => printer.id),
     enabled: true,
