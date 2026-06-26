@@ -226,6 +226,21 @@ test('manual message review replaces the edit form before audited confirmation',
   assert.match(css, /\.manual-message-form\s*{[\s\S]*grid-template-columns: minmax\(280px, \.78fr\) minmax\(360px, 1fr\)/);
 });
 
+test('messages editor uses a consistent admin workspace layout', async () => {
+  const editorCss = await readFile('public/editor.css', 'utf8');
+  const editorHtml = await readFile('public/index.html', 'utf8');
+
+  assert.ok(editorHtml.includes('id="messageConfigPanel" class="panel message-config-panel"'));
+  assert.ok(editorHtml.includes('id="messageList" class="message-list"'));
+  assert.ok(editorHtml.includes('id="messageForm" class="message-form hidden"'));
+  assert.match(editorCss, /Messages editor: structured admin workspace/);
+  assert.match(editorCss, /\.editor-app \.message-config-layout\s*{[\s\S]*grid-template-columns: minmax\(300px, 360px\) minmax\(0, 1fr\)/);
+  assert.match(editorCss, /\.editor-app \.message-form\s*{[\s\S]*grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
+  assert.match(editorCss, /\.editor-app \.message-form > label\s*{[\s\S]*grid-column: span 6/);
+  assert.match(editorCss, /\.editor-app \.message-definition-section\s*{[\s\S]*grid-column: 1 \/ -1/);
+  assert.match(editorCss, /\.editor-app \.printer-user-field-form\s*{[\s\S]*grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
+});
+
 test('production releases require an independent review and expose no direct operator send', async () => {
   const editorHtml = await readFile('public/index.html', 'utf8');
   const productionHtml = await readFile('public/production-releases.html', 'utf8');

@@ -979,6 +979,386 @@
   letter-spacing: .045em;
 }
 
+/* Messages editor: structured admin workspace with one consistent form rhythm. */
+.editor-app #messageConfigPanel {
+  overflow: hidden;
+  padding: 0;
+}
+
+.editor-app #messageConfigPanel > details > summary {
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  padding: 22px 24px;
+}
+
+.editor-app #messageConfigPanel > details[open] summary {
+  margin-bottom: 0;
+}
+
+.editor-app #messageConfigPanel > details > summary strong {
+  color: #101828;
+  font-size: 1.08rem;
+}
+
+.editor-app #messageConfigPanel > details > summary .muted {
+  color: var(--muted);
+  font-size: .86rem;
+}
+
+.editor-app #messageConfigPanel > details > summary > .actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.editor-app #messageConfigMessage {
+  margin: 16px 24px 0;
+}
+
+.editor-app .printer-user-fields-section {
+  background: #ffffff;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  padding: 20px 24px 22px;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading {
+  align-items: end;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, auto);
+  margin: 0 0 14px;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading h3,
+.editor-app .printer-user-fields-section > .message-definition-heading p {
+  margin: 0;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading h3 {
+  color: #101828;
+  font-size: 1.05rem;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading > .actions {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 260px) auto;
+}
+
+.editor-app .printer-user-fields-section > .message-definition-heading label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.editor-app .printer-user-field-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.editor-app .printer-user-field-card {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(31, 49, 74, .04);
+  min-width: 0;
+  padding: 13px 14px;
+}
+
+.editor-app .printer-user-field-card > div:first-child {
+  min-width: 0;
+}
+
+.editor-app .printer-user-field-card strong {
+  color: #101828;
+}
+
+.editor-app .printer-user-field-card span {
+  color: #667085;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-app .printer-user-field-card .actions {
+  flex-shrink: 0;
+}
+
+.editor-app .printer-user-field-card .actions button {
+  min-width: 82px;
+}
+
+.editor-app .printer-user-field-form {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.editor-app .printer-user-field-form > label {
+  display: grid;
+  grid-column: span 3;
+  min-width: 0;
+}
+
+.editor-app .printer-user-field-form > .checkbox-line {
+  align-self: center;
+  grid-column: span 2;
+}
+
+.editor-app .printer-user-field-form > .actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+
+.editor-app .message-config-layout {
+  background: #f7fafc;
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  margin: 0;
+}
+
+.editor-app .message-list {
+  align-content: start;
+  background: #ffffff;
+  border-right: 1px solid var(--line);
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 248px);
+  min-width: 0;
+  overflow: auto;
+  padding: 20px 18px;
+}
+
+.editor-app .message-printer-group {
+  border: 0;
+  display: grid;
+  gap: 8px;
+  padding: 0;
+}
+
+.editor-app .message-printer-group + .message-printer-group {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.editor-app .message-printer-group-heading {
+  color: #344054;
+  gap: 10px;
+}
+
+.editor-app .message-printer-group-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-app .message-printer-group-heading span {
+  background: #eef3f8;
+  color: #56657a;
+  font-weight: 850;
+}
+
+.editor-app .message-list-item {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 9px;
+  box-shadow: none;
+  min-height: 48px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.editor-app .message-list-item:hover {
+  background: #ffffff;
+  border-color: #b9c7d9;
+}
+
+.editor-app .message-list-item.active {
+  background: #eef5ff;
+  border-color: #8ab5ff;
+  box-shadow: inset 4px 0 0 #2970ff;
+}
+
+.editor-app .message-list-item strong,
+.editor-app .message-list-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-app .message-list-item span {
+  color: #667085;
+}
+
+.editor-app .message-form {
+  align-items: start;
+  background: #ffffff;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  min-width: 0;
+  padding: 20px 24px 24px;
+}
+
+.editor-app .message-form > label {
+  display: grid;
+  grid-column: span 6;
+  min-width: 0;
+}
+
+.editor-app .message-form > label > small {
+  color: #667085;
+  font-size: .74rem;
+  font-weight: 550;
+  line-height: 1.35;
+}
+
+.editor-app .message-form > .checkbox-line {
+  align-items: center;
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: inline-flex;
+  gap: 10px;
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+
+.editor-app .message-definition-section {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  grid-column: 1 / -1;
+  padding: 18px;
+}
+
+.editor-app .message-definition-heading {
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.editor-app .message-definition-heading h3 {
+  color: #101828;
+  font-size: 1.05rem;
+}
+
+.editor-app .message-definition-heading p {
+  color: var(--muted);
+}
+
+.editor-app .message-field-choices {
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.editor-app .message-field-choice {
+  background: #ffffff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  min-height: 58px;
+}
+
+.editor-app .message-field-choice span {
+  min-width: 0;
+}
+
+.editor-app .message-field-choice small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-app .message-format-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.editor-app .message-format-grid label,
+.editor-app .message-line-count {
+  display: grid;
+  min-width: 0;
+}
+
+.editor-app .message-line-count {
+  align-items: end;
+  grid-template-columns: auto minmax(70px, 92px);
+}
+
+.editor-app .message-token-palette {
+  background: #ffffff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  padding: 10px;
+}
+
+.editor-app .message-token {
+  background: #eaf2ff;
+  border-color: #b5ccff;
+  color: #1849a9;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.editor-app .message-line-builder {
+  gap: 10px;
+}
+
+.editor-app .message-line-row {
+  align-items: center;
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.editor-app .message-line-row > span {
+  color: #667085;
+  font-weight: 850;
+}
+
+.editor-app .message-live-preview {
+  background: #101828;
+  border: 1px solid #1f2a3a;
+  border-radius: 10px;
+  margin-top: 14px;
+}
+
+.editor-app .message-live-preview pre {
+  font-size: 1.05rem;
+  min-height: 76px;
+}
+
+.editor-app .message-master-usage {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  grid-column: 1 / -1;
+}
+
+.editor-app .message-form > .actions.wide {
+  border-top: 1px solid var(--line);
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 18px;
+}
+
 @media (max-width: 900px) {
   .editor-app .shell {
     padding-top: 0;
@@ -996,6 +1376,28 @@
   .editor-app #topNavigation {
     border-radius: 0;
     box-shadow: 0 8px 20px rgba(16, 42, 67, .14);
+  }
+
+  .editor-app .printer-user-fields-section > .message-definition-heading,
+  .editor-app .message-config-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-app .message-list {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+    max-height: none;
+  }
+
+  .editor-app .printer-user-field-form > label,
+  .editor-app .printer-user-field-form > .checkbox-line,
+  .editor-app .message-form > label,
+  .editor-app .message-format-grid {
+    grid-column: 1 / -1;
+  }
+
+  .editor-app .message-format-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1032,5 +1434,23 @@
 
   .editor-app .master-register-list {
     grid-template-columns: 1fr;
+  }
+
+  .editor-app #messageConfigPanel > details > summary,
+  .editor-app .printer-user-fields-section > .message-definition-heading > .actions,
+  .editor-app .message-form > .actions.wide {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .editor-app .printer-user-fields-section > .message-definition-heading > .actions {
+    display: flex;
+  }
+
+  .editor-app .printer-user-fields-section,
+  .editor-app .message-form,
+  .editor-app .message-list {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 }
