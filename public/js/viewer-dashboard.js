@@ -2,6 +2,7 @@ import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { subscribeToPrinterEvents } from './events.js';
 import { printerHref, renderNavigation } from './navigation.js';
+import { expectedOutputText as renderedExpectedOutputText } from './release-preview.js';
 import { currentSession, loadSession } from './session.js';
 import {
   faultCountLabel,
@@ -44,7 +45,7 @@ function communicationText(status) {
 }
 
 function expectedOutputText(status) {
-  return status?.expectedOutput?.rendered || 'No expected output recorded';
+  return renderedExpectedOutputText(status?.expectedOutput, status?.printerId || status?.id);
 }
 
 function cardClass(status) {
@@ -283,6 +284,6 @@ subscribeToPrinterEvents({
 setInterval(() => {
   if (Date.now() - state.lastServerEventAt > 45000) markDisconnected();
   render();
-}, 5000);
+}, 1000);
 
 loadInitialData();

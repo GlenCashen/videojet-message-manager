@@ -72,7 +72,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
       ]),
       spotlight ? el('div', { className: 'release-card-preview' }, [
         el('span', { text: expected.provisional ? 'Planned expected print' : 'Expected print' }),
-        el('pre', { text: expected.rendered })
+        el('pre', { text: expected.rendered, dataset: { releaseExpectedPreview: release.id, printerId: target.printerId } })
       ]) : null,
       mismatch ? el('p', { className: 'operator-release-error', text: `MESSAGE MISMATCH — STOP PRODUCTION. Expected ${mismatch.expected}, printer reports ${mismatch.actual}. Resend this release and reverify the first print before restarting.` }) : null,
       target.error ? el('p', { className: 'operator-release-error', text: target.error }) : null,
@@ -181,7 +181,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
       fact('Physical line', printer?.location || 'Not configured'), fact('Printer', printer?.name || target.printerId),
       fact('Planned production', new Date(release.plannedProductionAt).toLocaleString()), fact('Approved by', release.reviewedByUsername)
     );
-    elements.preview.textContent = releaseExpectedOutput(release, target.printerId).rendered;
+    renderDialogExpectedPrint();
     elements.confirmCheck.checked = false;
     elements.failureReason.value = '';
     hideProgress();
@@ -358,6 +358,22 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
     state.selected = null;
   }
 
+  function renderDialogExpectedPrint() {
+    if (!state.selected) return;
+    const { release, target } = state.selected;
+    elements.preview.textContent = releaseExpectedOutput(release, target.printerId).rendered;
+  }
+
+  function refreshExpectedPrints() {
+    if (document.hidden) return;
+    if (elements.dialog.open) renderDialogExpectedPrint();
+    for (const preview of document.querySelectorAll('[data-release-expected-preview][data-printer-id]')) {
+      const release = state.releases.find((item) => item.id === preview.dataset.releaseExpectedPreview);
+      const target = release?.executionTargets.find((item) => item.printerId === preview.dataset.printerId);
+      if (release && target) preview.textContent = releaseExpectedOutput(release, target.printerId).rendered;
+    }
+  }
+
   async function load({ refreshOpenDialog = false } = {}) {
     if (state.loading || state.busy || document.hidden || (elements.dialog.open && !refreshOpenDialog)) return;
     state.loading = true;
@@ -417,6 +433,7 @@ function createOperatorReleaseQueue({ elements, getPrinter, getStatus = () => nu
   elements.dialog.addEventListener('cancel', (event) => { if (state.busy) event.preventDefault(); });
 
   window.setInterval(load, 10000);
+  window.setInterval(refreshExpectedPrints, 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 
   return { load, refresh: () => load({ refreshOpenDialog: true }), rerender: rerenderCurrent };

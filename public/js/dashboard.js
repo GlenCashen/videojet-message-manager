@@ -2,6 +2,7 @@ import { apiJson } from './api.js';
 import { clear, el, formatDate, normalizeError, setNotice } from './dom.js';
 import { elements } from './elements.js';
 import { printerHref } from './navigation.js';
+import { expectedOutputText } from './release-preview.js';
 import { canOperatePrinter, hasCapability } from './session.js';
 import { state } from './state.js';
 import {
@@ -118,11 +119,6 @@ function metric(key, label, value) {
   ]);
 }
 
-function expectedOutputText(expectedOutput) {
-  if (!expectedOutput?.rendered) return 'No expected output recorded';
-  return expectedOutput.rendered;
-}
-
 function faultHeading(coder) {
   return coder.state === 'offline' ? 'Last known active faults' : 'Active faults';
 }
@@ -149,7 +145,7 @@ function cardValues(coder) {
     name: printer.name,
     location: printer.location || 'No location set',
     selectedMessage: coder.messageVerification === 'unsupported' ? 'Readback unavailable' : coder.selectedMessage,
-    expectedOutput: expectedOutputText(coder.expectedOutput),
+    expectedOutput: expectedOutputText(coder.expectedOutput, printer.id),
     expectedOutputLabel: coder.expectedOutput?.source === 'last-known' ? 'Last expected output' : 'Expected print',
     faultHeading: faultHeading(coder),
     alarmHeading: alarmHeading(coder),
@@ -514,7 +510,7 @@ function setupDashboard(callbacks) {
   });
 
   elements.checkAllButton.addEventListener('click', checkAllCoders);
-  setInterval(renderDashboard, 10000);
+  setInterval(renderDashboard, 1000);
 }
 
 export {

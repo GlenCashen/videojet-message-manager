@@ -147,7 +147,7 @@
 .editor-app .message-line-row input { font-family: Consolas, monospace; }
 .editor-app .message-live-preview { background: #101828; border-radius: 8px; color: #f2f4f7; margin-top: 14px; padding: 14px 16px; }
 .editor-app .message-live-preview > span { color: #98a2b3; font-size: .72rem; font-weight: 700; text-transform: uppercase; }
-.editor-app .message-live-preview pre { color: #fff; font-family: Consolas, monospace; font-size: 1rem; line-height: 1.6; margin: 8px 0 0; min-height: 52px; white-space: pre-wrap; }
+.editor-app .message-live-preview pre { color: #fff; font-family: Consolas, monospace; font-size: 1rem; line-height: 1.6; margin: 8px 0 0; min-height: 52px; overflow-x: auto; white-space: pre; }
 .editor-app .message-master-usage { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 8px; padding: 0; }
 .editor-app .message-master-usage > summary { align-items: center; cursor: pointer; display: flex; font-weight: 750; gap: 10px; justify-content: space-between; padding: 13px 15px; }
 .editor-app .message-master-usage-list { border-top: 1px solid #dbe2ea; display: grid; gap: 8px; padding: 12px; }
@@ -246,13 +246,13 @@
 .editor-app .master-printer-card .master-message-summary { align-self: auto; min-height: 0; }
 .editor-app .master-config-preview { background: #101828; border-radius: 7px; color: #f2f4f7; padding: 11px 12px; }
 .editor-app .master-config-preview span { color: #98a2b3; font-size: .68rem; font-weight: 750; text-transform: uppercase; }
-.editor-app .master-config-preview pre { color: #fff; font-family: Consolas, monospace; line-height: 1.5; margin: 7px 0 0; min-height: 24px; white-space: pre-wrap; }
+.editor-app .master-config-preview pre { color: #fff; font-family: Consolas, monospace; line-height: 1.5; margin: 7px 0 0; min-height: 24px; overflow-x: auto; white-space: pre; }
 .editor-app .review-printer-requirements { border-top: 1px solid #dbe2ea; display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; }
 .editor-app .review-printer-requirements h3 { font-size: .9rem; margin: 0; }
 .editor-app .review-printer-requirement { background: #f8fafc; border: 1px solid #dbe2ea; border-radius: 7px; display: grid; gap: 8px; padding: 12px; }
 .editor-app .review-printer-requirement > div { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
 .editor-app .review-printer-requirement span, .editor-app .review-printer-requirement small { color: #667085; font-size: .74rem; }
-.editor-app .review-printer-requirement pre { background: #fff; border: 1px solid #e4e7ec; border-radius: 5px; color: #172033; font-family: Consolas, monospace; margin: 0; padding: 9px; white-space: pre-wrap; }
+.editor-app .review-printer-requirement pre { background: #fff; border: 1px solid #e4e7ec; border-radius: 5px; color: #172033; font-family: Consolas, monospace; margin: 0; overflow-x: auto; padding: 9px; white-space: pre; }
 .editor-app .no-message-fields {
   background: #f8fafc;
   border: 1px dashed #cbd5e1;

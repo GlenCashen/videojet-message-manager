@@ -418,7 +418,7 @@ h3 { margin: 0; font-size: 1.15rem; }
 .operator-release-facts span { color: var(--muted); font-size: .72rem; }
 .operator-release-facts strong { font-size: .9rem; }
 .operator-release-preview { margin: 20px 0; }
-.operator-release-preview pre { background: #f7f9fc; border: 1px solid #c9d2df; border-radius: 7px; color: #172033; min-height: 86px; padding: 16px; white-space: pre-wrap; }
+.operator-release-preview pre { background: #f7f9fc; border: 1px solid #c9d2df; border-radius: 7px; color: #172033; min-height: 86px; overflow-x: auto; padding: 16px; white-space: pre; }
 .operator-release-dialog-shell .release-attestation { color: #172033; }
 .operator-release-dialog-actions { border-top: 1px solid var(--line); justify-content: flex-end; margin-top: 20px; padding-top: 18px; }
 .completed-release-dialog-shell { max-width: 980px; }
@@ -536,8 +536,8 @@ h3 { margin: 0; font-size: 1.15rem; }
   min-height: 120px;
   margin: 0;
   padding: 16px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-3);
@@ -628,8 +628,8 @@ h3 { margin: 0; font-size: 1.15rem; }
 
 .viewer-expected pre {
   margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
   font: 850 .8rem/1.28 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
@@ -851,8 +851,8 @@ h3 { margin: 0; font-size: 1.15rem; }
 .status-metric pre,
 .expected-output-panel pre {
   margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
   color: var(--text);
   font: 850 .92rem/1.35 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
@@ -1169,7 +1169,8 @@ summary:focus-visible {
 }
 
 #expectedPreview {
-  white-space: pre-line;
+  overflow-x: auto;
+  white-space: pre;
   color: var(--text);
   font-weight: 800;
 }
@@ -1310,9 +1311,9 @@ summary:focus-visible {
   border: 1px solid var(--line);
   border-radius: 8px;
   margin: 12px 0 0;
-  overflow-wrap: anywhere;
+  overflow-x: auto;
   padding: 12px;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 .message-job-target-list { margin-top: 14px; }
@@ -1388,8 +1389,8 @@ summary:focus-visible {
 .review-preview pre {
   margin: 0;
   padding: 14px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
   border: 1px solid rgba(81, 97, 116, .76);
   border-radius: 8px;
   background: #091018;
@@ -1743,9 +1744,9 @@ summary:focus-visible {
   font: 800 .85rem/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
   margin: 0;
   min-height: 62px;
-  overflow-wrap: anywhere;
+  overflow-x: auto;
   padding: 11px;
-  white-space: pre-wrap;
+  white-space: pre;
 }
 
 .current-expected-output { border-top: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: minmax(180px, .45fr) minmax(280px, 1fr); margin-top: 18px; padding-top: 16px; }
@@ -1894,8 +1895,8 @@ summary:focus-visible {
   border-radius: 8px;
   background: var(--panel-3);
   color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  overflow-x: auto;
   font: 850 .98rem/1.4 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 

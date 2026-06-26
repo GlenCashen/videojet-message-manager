@@ -106,6 +106,14 @@ function expectedOutputForRelease(release, version, runNumber, db = getDb()) {
     byPrinter[configuration.printerId] = {
       printerId: configuration.printerId,
       messageId: configuration.messageId,
+      plannedProductionAt: release.plannedProductionAt,
+      runCode,
+      configuration: {
+        fieldMappings: configuration.fieldMappings,
+        previewLines: configuration.previewLines,
+        dateRule: configuration.dateRule,
+        timeRule: configuration.timeRule
+      },
       fields,
       lines,
       rendered: lines.join('\n')

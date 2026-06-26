@@ -1,5 +1,6 @@
 import { apiJson, postJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
+import { messageExpectedOutput } from './release-preview.js';
 
 const PREVIEW_DEBOUNCE_MS = 250;
 
@@ -148,6 +149,15 @@ function createOperatorMessageDialog({ elements, getStatus, onStatus }) {
     previewTimer = window.setTimeout(refreshPreview, PREVIEW_DEBOUNCE_MS);
   }
 
+  function refreshLivePreviewTime() {
+    if (!elements.dialog.open || document.hidden || !latestPreview) return;
+    const message = selectedMessage();
+    const validation = validate();
+    if (!message || !validation.valid) return;
+    latestPreview = { ...latestPreview, ...messageExpectedOutput(message, validation.fields) };
+    elements.preview.textContent = latestPreview.rendered;
+  }
+
   function addSummaryLine(label, value) {
     elements.reviewSummary.appendChild(el('div', { className: 'review-line' }, [
       el('span', { text: label }),
@@ -268,6 +278,7 @@ function createOperatorMessageDialog({ elements, getStatus, onStatus }) {
   elements.dialog.addEventListener('cancel', (event) => {
     if (busy) event.preventDefault();
   });
+  window.setInterval(refreshLivePreviewTime, 1000);
 
   return { open };
 }

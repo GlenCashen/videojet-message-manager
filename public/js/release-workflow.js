@@ -1,5 +1,6 @@
 import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
+import { previewValues as releasePreviewValues, renderConfiguredLines } from './release-preview.js';
 import { currentSession, hasCapability } from './session.js';
 
 const nodes = {
@@ -79,7 +80,7 @@ const productionTabs = {
 const state = {
   masters: [], releases: [], printers: [], messages: [], review: null, reviewHeartbeat: null,
   presenceSweep: null, editingMasterId: null, editingReleaseId: null, openAuditId: null, audits: new Map(),
-  releasePage: { offset: 0, limit: 25, total: 0, counts: {} }, openReleaseIds: new Set(), searchTimer: null
+  releasePage: { offset: 0, limit: 25, total: 0, counts: {} }, openReleaseIds: new Set(), searchTimer: null, previewClock: null
 };
 
 function showProductionTab(tab) {
@@ -156,43 +157,6 @@ function defaultSource(field, index) {
   if (text.includes('batch')) return 'brew_sheet_product';
   if (text.includes('brew')) return 'brew_number';
   return FIELD_SOURCES[Math.min(index + 1, FIELD_SOURCES.length - 1)][0];
-}
-
-function renderConfiguredLines(configuration, sourceValues) {
-  const values = { bestBeforeDate: sourceValues.bestBeforeDate, currentTime: sourceValues.productionTime, productionTime: sourceValues.productionTime };
-  for (const mapping of configuration.fieldMappings || []) values[mapping.fieldKey] = sourceValues[mapping.source] || '';
-  return (configuration.previewLines || []).map((line) => line.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (_match, key) => values[key] ?? `[${key}]`));
-}
-
-function pad2(value) { return String(value).padStart(2, '0'); }
-
-function releasePreviewValues(configuration, release) {
-  const production = new Date(release.plannedProductionAt);
-  const bestBefore = new Date(production.valueOf());
-  if (configuration.dateRule?.type === 'offset-days') {
-    bestBefore.setUTCDate(bestBefore.getUTCDate() + Number(configuration.dateRule?.days ?? configuration.dateRule?.months ?? 0));
-  } else {
-    const day = bestBefore.getUTCDate();
-    bestBefore.setUTCDate(1);
-    bestBefore.setUTCMonth(bestBefore.getUTCMonth() + Number(configuration.dateRule?.months || 0));
-    bestBefore.setUTCDate(Math.min(day, new Date(Date.UTC(bestBefore.getUTCFullYear(), bestBefore.getUTCMonth() + 1, 0)).getUTCDate()));
-  }
-  const dateValues = { DD: pad2(bestBefore.getUTCDate()), MM: pad2(bestBefore.getUTCMonth() + 1), YYYY: String(bestBefore.getUTCFullYear()), YY: String(bestBefore.getUTCFullYear()).slice(-2) };
-  const bestBeforeDate = (configuration.dateRule?.format || 'DD/MM/YYYY').replace(/YYYY|YY|DD|MM/g, (token) => dateValues[token]);
-  const hour = production.getUTCHours();
-  const timeFormat = configuration.timeRule?.format || 'HH:mm:ss';
-  const productionTime = timeFormat === 'HH:mm'
-    ? `${pad2(hour)}:${pad2(production.getUTCMinutes())}`
-    : timeFormat === 'hh:mm A'
-      ? `${pad2(hour % 12 || 12)}:${pad2(production.getUTCMinutes())} ${hour >= 12 ? 'PM' : 'AM'}`
-      : `${pad2(hour)}:${pad2(production.getUTCMinutes())}:${pad2(production.getUTCSeconds())}`;
-  return {
-    run_code: release.runCode || '[assigned when sent]',
-    brew_sheet_product: release.brewSheetProduct,
-    brew_number: release.brewNumber || '',
-    bestBeforeDate,
-    productionTime
-  };
 }
 
 function dateOffsetSummary(rule = {}) {
@@ -389,6 +353,13 @@ function renderReleaseExpectedMessages() {
     ]),
     ...enabledMasterConfigurations(master).map((configuration) => printerRequirement(configuration, release))
   );
+}
+
+function refreshVisibleExpectedMessages() {
+  if (document.hidden) return;
+  if (!nodes.releaseSection || nodes.releaseSection.classList.contains('hidden')) return;
+  if (nodes.formWorkspace?.classList.contains('hidden')) return;
+  renderReleaseExpectedMessages();
 }
 
 function statusTone(status) {
@@ -1010,6 +981,8 @@ function setupReleaseWorkflow() {
     }
     if (changed) renderReleases();
   }, 5000);
+  window.clearInterval(state.previewClock);
+  state.previewClock = window.setInterval(refreshVisibleExpectedMessages, 1000);
   setDefaultProductionTime();
   showProductionTab(window.location.hash === '#masters' ? 'masters' : 'releases');
 }

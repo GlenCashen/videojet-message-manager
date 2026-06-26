@@ -1,6 +1,7 @@
 import { apiJson } from './api.js';
 import { clear, el, normalizeError, setNotice } from './dom.js';
 import { elements } from './elements.js';
+import { messageExpectedOutput } from './release-preview.js';
 
 let messages = [];
 let printers = [];
@@ -13,6 +14,7 @@ let displayNameTouched = false;
 let activeLine = null;
 let editingUserFieldId = null;
 let userFieldNameTouched = false;
+let livePreviewClock = null;
 
 function slug(value, fallback = '') {
   return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || fallback;
@@ -192,34 +194,24 @@ function dateOffsetDays(rule) {
   return Number(rule?.months ?? 0) * 30;
 }
 
-function addDays(date, days) {
-  const result = new Date(date.valueOf());
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function pad2(value) { return String(value).padStart(2, '0'); }
-
-function sampleDate() {
-  const date = addDays(new Date(), Number(elements.messageDateMonths.value || 0));
-  const values = { DD: pad2(date.getDate()), MM: pad2(date.getMonth() + 1), YYYY: String(date.getFullYear()), YY: String(date.getFullYear()).slice(-2) };
-  return elements.messageDateFormat.value.replace(/YYYY|YY|DD|MM/g, (token) => values[token]);
-}
-
-function sampleTime() {
-  const date = new Date();
-  if (elements.messageTimeFormat.value === 'HH:mm') return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-  if (elements.messageTimeFormat.value === 'hh:mm A') return `${pad2(date.getHours() % 12 || 12)}:${pad2(date.getMinutes())} ${date.getHours() >= 12 ? 'PM' : 'AM'}`;
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
-}
-
 function renderLivePreview() {
-  const values = Object.fromEntries(selectedFields().map((field) => [field.key, `[${field.label}]`]));
-  values.bestBeforeDate = sampleDate();
-  values.currentTime = sampleTime();
-  values.productionTime = values.currentTime;
-  const rendered = lineValues().map((line) => line.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (_match, key) => values[key] ?? `[UNKNOWN: ${key}]`));
-  elements.messageDefinitionPreview.textContent = rendered.some(Boolean) ? rendered.join('\n') : 'Build the expected print lines above.';
+  const fields = selectedFields();
+  const values = Object.fromEntries(fields.map((field) => [field.key, `[${field.label}]`]));
+  const previewLines = lineValues();
+  if (!previewLines.some(Boolean)) {
+    elements.messageDefinitionPreview.textContent = 'Build the expected print lines above.';
+    return;
+  }
+  const preview = messageExpectedOutput({
+    id: elements.messageConfigId.value || 'draft-message',
+    displayName: elements.messageDisplayName.value || 'Draft message',
+    printerMessageName: elements.messagePrinterName.value || '',
+    fields,
+    previewLines,
+    dateRule: { type: 'offset-days', days: Number(elements.messageDateMonths.value || 0), format: elements.messageDateFormat.value || 'DD/MM/YYYY' },
+    timeRule: { format: elements.messageTimeFormat.value || 'HH:mm:ss' }
+  }, values);
+  elements.messageDefinitionPreview.textContent = preview.rendered;
 }
 
 function suggestedDisplayName() {
@@ -540,6 +532,11 @@ function setupMessageConfig() {
     if (edit) editUserField(userFields.find((field) => field.id === edit.dataset.editUserField));
     if (remove) deleteUserField(remove.dataset.deleteUserField);
   });
+  window.clearInterval(livePreviewClock);
+  livePreviewClock = window.setInterval(() => {
+    if (document.hidden || elements.messageForm.classList.contains('hidden')) return;
+    renderLivePreview();
+  }, 1000);
 }
 
 export { loadMessageConfig, setupMessageConfig };

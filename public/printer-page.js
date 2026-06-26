@@ -3,6 +3,7 @@ import { clear, el, normalizeError, setNotice } from './js/dom.js';
 import { subscribeToPrinterEvents } from './js/events.js';
 import { printerHref, renderNavigation } from './js/navigation.js';
 import { createOperatorReleaseQueue } from './js/operator-release-queue.js';
+import { expectedOutputText, messageExpectedOutput } from './js/release-preview.js';
 import { canOperatePrinter, currentSession, loadSession } from './js/session.js';
 import {
   activeFaults,
@@ -308,6 +309,17 @@ function schedulePreview() {
   previewTimer = window.setTimeout(refreshPreviewNow, PREVIEW_DEBOUNCE_MS);
 }
 
+function refreshManualPreviewTime() {
+  if (!elements.manualDialog.open || document.hidden || !latestPreview) return;
+  const definition = selectedMessageDefinition();
+  const validation = validateFieldValues();
+  if (!definition || !validation.valid) return;
+  latestPreview = { ...latestPreview, ...messageExpectedOutput(definition, validation.fields) };
+  elements.expectedPreview.textContent = latestPreview.rendered;
+  const reviewPreview = elements.reviewContent.querySelector('.review-preview pre');
+  if (reviewPreview) reviewPreview.textContent = latestPreview.rendered;
+}
+
 function operatorLiveNote(status, mismatch) {
   if (!status?.lastSuccessfulAt) return 'Waiting for the first successful printer update.';
   if (!serverConnected) return 'Live data lost. Showing the last successful printer state.';
@@ -406,7 +418,7 @@ function renderExpectedOutput(expectedOutput) {
     return;
   }
 
-  elements.expectedOutput.textContent = expectedOutput.rendered;
+  elements.expectedOutput.textContent = expectedOutputText(expectedOutput, printerId);
   elements.expectedSource.textContent = expectedOutput.source === 'last-known'
     ? 'Last expected output'
     : 'Physical print check: Required';
@@ -896,4 +908,5 @@ setInterval(() => {
   const age = Date.now() - lastServerEventAt;
   if (age > 45000) markServerDisconnected();
 }, 5000);
-setInterval(updateOperatorShell, 10000);
+setInterval(refreshManualPreviewTime, 1000);
+setInterval(updateOperatorShell, 1000);
