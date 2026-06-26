@@ -4,17 +4,17 @@ import {
   listNotificationLists
 } from '../repositories/notification-repository.js';
 import { listUserRecords } from '../repositories/user-repository.js';
-
-const RELEASE_PENDING_REVIEW = 'release.pending_review';
+import {
+  PRINTER_FAULT,
+  PRINTER_MESSAGE_MISMATCH,
+  PRINTER_OFFLINE,
+  RELEASE_PENDING_REVIEW,
+  buildNotificationMessage,
+  releasePendingReviewEmail
+} from './templates/index.js';
 
 function unique(values) {
   return [...new Set(values.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))];
-}
-
-function releaseUrl(baseUrl, release) {
-  const root = String(baseUrl || '').replace(/\/$/, '');
-  if (!root) return '/production-releases';
-  return `${root}/production-releases?release=${encodeURIComponent(release.id)}`;
 }
 
 function recipientExcluded(user, payload) {
@@ -43,31 +43,6 @@ function resolveRecipients(list, payload, db) {
     .filter((email) => !excludedEmails.has(email));
 }
 
-function buildReleasePendingReviewMessage(payload, config) {
-  const { release, actor } = payload;
-  const product = release.brewSheetProduct || release.id;
-  const planned = release.plannedProductionAt ? new Date(release.plannedProductionAt).toLocaleString() : 'Not set';
-  const url = releaseUrl(config.baseUrl, release);
-  const subject = `Release needs approval: ${product}`;
-  const text = [
-    `A production coding release needs independent approval.`,
-    '',
-    `Product: ${product}`,
-    `Brew: ${release.brewNumber || '-'}`,
-    `Planned production: ${planned}`,
-    `Submitted by: ${actor?.displayName || actor?.username || release.createdByUsername || '-'}`,
-    `Release: ${url}`,
-    '',
-    'Open the Production Coding Releases page to review, approve, reject or return it for correction.'
-  ].join('\n');
-  return { subject, text };
-}
-
-function buildMessage(eventKey, payload, config) {
-  if (eventKey === RELEASE_PENDING_REVIEW) return buildReleasePendingReviewMessage(payload, config);
-  throw new Error(`Unsupported notification event: ${eventKey}`);
-}
-
 function createNotificationService({
   config = emailConfigFromEnv(),
   transport = createEmailTransport(config),
@@ -75,7 +50,7 @@ function createNotificationService({
 } = {}) {
   async function notify(eventKey, payload = {}) {
     const lists = listNotificationLists({ eventKey }, db);
-    const baseMessage = buildMessage(eventKey, payload, config);
+    const baseMessage = buildNotificationMessage(eventKey, payload, config);
     const results = [];
 
     for (const list of lists) {
@@ -99,7 +74,8 @@ function createNotificationService({
         const transportResult = await transport.send({
           to: recipients,
           subject: baseMessage.subject,
-          text: baseMessage.text
+          text: baseMessage.text,
+          html: baseMessage.html
         });
         const skipped = transportResult?.skipped;
         insertNotificationDelivery({
@@ -127,9 +103,13 @@ function notifyReleasePendingReview(release, actor) {
 }
 
 export {
+  PRINTER_FAULT,
+  PRINTER_MESSAGE_MISMATCH,
+  PRINTER_OFFLINE,
   RELEASE_PENDING_REVIEW,
-  buildReleasePendingReviewMessage,
+  buildNotificationMessage,
   createNotificationService,
+  releasePendingReviewEmail as buildReleasePendingReviewMessage,
   notifyReleasePendingReview,
   resolveRecipients
 };

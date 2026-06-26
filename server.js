@@ -73,6 +73,7 @@ import { createReleaseAuditService } from './server/services/release-audit-servi
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
 import { notifyReleasePendingReview } from './server/notifications/notification-service.js';
+import { supportedNotificationEvents } from './server/notifications/templates/index.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -1011,12 +1012,7 @@ app.get('/api/audit', (req, res) => {
   res.json(listAuditEvents(req.query));
 });
 
-const NOTIFICATION_EVENTS = new Set([
-  'release.pending_review',
-  'printer.message_mismatch',
-  'printer.offline',
-  'printer.fault'
-]);
+const NOTIFICATION_EVENTS = new Set(supportedNotificationEvents());
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeNotificationEmails(value) {

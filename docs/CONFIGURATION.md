@@ -45,6 +45,8 @@ Email notifications are routed through notification lists in SQLite. The first b
 
 To use release approval emails, add email addresses to reviewer user accounts in the Users screen, set `EMAIL_ENABLED=true`, configure the transport, and restart the server.
 
+Notification email copy is code-owned in `server/notifications/templates/`. Keep safety-critical event wording, such as message mismatch stop-production instructions, in those templates so changes are reviewed and tested.
+
 ## Printer Defaults And Timing
 
 | Variable | Default | Purpose |

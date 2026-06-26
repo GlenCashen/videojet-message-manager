@@ -5,7 +5,11 @@ const { openDatabase, runMigrations } = await import('../server/db.js');
 const { upsertUserRecord } = await import('../server/repositories/user-repository.js');
 const { upsertNotificationList } = await import('../server/repositories/notification-repository.js');
 const {
+  PRINTER_FAULT,
+  PRINTER_MESSAGE_MISMATCH,
+  PRINTER_OFFLINE,
   RELEASE_PENDING_REVIEW,
+  buildNotificationMessage,
   createNotificationService
 } = await import('../server/notifications/notification-service.js');
 
@@ -136,4 +140,39 @@ test('notification lists can target direct email recipients for future events', 
     sent.find((message) => message.to.includes('lead@one.example')).to.sort(),
     ['lead-two@example.test', 'lead@one.example']
   );
+});
+
+test('notification templates cover release and printer safety events', () => {
+  const releaseMessage = buildNotificationMessage(RELEASE_PENDING_REVIEW, {
+    release: release(),
+    actor: { username: 'planner' }
+  }, { baseUrl: 'https://codes.example.test' });
+  assert.match(releaseMessage.subject, /Release needs approval/);
+  assert.match(releaseMessage.text, /independent approval/i);
+
+  const mismatchMessage = buildNotificationMessage(PRINTER_MESSAGE_MISMATCH, {
+    printer: { id: 'coder-1', name: 'Can Coder' },
+    expectedMessage: 'CAT CAN 12M CB7007',
+    currentMessage: 'CAT CAN NOW A13FCD',
+    detectedAt: '2026-06-26T05:19:04.000Z'
+  }, { baseUrl: 'https://codes.example.test' });
+  assert.match(mismatchMessage.subject, /Message mismatch: Can Coder/);
+  assert.match(mismatchMessage.text, /MESSAGE MISMATCH - STOP PRODUCTION/);
+  assert.match(mismatchMessage.text, /quarantine product/i);
+  assert.match(mismatchMessage.text, /https:\/\/codes\.example\.test\/printers\/coder-1/);
+
+  const offlineMessage = buildNotificationMessage(PRINTER_OFFLINE, {
+    printer: { id: 'coder-2', name: 'Bottle Coder' },
+    errorMessage: 'ECONNREFUSED 127.0.0.1:3101'
+  }, {});
+  assert.match(offlineMessage.subject, /Printer offline: Bottle Coder/);
+  assert.match(offlineMessage.text, /network connection/i);
+
+  const faultMessage = buildNotificationMessage(PRINTER_FAULT, {
+    printer: { id: 'coder-3', name: 'Case Coder' },
+    status: 'Red',
+    faults: ['Gutter fault']
+  }, {});
+  assert.match(faultMessage.subject, /Printer fault: Case Coder/);
+  assert.match(faultMessage.text, /Gutter fault/);
 });
