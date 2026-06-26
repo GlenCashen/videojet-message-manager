@@ -1,10 +1,10 @@
-import { appUrl, formatDateTime, notificationHtml, valueOrDash } from './common.js';
+import { appUrl, escapeHtml, formatDateTime, valueOrDash } from './common.js';
 
 function releasePendingReviewEmail(payload, config = {}) {
   const { release = {}, actor = {} } = payload;
   const product = release.brewSheetProduct || release.id || 'Release';
   const url = appUrl(config.baseUrl, `/production-releases?release=${encodeURIComponent(release.id || '')}`);
-  const subject = `Release needs approval: ${product}`;
+  const subject = 'Production coding release approval required';
   const submittedBy = actor.displayName || actor.username || release.createdByUsername || '-';
   const planned = formatDateTime(release.plannedProductionAt);
   return {
@@ -20,18 +20,37 @@ function releasePendingReviewEmail(payload, config = {}) {
       '',
       'Open the Production Coding Releases page to review, approve, reject or return it for correction.'
     ].join('\n'),
-    html: notificationHtml({
-      title: subject,
-      intro: 'A production coding release needs independent approval.',
-      rows: [
-        { label: 'Product', value: product },
-        { label: 'Brew', value: release.brewNumber },
-        { label: 'Planned production', value: planned },
-        { label: 'Submitted by', value: submittedBy }
-      ],
-      actionUrl: url,
-      actionLabel: 'Review release'
-    })
+    html: `
+      <p>A production coding release needs independent approval.</p>
+
+      <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
+        <tr>
+          <td><strong>Product:</strong></td>
+          <td>${escapeHtml(product)}</td>
+        </tr>
+        <tr>
+          <td><strong>Brew:</strong></td>
+          <td>${escapeHtml(valueOrDash(release.brewNumber))}</td>
+        </tr>
+        <tr>
+          <td><strong>Planned production:</strong></td>
+          <td>${escapeHtml(planned)}</td>
+        </tr>
+        <tr>
+          <td><strong>Submitted by:</strong></td>
+          <td>${escapeHtml(submittedBy)}</td>
+        </tr>
+        <tr>
+          <td><strong>Release:</strong></td>
+          <td><a href="${escapeHtml(url)}">Open release</a></td>
+        </tr>
+      </table>
+
+      <p>
+        Please open the Production Coding Releases page to review this release and
+        either approve, reject, or return it for correction.
+      </p>
+    `
   };
 }
 

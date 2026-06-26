@@ -94,7 +94,7 @@ test('release approval notifications target reviewer lists and exclude the creat
   assert.equal(results.length, 1);
   assert.equal(results[0].status, 'sent');
   assert.deepEqual(sent[0].to.sort(), ['admin@example.test', 'qa@example.test']);
-  assert.match(sent[0].subject, /Release needs approval: BBLOND-111/);
+  assert.match(sent[0].subject, /Production coding release approval required/);
   assert.match(sent[0].text, /https:\/\/codes\.example\.test\/production-releases\?release=release-1/);
 
   const deliveries = db.prepare('SELECT * FROM notification_deliveries').all();
@@ -148,9 +148,9 @@ test('notification templates cover release and printer safety events', () => {
     release: release(),
     actor: { username: 'planner' }
   }, { baseUrl: 'https://codes.example.test' });
-  assert.match(releaseMessage.subject, /Release needs approval/);
+  assert.match(releaseMessage.subject, /Production coding release approval required/);
   assert.match(releaseMessage.text, /independent approval/i);
-  assert.match(releaseMessage.html, /Review release/);
+  assert.match(releaseMessage.html, /Open release/);
 
   const rejectedMessage = buildNotificationMessage(RELEASE_REJECTED, {
     release: release({ rejectionReason: 'Batch code does not match schedule.' }),
@@ -158,7 +158,7 @@ test('notification templates cover release and printer safety events', () => {
   }, { baseUrl: 'https://codes.example.test' });
   assert.match(rejectedMessage.subject, /Release rejected: BBLOND-111/);
   assert.match(rejectedMessage.text, /Batch code does not match schedule/);
-  assert.match(rejectedMessage.html, /Correct release/);
+  assert.match(rejectedMessage.html, /Open release/);
 
   const mismatchMessage = buildNotificationMessage(PRINTER_MESSAGE_MISMATCH, {
     printer: { id: 'coder-1', name: 'Can Coder' },

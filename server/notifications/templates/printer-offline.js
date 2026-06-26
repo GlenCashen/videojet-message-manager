@@ -1,4 +1,4 @@
-import { formatDateTime, notificationHtml, printerName, printerUrl, valueOrDash } from './common.js';
+import { escapeHtml, formatDateTime, printerName, printerUrl, valueOrDash } from './common.js';
 
 function printerOfflineEmail(payload, config = {}) {
   const name = printerName(payload);
@@ -19,19 +19,37 @@ function printerOfflineEmail(payload, config = {}) {
       '',
       'Check the coder network connection, power state and printer-agent connectivity.'
     ].join('\n'),
-    html: notificationHtml({
-      title: subject,
-      intro: 'A printer is offline or not responding to status polling.',
-      rows: [
-        { label: 'Printer', value: name },
-        { label: 'Last successful update', value: lastSuccessfulAt },
-        { label: 'Latest attempt', value: latestAttemptAt },
-        { label: 'Connection detail', value: payload.errorMessage }
-      ],
-      actionUrl: url,
-      actionLabel: 'Open printer',
-      tone: 'warning'
-    })
+    html: `
+      <p>A printer is offline or not responding to status polling.</p>
+
+      <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
+        <tr>
+          <td><strong>Printer:</strong></td>
+          <td>${escapeHtml(name)}</td>
+        </tr>
+        <tr>
+          <td><strong>Last successful update:</strong></td>
+          <td>${escapeHtml(lastSuccessfulAt)}</td>
+        </tr>
+        <tr>
+          <td><strong>Latest attempt:</strong></td>
+          <td>${escapeHtml(latestAttemptAt)}</td>
+        </tr>
+        <tr>
+          <td><strong>Connection detail:</strong></td>
+          <td>${escapeHtml(valueOrDash(payload.errorMessage))}</td>
+        </tr>
+        <tr>
+          <td><strong>Printer page:</strong></td>
+          <td><a href="${escapeHtml(url)}">Open printer</a></td>
+        </tr>
+      </table>
+
+      <p>
+        Check the coder network connection, power state and printer-agent
+        connectivity.
+      </p>
+    `
   };
 }
 

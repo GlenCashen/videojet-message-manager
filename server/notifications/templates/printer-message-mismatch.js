@@ -1,4 +1,4 @@
-import { formatDateTime, notificationHtml, printerName, printerUrl, valueOrDash } from './common.js';
+import { escapeHtml, formatDateTime, printerName, printerUrl, valueOrDash } from './common.js';
 
 function printerMessageMismatchEmail(payload, config = {}) {
   const name = printerName(payload);
@@ -18,19 +18,37 @@ function printerMessageMismatchEmail(payload, config = {}) {
       '',
       'Stop the line, quarantine product since the mismatch was detected, then resend the release and reverify the first print.'
     ].join('\n'),
-    html: notificationHtml({
-      title: subject,
-      intro: 'MESSAGE MISMATCH - STOP PRODUCTION. Stop the line and quarantine product since the mismatch was detected.',
-      rows: [
-        { label: 'Printer', value: name },
-        { label: 'Expected message', value: payload.expectedMessage },
-        { label: 'Current printer message', value: payload.currentMessage },
-        { label: 'Detected at', value: detectedAt }
-      ],
-      actionUrl: url,
-      actionLabel: 'Open printer',
-      tone: 'danger'
-    })
+    html: `
+      <p><strong>MESSAGE MISMATCH - STOP PRODUCTION.</strong></p>
+
+      <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
+        <tr>
+          <td><strong>Printer:</strong></td>
+          <td>${escapeHtml(name)}</td>
+        </tr>
+        <tr>
+          <td><strong>Expected message:</strong></td>
+          <td>${escapeHtml(valueOrDash(payload.expectedMessage))}</td>
+        </tr>
+        <tr>
+          <td><strong>Current printer message:</strong></td>
+          <td>${escapeHtml(valueOrDash(payload.currentMessage))}</td>
+        </tr>
+        <tr>
+          <td><strong>Detected at:</strong></td>
+          <td>${escapeHtml(detectedAt)}</td>
+        </tr>
+        <tr>
+          <td><strong>Printer page:</strong></td>
+          <td><a href="${escapeHtml(url)}">Open printer</a></td>
+        </tr>
+      </table>
+
+      <p>
+        Stop the line, quarantine product since the mismatch was detected, then
+        resend the release and reverify the first print.
+      </p>
+    `
   };
 }
 

@@ -1,4 +1,4 @@
-import { appUrl, formatDateTime, notificationHtml, valueOrDash } from './common.js';
+import { appUrl, escapeHtml, formatDateTime, valueOrDash } from './common.js';
 
 function releaseRejectedEmail(payload, config = {}) {
   const { release = {}, actor = {} } = payload;
@@ -21,20 +21,41 @@ function releaseRejectedEmail(payload, config = {}) {
       '',
       'Open the Production Coding Releases page to correct the release and resubmit it for review.'
     ].join('\n'),
-    html: notificationHtml({
-      title: subject,
-      intro: 'A production coding release was rejected during independent review.',
-      rows: [
-        { label: 'Product', value: product },
-        { label: 'Brew', value: release.brewNumber },
-        { label: 'Planned production', value: planned },
-        { label: 'Rejected by', value: rejectedBy },
-        { label: 'Reason', value: release.rejectionReason }
-      ],
-      actionUrl: url,
-      actionLabel: 'Correct release',
-      tone: 'warning'
-    })
+    html: `
+      <p>A production coding release was rejected during independent review.</p>
+
+      <table cellpadding="6" cellspacing="0" style="border-collapse: collapse;">
+        <tr>
+          <td><strong>Product:</strong></td>
+          <td>${escapeHtml(product)}</td>
+        </tr>
+        <tr>
+          <td><strong>Brew:</strong></td>
+          <td>${escapeHtml(valueOrDash(release.brewNumber))}</td>
+        </tr>
+        <tr>
+          <td><strong>Planned production:</strong></td>
+          <td>${escapeHtml(planned)}</td>
+        </tr>
+        <tr>
+          <td><strong>Rejected by:</strong></td>
+          <td>${escapeHtml(rejectedBy)}</td>
+        </tr>
+        <tr>
+          <td><strong>Reason:</strong></td>
+          <td>${escapeHtml(valueOrDash(release.rejectionReason))}</td>
+        </tr>
+        <tr>
+          <td><strong>Release:</strong></td>
+          <td><a href="${escapeHtml(url)}">Open release</a></td>
+        </tr>
+      </table>
+
+      <p>
+        Please open the Production Coding Releases page to correct this release
+        and resubmit it for review.
+      </p>
+    `
   };
 }
 
