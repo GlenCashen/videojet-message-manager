@@ -1359,6 +1359,137 @@
   padding-top: 18px;
 }
 
+/* Messages efficiency pass: reduce vertical travel on wide admin screens. */
+@media (min-width: 1120px) {
+  .editor-app .printer-user-fields-section {
+    padding-bottom: 16px;
+    padding-top: 16px;
+  }
+
+  .editor-app .printer-user-fields-section > .message-definition-heading {
+    margin-bottom: 10px;
+  }
+
+  .editor-app .printer-user-field-list {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
+
+  .editor-app .printer-user-field-card {
+    min-height: 52px;
+    padding: 10px 12px;
+  }
+
+  .editor-app .printer-user-field-card .actions {
+    gap: 6px;
+  }
+
+  .editor-app .printer-user-field-card .actions button {
+    min-height: 34px;
+    min-width: 70px;
+    padding: 6px 10px;
+  }
+
+  .editor-app .message-config-layout {
+    grid-template-columns: minmax(260px, 315px) minmax(0, 1fr);
+  }
+
+  .editor-app .message-list {
+    gap: 10px;
+    padding: 16px 14px;
+  }
+
+  .editor-app .message-list-item {
+    min-height: 42px;
+    padding: 8px 10px;
+  }
+
+  .editor-app .message-form {
+    gap: 14px;
+    padding: 16px 18px 18px;
+  }
+
+  .editor-app .message-form > label {
+    grid-column: span 3;
+  }
+
+  .editor-app .message-form > .checkbox-line {
+    grid-column: 1 / -1;
+    margin-top: -2px;
+    min-height: 38px;
+    padding: 8px 12px;
+  }
+
+  .editor-app .message-definition-section {
+    padding: 14px;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageUserFieldsTitle'] {
+    grid-column: span 8;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageFormattingTitle'] {
+    grid-column: span 4;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] {
+    align-items: start;
+    display: grid;
+    gap: 12px 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, .42fr);
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] > .message-definition-heading {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] > .message-token-palette,
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] > .message-line-builder {
+    grid-column: 1;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] > .message-live-preview {
+    align-self: stretch;
+    display: grid;
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    grid-template-rows: auto minmax(0, 1fr);
+    margin-top: 0;
+    min-height: 100%;
+  }
+
+  .editor-app .message-definition-section[aria-labelledby='messageLinesTitle'] > .message-live-preview pre {
+    min-height: 0;
+  }
+
+  .editor-app .message-field-choices {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  .editor-app .message-field-choice {
+    min-height: 50px;
+    padding: 9px 10px;
+  }
+
+  .editor-app .message-format-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-app .message-token-palette {
+    margin-bottom: 0;
+    padding: 8px;
+  }
+
+  .editor-app .message-line-builder {
+    gap: 8px;
+  }
+
+  .editor-app .message-line-row {
+    gap: 10px;
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 900px) {
   .editor-app .shell {
     padding-top: 0;

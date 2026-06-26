@@ -239,6 +239,10 @@ test('messages editor uses a consistent admin workspace layout', async () => {
   assert.match(editorCss, /\.editor-app \.message-form > label\s*{[\s\S]*grid-column: span 6/);
   assert.match(editorCss, /\.editor-app \.message-definition-section\s*{[\s\S]*grid-column: 1 \/ -1/);
   assert.match(editorCss, /\.editor-app \.printer-user-field-form\s*{[\s\S]*grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/);
+  assert.match(editorCss, /Messages efficiency pass/);
+  assert.match(editorCss, /\.editor-app \.message-definition-section\[aria-labelledby='messageUserFieldsTitle'\]\s*{[\s\S]*grid-column: span 8/);
+  assert.match(editorCss, /\.editor-app \.message-definition-section\[aria-labelledby='messageFormattingTitle'\]\s*{[\s\S]*grid-column: span 4/);
+  assert.match(editorCss, /\.editor-app \.message-definition-section\[aria-labelledby='messageLinesTitle'\]\s*{[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(320px, \.42fr\)/);
 });
 
 test('production releases require an independent review and expose no direct operator send', async () => {
