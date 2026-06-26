@@ -5,6 +5,7 @@ import { elements } from './elements.js';
 const ROLES = ['viewer', 'operator', 'planner', 'packaging_leader', 'qa', 'engineering', 'admin'];
 const EVENTS = [
   ['release.pending_review', 'Release needs approval'],
+  ['release.rejected', 'Release rejected'],
   ['printer.message_mismatch', 'Printer message mismatch'],
   ['printer.offline', 'Printer offline'],
   ['printer.fault', 'Printer fault']

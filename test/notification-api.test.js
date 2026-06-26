@@ -86,7 +86,7 @@ test('admin can manage notification lists', async () => {
       body: {
         name: 'Shift leads',
         description: 'Line escalation inboxes',
-        eventKey: 'printer.offline',
+        eventKey: 'release.rejected',
         enabled: true,
         recipientRoles: ['engineering'],
         recipientUserIds: [],

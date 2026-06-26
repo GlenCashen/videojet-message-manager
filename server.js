@@ -72,7 +72,7 @@ import { withOperatorError } from './server/operator-error-messages.js';
 import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
-import { notifyReleasePendingReview } from './server/notifications/notification-service.js';
+import { notifyReleasePendingReview, notifyReleaseRejected } from './server/notifications/notification-service.js';
 import { supportedNotificationEvents } from './server/notifications/templates/index.js';
 import {
   claimPrinterAgentJob,
@@ -1699,6 +1699,9 @@ app.post('/api/batch-releases/:id/reject', (req, res) => {
     addLog({ action: 'batch-release-rejected', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, reason: release.rejectionReason, ok: true } });
     broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: null, status: release.status });
     broadcast('batch-release-changed', { releaseId: release.id, status: release.status, action: 'rejected' });
+    notifyReleaseRejected(release, user).catch((error) => {
+      console.error(`Release rejection notification failed for ${release.id}: ${error.message}`);
+    });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });

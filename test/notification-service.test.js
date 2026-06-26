@@ -9,6 +9,7 @@ const {
   PRINTER_MESSAGE_MISMATCH,
   PRINTER_OFFLINE,
   RELEASE_PENDING_REVIEW,
+  RELEASE_REJECTED,
   buildNotificationMessage,
   createNotificationService
 } = await import('../server/notifications/notification-service.js');
@@ -149,6 +150,15 @@ test('notification templates cover release and printer safety events', () => {
   }, { baseUrl: 'https://codes.example.test' });
   assert.match(releaseMessage.subject, /Release needs approval/);
   assert.match(releaseMessage.text, /independent approval/i);
+  assert.match(releaseMessage.html, /Review release/);
+
+  const rejectedMessage = buildNotificationMessage(RELEASE_REJECTED, {
+    release: release({ rejectionReason: 'Batch code does not match schedule.' }),
+    actor: { username: 'qa-reviewer' }
+  }, { baseUrl: 'https://codes.example.test' });
+  assert.match(rejectedMessage.subject, /Release rejected: BBLOND-111/);
+  assert.match(rejectedMessage.text, /Batch code does not match schedule/);
+  assert.match(rejectedMessage.html, /Correct release/);
 
   const mismatchMessage = buildNotificationMessage(PRINTER_MESSAGE_MISMATCH, {
     printer: { id: 'coder-1', name: 'Can Coder' },
@@ -159,6 +169,7 @@ test('notification templates cover release and printer safety events', () => {
   assert.match(mismatchMessage.subject, /Message mismatch: Can Coder/);
   assert.match(mismatchMessage.text, /MESSAGE MISMATCH - STOP PRODUCTION/);
   assert.match(mismatchMessage.text, /quarantine product/i);
+  assert.match(mismatchMessage.html, /STOP PRODUCTION/);
   assert.match(mismatchMessage.text, /https:\/\/codes\.example\.test\/printers\/coder-1/);
 
   const offlineMessage = buildNotificationMessage(PRINTER_OFFLINE, {
@@ -175,4 +186,45 @@ test('notification templates cover release and printer safety events', () => {
   }, {});
   assert.match(faultMessage.subject, /Printer fault: Case Coder/);
   assert.match(faultMessage.text, /Gutter fault/);
+});
+
+test('release rejection notifications can include the release creator', async () => {
+  const db = openDatabase(':memory:');
+  runMigrations(db);
+  test.after(() => db.close());
+
+  upsertUserRecord(user({
+    id: 'planner-1',
+    username: 'planner',
+    email: 'planner@example.test',
+    roles: ['planner', 'qa']
+  }), db);
+
+  upsertNotificationList({
+    id: 'release-rejections',
+    name: 'Release rejections',
+    eventKey: RELEASE_REJECTED,
+    recipientRoles: ['qa'],
+    recipientUserIds: [],
+    recipientEmails: []
+  }, db);
+
+  const sent = [];
+  const service = createNotificationService({
+    db,
+    config: {},
+    transport: {
+      async send(message) {
+        sent.push(message);
+        return { accepted: message.to };
+      }
+    }
+  });
+
+  await service.notify(RELEASE_REJECTED, {
+    release: release({ rejectionReason: 'Needs correction.' }),
+    actor: { id: 'qa-2', username: 'qa-reviewer' }
+  });
+
+  assert.deepEqual(sent.find((message) => message.subject.includes('Release rejected')).to, ['planner@example.test']);
 });

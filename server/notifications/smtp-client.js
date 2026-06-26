@@ -16,6 +16,24 @@ function dotStuff(body) {
   return String(body || '').replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
 }
 
+function messageBody({ text, html }) {
+  if (!html) return `Content-Type: text/plain; charset=utf-8\r\n\r\n${dotStuff(text)}`;
+  const boundary = `vmm-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return [
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    dotStuff(text),
+    `--${boundary}`,
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    dotStuff(html),
+    `--${boundary}--`
+  ].join('\r\n');
+}
+
 function createReader(socket) {
   let buffer = '';
   const pending = [];
@@ -125,10 +143,6 @@ async function sendSmtpMail({ smtp, from, to, subject, text, html }) {
     }
     await writeCommand(socket, reader, 'DATA', 354);
 
-    const hasHtml = Boolean(html);
-    const body = hasHtml
-      ? `Content-Type: text/html; charset=utf-8\r\n\r\n${html}`
-      : `Content-Type: text/plain; charset=utf-8\r\n\r\n${dotStuff(text)}`;
     const headers = formatHeaders({
       From: from,
       To: recipients.join(', '),
@@ -136,7 +150,7 @@ async function sendSmtpMail({ smtp, from, to, subject, text, html }) {
       Date: new Date().toUTCString(),
       'MIME-Version': '1.0'
     });
-    socket.write(`${headers}\r\n${body}\r\n.\r\n`);
+    socket.write(`${headers}\r\n${messageBody({ text, html })}\r\n.\r\n`);
     assertCode(await reader.read(), 250);
     await writeCommand(socket, reader, 'QUIT', 221).catch(() => null);
     return { accepted: recipients };
