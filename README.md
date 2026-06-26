@@ -186,3 +186,5 @@ The most commonly changed runtime values are:
 - `OFFLINE_AFTER_FAILURES` — failed polls before offline, default `3`
 - `PRINTER_EXECUTION_MODE` — `local` or `agent`
 - `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` — create the first Admin user when no users exist
+
+Before deploying a build or handing the system to operators, run the [Release Candidate QA Checklist](docs/RELEASE_CANDIDATE_QA.md).
