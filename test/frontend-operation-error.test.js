@@ -205,6 +205,10 @@ test('editor and production release pages use a lighter admin theme after dark o
   assert.match(editorCss, /\.editor-app\s*{[\s\S]*--bg: #eef3f8/);
   assert.match(editorCss, /\.editor-app \.panel,[\s\S]*\.editor-app \.production-workspace,[\s\S]*background: #ffffff/);
   assert.match(editorCss, /\.editor-app \.message-live-preview,[\s\S]*background: #101828/);
+  assert.match(editorCss, /\.editor-app \.production-tab-panel\s*{[\s\S]*background: #f7fafc/);
+  assert.match(editorCss, /\.editor-app \.release-row\s*{[\s\S]*background: #ffffff/);
+  assert.match(editorCss, /\.editor-app \.master-register-list\s*{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(390px, 1fr\)\)/);
+  assert.match(editorCss, /\.editor-app \.badge\.good,[\s\S]*\.editor-app \.status-pill\.good\s*{[\s\S]*color: #067647/);
 });
 
 test('manual message review replaces the edit form before audited confirmation', async () => {
