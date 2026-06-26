@@ -174,11 +174,15 @@ The emulator panel can also simulate an offline printer, command failure, status
 
 ## Environment variables
 
+See [Configuration](docs/CONFIGURATION.md) for the complete environment variable reference and [.env.example](.env.example) for a local template.
+
+The most commonly changed runtime values are:
+
 - `PORT` — web app port, default `8080`
-- `PRINTER_IP` — default real printer IP
-- `PRINTER_PORT` — default real printer WSI port
-- `EMULATOR_HOST` — default `127.0.0.1`
-- `EMULATOR_PORT` — default `3100`
-- `DB_PATH` — override SQLite path, default `data/videojet.db`
+- `DB_PATH` — SQLite path, default `data/videojet.db`
+- `SESSION_SECRET` — required in production
+- `POLL_INTERVAL_MS` — printer status polling interval, default `5000`
+- `STALE_AFTER_MS` — stale-data warning threshold, default `15000`
+- `OFFLINE_AFTER_FAILURES` — failed polls before offline, default `3`
+- `PRINTER_EXECUTION_MODE` — `local` or `agent`
 - `BOOTSTRAP_ADMIN_USERNAME` / `BOOTSTRAP_ADMIN_PASSWORD` — create the first Admin user when no users exist
-- `ENABLE_DEV_IDENTITY` — enable development identity switching
