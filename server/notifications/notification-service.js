@@ -110,6 +110,22 @@ function notifyReleaseRejected(release, actor) {
   return defaultNotificationService.notify(RELEASE_REJECTED, { release, actor });
 }
 
+function notifyPrinterOffline(payload) {
+  return defaultNotificationService.notify(PRINTER_OFFLINE, {
+    ...payload,
+    targetType: 'printer',
+    targetId: payload.targetId || payload.printer?.id || payload.printerId || null
+  });
+}
+
+function notifyPrinterFault(payload) {
+  return defaultNotificationService.notify(PRINTER_FAULT, {
+    ...payload,
+    targetType: 'printer',
+    targetId: payload.targetId || payload.printer?.id || payload.printerId || null
+  });
+}
+
 export {
   PRINTER_FAULT,
   PRINTER_MESSAGE_MISMATCH,
@@ -119,6 +135,8 @@ export {
   buildNotificationMessage,
   createNotificationService,
   releasePendingReviewEmail as buildReleasePendingReviewMessage,
+  notifyPrinterFault,
+  notifyPrinterOffline,
   notifyReleasePendingReview,
   notifyReleaseRejected,
   resolveRecipients

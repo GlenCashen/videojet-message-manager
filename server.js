@@ -72,7 +72,13 @@ import { withOperatorError } from './server/operator-error-messages.js';
 import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
-import { notifyReleasePendingReview, notifyReleaseRejected } from './server/notifications/notification-service.js';
+import {
+  notifyPrinterFault,
+  notifyPrinterOffline,
+  notifyReleasePendingReview,
+  notifyReleaseRejected
+} from './server/notifications/notification-service.js';
+import { createPrinterNotificationEvents } from './server/notifications/printer-events.js';
 import { supportedNotificationEvents } from './server/notifications/templates/index.js';
 import {
   claimPrinterAgentJob,
@@ -581,12 +587,20 @@ function recordReleaseMessageMismatch(status) {
   });
 }
 
+const printerNotificationEvents = createPrinterNotificationEvents({
+  readPrinters,
+  notifyPrinterFault,
+  notifyPrinterOffline,
+  addLog
+});
+
 const statusCache = new StatusCache({
   staleAfterMs: STALE_AFTER_MS,
   offlineAfterFailures: OFFLINE_AFTER_FAILURES,
   onChange: (event, status) => broadcast(event, status),
   onTransition: (transition, status) => {
     addLog({ action: 'printer-state-transition', printerId: status.printerId, transition, ok: true });
+    printerNotificationEvents.handleStatusTransition(transition, status);
   },
   onStatusSuccess: (status) => {
     recordFaultTransitions(status);
@@ -600,6 +614,7 @@ async function recordFaultTransitions(status) {
     for (const event of events) {
       broadcast(event.event === 'activated' ? 'fault-activated' : 'fault-cleared', event);
     }
+    await printerNotificationEvents.handleFaultEvents(status, events);
   } catch (error) {
     addLog({ action: 'fault-history-error', printerId: status.printerId, ok: false, error: error.message });
   }
