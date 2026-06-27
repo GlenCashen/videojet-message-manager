@@ -1,0 +1,404 @@
+{
+  "light_states": {
+    "green": "0000002",
+    "amber": "0000004",
+    "yellow": "0000004",
+    "blue": "0000005",
+    "red": "0000006",
+    "off": "0000000"
+  },
+  "packml_states": {
+    "green": "09",
+    "amber": "04",
+    "yellow": "05",
+    "blue": "09",
+    "red": "06",
+    "off": "02"
+  },
+  "printers": [
+    {
+      "printer_id": "coder-1",
+      "protocol": "wsi",
+      "host": "0.0.0.0",
+      "port": 3101,
+      "description": "Cans Videojet WSI emulator"
+    },
+    {
+      "printer_id": "coder-2",
+      "protocol": "wsi",
+      "host": "0.0.0.0",
+      "port": 3102,
+      "description": "Bottles Videojet WSI emulator"
+    },
+    {
+      "printer_id": "coder-4",
+      "protocol": "wsi",
+      "host": "0.0.0.0",
+      "port": 3104,
+      "description": "Case Videojet WSI emulator"
+    },
+    {
+      "printer_id": "coder-6",
+      "protocol": "ngpcl",
+      "host": "0.0.0.0",
+      "port": 21000,
+      "description": "Markem / NGPCL TCP emulator"
+    }
+  ],
+  "messages": [
+    {
+      "message_id": "catalog-case-now-d948530b",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE NOW D94853"
+    },
+    {
+      "message_id": "catalog-case-now-cde93260",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE NOW CDE932"
+    },
+    {
+      "message_id": "catalog-case-now-450ccd8e",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE NOW 450CCD"
+    },
+    {
+      "message_id": "catalog-case-9m-d755a44f",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 9M D755A4"
+    },
+    {
+      "message_id": "catalog-case-24m-ac4d7467",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 24M AC4D74"
+    },
+    {
+      "message_id": "catalog-case-18m-cd06e8fc",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 18M CD06E8"
+    },
+    {
+      "message_id": "catalog-case-15m-d91746e8",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 15M D91746"
+    },
+    {
+      "message_id": "catalog-case-12m-f326fd65",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 12M F326FD"
+    },
+    {
+      "message_id": "catalog-case-12m-4b3eb2c5",
+      "printer_id": "coder-4",
+      "printer_message_name": "CAT CASE 12M 4B3EB2"
+    },
+    {
+      "message_id": "catalog-cans-now-a13fcdea",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN NOW A13FCD"
+    },
+    {
+      "message_id": "catalog-cans-9m-291efb1a",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 9M 291EFB"
+    },
+    {
+      "message_id": "catalog-cans-24m-b5706f2f",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 24M B5706F"
+    },
+    {
+      "message_id": "catalog-cans-24m-0e196e5f",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 24M 0E196E"
+    },
+    {
+      "message_id": "catalog-cans-18m-a5117652",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 18M A51176"
+    },
+    {
+      "message_id": "catalog-cans-18m-9781a1c0",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 18M 9781A1"
+    },
+    {
+      "message_id": "catalog-cans-15m-4d18a416",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 15M 4D18A4"
+    },
+    {
+      "message_id": "catalog-cans-12m-e6d4f991",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 12M E6D4F9"
+    },
+    {
+      "message_id": "catalog-cans-12m-cb70079e",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 12M CB7007"
+    },
+    {
+      "message_id": "catalog-cans-12m-c95486c2",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 12M C95486"
+    },
+    {
+      "message_id": "catalog-cans-12m-1cc2822e",
+      "printer_id": "coder-1",
+      "printer_message_name": "CAT CAN 12M 1CC282"
+    },
+    {
+      "message_id": "catalog-bottles-now-8a53b7e2",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL NOW 8A53B7"
+    },
+    {
+      "message_id": "catalog-bottles-9m-10bfa6e4",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL 9M 10BFA6"
+    },
+    {
+      "message_id": "catalog-bottles-15m-10c806f5",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL 15M 10C806"
+    },
+    {
+      "message_id": "catalog-bottles-12m-f97b107e",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL 12M F97B10"
+    },
+    {
+      "message_id": "catalog-bottles-12m-c1ff4ff0",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL 12M C1FF4F"
+    },
+    {
+      "message_id": "catalog-bottles-12m-06f199b6",
+      "printer_id": "coder-2",
+      "printer_message_name": "CAT BTL 12M 06F199"
+    },
+    {
+      "message_id": "markem-bundy-15-month",
+      "printer_id": "coder-6",
+      "printer_message_name": "Bundy 15 Month.job"
+    },
+    {
+      "message_id": "coder-6-12m-2-line-static",
+      "printer_id": "coder-6",
+      "printer_message_name": "12 Months.job"
+
+    },
+    {
+      "message_id": "coder-6-12m-2-line-sml",
+      "printer_id": "coder-6",
+      "printer_message_name": "12 Months SML.job"
+      
+    }
+  ],
+  "fields": [
+    {
+      "message_id": "catalog-bottles-12m-06f199b6",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-bottles-12m-c1ff4ff0",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-bottles-12m-c1ff4ff0",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-bottles-15m-10c806f5",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-bottles-15m-10c806f5",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-bottles-now-8a53b7e2",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-12m-1cc2822e",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-12m-c95486c2",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-cans-12m-c95486c2",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-12m-e6d4f991",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-15m-4d18a416",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-cans-15m-4d18a416",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-18m-9781a1c0",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-24m-b5706f2f",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-cans-now-a13fcdea",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-12m-4b3eb2c5",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-12m-f326fd65",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-case-12m-f326fd65",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-15m-d91746e8",
+      "field_key": "run",
+      "label": "Run code",
+      "printer_field_name": "RUN"
+    },
+    {
+      "message_id": "catalog-case-15m-d91746e8",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-18m-cd06e8fc",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-24m-ac4d7467",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-9m-d755a44f",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-now-450ccd8e",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-now-cde93260",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "catalog-case-now-d948530b",
+      "field_key": "batch",
+      "label": "Batch code",
+      "printer_field_name": "BATCH"
+    },
+    {
+      "message_id": "markem-bundy-15-month",
+      "field_key": "batch1",
+      "label": "Brew number",
+      "printer_field_name": "Batch1"
+    },
+    {
+      "message_id": "markem-bundy-15-month",
+      "field_key": "batch",
+      "label": "Batch number",
+      "printer_field_name": "Batch"
+    },
+    {
+      "message_id": "coder-6-12m-2-line-static",
+      "field_key": "batch",
+      "label": "Batch number",
+      "printer_field_name": "Batch"
+    },
+     {
+      "message_id": "coder-6-12m-2-line-sml",
+      "field_key": "batch",
+      "label": "Batch number",
+      "printer_field_name": "Batch"
+    }
+  ],
+  "initial_state": {
+    "coder-1": {
+      "current_message_id": "catalog-cans-now-a13fcdea",
+      "light": "green"
+    },
+    "coder-2": {
+      "current_message_id": "catalog-bottles-now-8a53b7e2",
+      "light": "green"
+    },
+    "coder-4": {
+      "current_message_id": "catalog-case-now-d948530b",
+      "light": "green"
+    },
+    "Coder-6": {
+      "current_message_id": "coder-6-12m-2-line-static",
+      "light": "green",
+      "user_fields": {
+        
+        "coder-6-12m-2-line-static": {
+          "Batch1": "T0067",
+          "Batch": "TBUNDRC-51"
+        }
+      }
+    }
+  }
+}
