@@ -43,7 +43,7 @@ function renderList() {
       dataset: { id: user.id }
     }, [
       el('strong', { text: user.displayName }),
-      el('span', { text: `${user.username} | ${user.enabled ? 'Enabled' : 'Disabled'} | ${user.roles.join(', ')}` })
+      el('span', { text: `${user.username} | ${user.email || 'No email'} | ${user.enabled ? 'Enabled' : 'Disabled'} | ${user.roles.join(', ')}` })
     ]));
   }
 }
@@ -55,6 +55,7 @@ function populateForm(user) {
   elements.userUsername.value = user?.username || '';
   elements.userUsername.disabled = Boolean(user?.id);
   elements.userDisplayName.value = user?.displayName || '';
+  elements.userEmail.value = user?.email || '';
   elements.userPassword.value = '';
   elements.userPassword.required = !user?.id;
   elements.userPrinterIds.value = user?.printerIds?.join(',') || '';
@@ -84,6 +85,7 @@ function collectUser() {
   return {
     username: elements.userUsername.value.trim(),
     displayName: elements.userDisplayName.value.trim(),
+    email: elements.userEmail.value.trim() || null,
     password: elements.userPassword.value || undefined,
     roles: roleInputs().filter((input) => input.checked).map((input) => input.value),
     printerIds: splitPrinterIds(elements.userPrinterIds.value),

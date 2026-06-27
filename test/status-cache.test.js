@@ -89,15 +89,41 @@ test('a successful poll automatically recovers an offline printer', () => {
   assert.ok(recovered.lastAttemptAt);
   assert.ok(recovered.lastSuccessfulAt);
   assert.ok(events.some(({ event, status }) => event === 'printer-status' && status.online === true && status.selectedMessage === '12 MONTH'));
-  assert.equal(transitions.length, 1);
-  assert.equal(transitions[0].transition, 'offline -> online');
+  assert.equal(transitions.length, 2);
+  assert.equal(transitions[0].transition, 'online -> offline');
+  assert.equal(transitions[1].transition, 'offline -> online');
 
   cache.applySuccess('coder-1', {
     selectedMessage: '12 MONTH',
     rawStatus: '0000002',
     responseTimeMs: 10
   });
+  assert.equal(transitions.length, 2);
+});
+
+test('offline transition is emitted once when failure threshold is crossed', () => {
+  const transitions = [];
+  const cache = new StatusCache({
+    staleAfterMs: 1000,
+    offlineAfterFailures: 2,
+    onTransition: (transition, status) => transitions.push({ transition, status })
+  });
+
+  cache.syncPrinters([{ id: 'coder-1' }]);
+  cache.applyFailure('coder-1', new Error('first timeout'));
+  assert.equal(transitions.length, 0);
+
+  cache.applyFailure('coder-1', new Error('second timeout'));
+  cache.applyFailure('coder-1', new Error('third timeout'));
   assert.equal(transitions.length, 1);
+  assert.equal(transitions[0].transition, 'online -> offline');
+  assert.equal(transitions[0].status.printerId, 'coder-1');
+  assert.match(transitions[0].status.lastError, /second timeout/);
+
+  cache.applySuccess('coder-1', { selectedMessage: '9 MONTH', rawStatus: '0000001', responseTimeMs: 10 });
+  cache.applyFailure('coder-1', new Error('fourth timeout'));
+  cache.applyFailure('coder-1', new Error('fifth timeout'));
+  assert.equal(transitions.filter((event) => event.transition === 'online -> offline').length, 2);
 });
 
 test('expected output is included in status and preserved by polls', () => {

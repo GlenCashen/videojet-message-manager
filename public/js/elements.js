@@ -102,6 +102,7 @@ const elements = {
   userId: $('userId'),
   userUsername: $('userUsername'),
   userDisplayName: $('userDisplayName'),
+  userEmail: $('userEmail'),
   userPassword: $('userPassword'),
   userPrinterIds: $('userPrinterIds'),
   userRoles: $('userRoles'),
@@ -109,7 +110,24 @@ const elements = {
   userMustChangePassword: $('userMustChangePassword'),
   newUserButton: $('newUserButton'),
   simulateUserButton: $('simulateUserButton'),
-  saveUserButton: $('saveUserButton')
+  saveUserButton: $('saveUserButton'),
+  notificationPanel: $('notificationPanel'),
+  notificationDetails: $('notificationDetails'),
+  refreshNotificationListsButton: $('refreshNotificationListsButton'),
+  notificationMessage: $('notificationMessage'),
+  notificationList: $('notificationList'),
+  notificationForm: $('notificationForm'),
+  notificationListId: $('notificationListId'),
+  notificationName: $('notificationName'),
+  notificationEvent: $('notificationEvent'),
+  notificationDescription: $('notificationDescription'),
+  notificationEnabled: $('notificationEnabled'),
+  notificationRoles: $('notificationRoles'),
+  notificationUsers: $('notificationUsers'),
+  notificationEmails: $('notificationEmails'),
+  newNotificationListButton: $('newNotificationListButton'),
+  deleteNotificationListButton: $('deleteNotificationListButton'),
+  saveNotificationListButton: $('saveNotificationListButton')
 };
 
 export { elements };

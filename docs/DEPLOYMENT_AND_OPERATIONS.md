@@ -89,6 +89,8 @@ PRINTER_AGENT_CREDENTIALS={"packaging-agent-1":{"token":"<random-agent-token>","
 
 Generate secrets with a cryptographically secure password generator. Remove the bootstrap password from the service configuration after the first administrator has signed in and changed it.
 
+If release approval emails are required, configure the email variables from [CONFIGURATION.md](CONFIGURATION.md#email-notifications), add email addresses to reviewer accounts, and test first with `EMAIL_TRANSPORT=log` before enabling SMTP delivery.
+
 Start the main server with:
 
 ```powershell

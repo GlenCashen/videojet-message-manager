@@ -62,10 +62,24 @@ import {
 import { insertAuditEvent, listAuditEvents } from './server/repositories/audit-repository.js';
 import { insertMessageUpdateEvent } from './server/repositories/message-update-repository.js';
 import { deleteMessage } from './server/repositories/message-repository.js';
+import {
+  deleteNotificationList,
+  getNotificationList,
+  listNotificationLists,
+  upsertNotificationList
+} from './server/repositories/notification-repository.js';
 import { withOperatorError } from './server/operator-error-messages.js';
 import { createReleaseAuditService } from './server/services/release-audit-service.js';
 import { createReleaseExecutionService } from './server/services/release-execution-service.js';
 import { createPrinterRuntimeService } from './server/services/printer-runtime-service.js';
+import {
+  notifyPrinterFault,
+  notifyPrinterOffline,
+  notifyReleasePendingReview,
+  notifyReleaseRejected
+} from './server/notifications/notification-service.js';
+import { createPrinterNotificationEvents } from './server/notifications/printer-events.js';
+import { supportedNotificationEvents } from './server/notifications/templates/index.js';
 import {
   claimPrinterAgentJob,
   completePrinterAgentJob,
@@ -261,7 +275,7 @@ app.get('/editor/:section', (req, res) => {
   if (!user) return redirectToLogin(req, res);
   if (user.mustChangePassword) return res.redirect('/change-password');
   if (!canViewEditor(user)) return res.status(403).send('You do not have permission to view the editor.');
-  if (req.params.section === 'users' && !canManageUsers(user)) {
+  if (['users', 'notifications'].includes(req.params.section) && !canManageUsers(user)) {
     return res.status(403).send('You do not have permission to manage users.');
   }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -573,12 +587,20 @@ function recordReleaseMessageMismatch(status) {
   });
 }
 
+const printerNotificationEvents = createPrinterNotificationEvents({
+  readPrinters,
+  notifyPrinterFault,
+  notifyPrinterOffline,
+  addLog
+});
+
 const statusCache = new StatusCache({
   staleAfterMs: STALE_AFTER_MS,
   offlineAfterFailures: OFFLINE_AFTER_FAILURES,
   onChange: (event, status) => broadcast(event, status),
   onTransition: (transition, status) => {
     addLog({ action: 'printer-state-transition', printerId: status.printerId, transition, ok: true });
+    printerNotificationEvents.handleStatusTransition(transition, status);
   },
   onStatusSuccess: (status) => {
     recordFaultTransitions(status);
@@ -592,6 +614,7 @@ async function recordFaultTransitions(status) {
     for (const event of events) {
       broadcast(event.event === 'activated' ? 'fault-activated' : 'fault-cleared', event);
     }
+    await printerNotificationEvents.handleFaultEvents(status, events);
   } catch (error) {
     addLog({ action: 'fault-history-error', printerId: status.printerId, ok: false, error: error.message });
   }
@@ -1004,6 +1027,47 @@ app.get('/api/audit', (req, res) => {
   res.json(listAuditEvents(req.query));
 });
 
+const NOTIFICATION_EVENTS = new Set(supportedNotificationEvents());
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeNotificationEmails(value) {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\n,;]/);
+  return [...new Set(items
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean))]
+    .map((email) => {
+      if (email.length > 254 || !EMAIL_PATTERN.test(email)) throw new Error(`Invalid notification email: ${email}`);
+      return email;
+    });
+}
+
+function normalizeNotificationListInput(input = {}, existing = {}) {
+  const name = String(input.name ?? existing.name ?? '').trim();
+  if (!name || name.length > 80) throw new Error('Notification list name must be 1-80 characters.');
+  const eventKey = String(input.eventKey ?? existing.eventKey ?? '').trim();
+  if (!NOTIFICATION_EVENTS.has(eventKey)) throw new Error('Notification event is invalid.');
+  const recipientRoles = [...new Set((input.recipientRoles ?? existing.recipientRoles ?? [])
+    .map((role) => normalizeRole(String(role || '').trim()))
+    .filter(Boolean))];
+  const recipientUserIds = [...new Set((input.recipientUserIds ?? existing.recipientUserIds ?? [])
+    .map((id) => String(id || '').trim())
+    .filter(Boolean))];
+  const description = String(input.description ?? existing.description ?? '').trim();
+  if (description.length > 500) throw new Error('Notification list description must be 500 characters or fewer.');
+  return {
+    id: existing.id,
+    name,
+    description,
+    eventKey,
+    enabled: input.enabled ?? existing.enabled ?? true,
+    recipientRoles,
+    recipientUserIds,
+    recipientEmails: normalizeNotificationEmails(input.recipientEmails ?? existing.recipientEmails ?? [])
+  };
+}
+
 app.get('/api/users', async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
@@ -1035,6 +1099,51 @@ app.put('/api/users/:id', async (req, res) => {
   } catch (error) {
     res.status(error.statusCode || 400).json({ ok: false, code: error.code, error: error.message });
   }
+});
+
+app.get('/api/notification-lists', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage notification lists.');
+  res.json(listNotificationLists({ enabledOnly: false }));
+});
+
+app.post('/api/notification-lists', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage notification lists.');
+    const list = upsertNotificationList(normalizeNotificationListInput(req.body || {}));
+    addLog({ action: 'notification-list-created', ...auditActor(user), targetType: 'notification-list', targetId: list.id, details: { eventKey: list.eventKey, ok: true } });
+    res.status(201).json({ ok: true, list });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.put('/api/notification-lists/:id', (req, res) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage notification lists.');
+    const existing = getNotificationList(req.params.id);
+    if (!existing) return res.status(404).json({ ok: false, error: 'Notification list was not found.' });
+    const list = upsertNotificationList(normalizeNotificationListInput(req.body || {}, existing));
+    addLog({ action: 'notification-list-updated', ...auditActor(user), targetType: 'notification-list', targetId: list.id, details: { eventKey: list.eventKey, ok: true } });
+    res.json({ ok: true, list });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.delete('/api/notification-lists/:id', (req, res) => {
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!canManageUsers(user)) return forbidden(res, 'You do not have permission to manage notification lists.');
+  const deleted = deleteNotificationList(req.params.id);
+  if (!deleted) return res.status(404).json({ ok: false, error: 'Notification list was not found.' });
+  addLog({ action: 'notification-list-deleted', ...auditActor(user), targetType: 'notification-list', targetId: req.params.id, details: { ok: true } });
+  res.json({ ok: true });
 });
 
 async function emulatorPrinterForRequest(req) {
@@ -1570,6 +1679,9 @@ app.post('/api/batch-releases/:id/submit', (req, res) => {
     if (!release) return res.status(404).json({ ok: false, error: 'Batch release was not found.' });
     addLog({ action: 'batch-release-submitted', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, ok: true } });
     broadcast('batch-release-changed', { releaseId: release.id, status: release.status, action: 'submitted' });
+    notifyReleasePendingReview(release, user).catch((error) => {
+      console.error(`Release approval notification failed for ${release.id}: ${error.message}`);
+    });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });
@@ -1602,6 +1714,9 @@ app.post('/api/batch-releases/:id/reject', (req, res) => {
     addLog({ action: 'batch-release-rejected', ...auditActor(user), targetType: 'batch-release', targetId: release.id, details: { status: release.status, reason: release.rejectionReason, ok: true } });
     broadcast('batch-release-presence', { releaseId: release.id, reviewClaim: null, status: release.status });
     broadcast('batch-release-changed', { releaseId: release.id, status: release.status, action: 'rejected' });
+    notifyReleaseRejected(release, user).catch((error) => {
+      console.error(`Release rejection notification failed for ${release.id}: ${error.message}`);
+    });
     res.json({ ok: true, release });
   } catch (error) {
     res.status(error.statusCode || 409).json({ ok: false, error: error.message });

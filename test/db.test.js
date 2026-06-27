@@ -50,7 +50,7 @@ test('database opens with pragmas and idempotent migrations', () => {
   assert.equal(status.foreignKeys, true);
   assert.equal(status.journalMode, 'wal');
   assert.equal(status.schemaVersion, before);
-  assert.equal(status.schemaVersion, 21);
+  assert.equal(status.schemaVersion, 22);
 });
 
 test('foreign keys reject orphaned assignments', () => {

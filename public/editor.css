@@ -1366,6 +1366,66 @@
   padding-top: 18px;
 }
 
+.editor-app .notification-config-layout .message-list-item span {
+  white-space: normal;
+}
+
+.editor-app .notification-recipient-section {
+  background: #f8fbff;
+  border: 1px solid #dbe4ef;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  padding: 16px;
+}
+
+.editor-app .notification-recipient-section legend {
+  color: #344054;
+  font-size: .82rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  padding: 0 6px;
+  text-transform: uppercase;
+}
+
+.editor-app .notification-recipient-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  min-width: 0;
+}
+
+.editor-app .notification-recipient-grid .checkbox-line {
+  background: #ffffff;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: inline-flex;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.editor-app .notification-user-choice span {
+  display: grid;
+  min-width: 0;
+}
+
+.editor-app .notification-user-choice strong,
+.editor-app .notification-user-choice small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-app .notification-user-choice small {
+  color: #667085;
+  font-size: .78rem;
+  font-weight: 600;
+}
+
 /* Messages efficiency pass: reduce vertical travel on wide admin screens. */
 @media (min-width: 1120px) {
   .editor-app .printer-user-fields-section {

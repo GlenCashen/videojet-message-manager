@@ -184,6 +184,9 @@ class StatusCache {
   commit(printerId, before, current, { force = false, event = 'printer-status', broadcast = true, broadcastUnchanged = false } = {}) {
     const changed = force || isMaterialChange(before, current);
     if (changed) current.revision += 1;
+    if (before.consecutiveFailures < this.offlineAfterFailures && current.consecutiveFailures >= this.offlineAfterFailures && current.online === false) {
+      this.onTransition('online -> offline', publicStatus(current));
+    }
     if (!before.online && current.online && before.consecutiveFailures >= this.offlineAfterFailures) {
       this.onTransition('offline -> online', publicStatus(current));
     }
