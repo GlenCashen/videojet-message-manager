@@ -1,0 +1,22 @@
+[Unit]
+Description=Videojet Message Manager printer agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vmm-agent
+Group=vmm-agent
+WorkingDirectory=/opt/videojet-printer-agent
+EnvironmentFile=/etc/videojet-printer-agent/agent.env
+ExecStart=/usr/bin/npm run start:agent
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/videojet-printer-agent
+
+[Install]
+WantedBy=multi-user.target
