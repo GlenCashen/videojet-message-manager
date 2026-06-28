@@ -1,0 +1,22 @@
+[Unit]
+Description=Videojet Message Manager main server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vmm
+Group=vmm
+WorkingDirectory=/opt/videojet-message-manager
+EnvironmentFile=/etc/videojet-message-manager/main.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/videojet-message-manager/data /opt/videojet-message-manager/backups
+
+[Install]
+WantedBy=multi-user.target
